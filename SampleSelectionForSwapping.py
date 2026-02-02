@@ -407,16 +407,17 @@ t2_swapped.loc[i2:, 'swap_index'] = i2
 
 #%% now split them by their new tid
 t_swapped = pd.concat([t1_swapped, t2_swapped])
-groups = dict(tuple(t_swapped.groupby('tid_subid')))
 
-t1_a, t2_a = groups.values()
-print(t1_a.tid_subid.unique())
-print(t2_a.tid_subid.unique())
+print(len(t_swapped))
+# split by attribute
+t1_a = t_swapped[t_swapped.tid_subid == tid1]
+t2_a = t_swapped[t_swapped.tid_subid == tid2]  
 
+print(len(t1_a) + len(t2_a))
 
 #%% look at these in qgis
 t1_a.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t1SwappedWitht2_final.parquet")
-t1_a.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t2SwappedWitht1_final.parquet")
+t2_a.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t2SwappedWitht1_final.parquet")
 #%%
-t_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t_swapped.parquet")
+t_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t_swapped_test.parquet")
 #%% code above is not taking direction of travel or time into account, neither repeated swaps with the same other trajector/user
