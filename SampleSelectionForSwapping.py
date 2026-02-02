@@ -521,4 +521,325 @@ t2_a_ordered
 
 #%% look at this in qgis
 t2_a_ordered.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t2SwappedWitht1_final_reordered.parquet")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##############################################################################################################
+#%% now swap t2 a second time 
+t2_swappedV2 = t2_a_ordered.copy()
+t3_swapped = t3.copy()
+
+# reset index of both
+t2_swappedV2 = t2_swappedV2.reset_index(drop=True)
+t3_swapped = t3_swapped.reset_index(drop=True)
+
+#%% drop swapping opportunities again
+t2_swappedV2[['swapping_opportunitiy_tid', 'swapping_opportunitiy_point_id']] = (t2_swappedV2.apply(remove_swaps, axis=1, result_type='expand'))
+print(pd.unique(t2_swappedV2['swapping_opportunitiy_tid'].explode())) # only the remaining trajecories, here t3
+# [nan '20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362'] - CORRECT
+
+#%% (a) look at first swapping opportunitiy
+mask = t2_swappedV2['swapping_opportunitiy_tid'].apply(
+    lambda x: isinstance(x, list) and len(x) > 0
+)
+
+row = t2_swappedV2.loc[mask].iloc[0]
+row1 = t2_swappedV2.loc[mask].iloc[0]
+
+first_tid = row1['swapping_opportunitiy_tid'][0]
+first_pid = row1['swapping_opportunitiy_point_id'][0]
+
+print(first_tid, first_pid) # ok onlye one opportunity, not a list to randomly chose from
+# tid to swap with: 20200603_fb81403777a9bb326af83b6132c747d414ab0a12_6016 T2, THIS CANNOT BE t2. 
+# t2 SHOULD hAVE BEEN DROPPED BEFORE
+# point in tid to iniate the swap: fb81403777a9bb326af83b6132c747d414ab0a12_1591138097_761
+
+# keep reecord of index 
+first_idx_t1 = row1.name 
+
+#%% identify tid to be swapped
+tid1 = t2_swappedV2['tid_subid'].iloc[0]
+tid2 = t3_swapped['tid_subid'].iloc[0]
+
+# locate swapping point
+mask = t2_swappedV2['swapping_opportunitiy_tid'].apply(
+    lambda x: isinstance(x, list) and len(x) > 0
+)
+
+row1 = t2_swappedV2.loc[mask].iloc[0]
+
+swap_tid = row1['swapping_opportunitiy_tid'][0]
+swap_pid = row1['swapping_opportunitiy_point_id'][0]
+# swap_tid 20200603_fb81403777a9bb326af83b6132c747d414ab0a12_6016 - this is t2 and should not be an option anymore!!
+#swap_pid is fb81403777a9bb326af83b6132c747d414ab0a12_1591138097_761
+
+
+i1 = row1.name
+i2 = t3_swapped.index[t3_swapped['point_id'] == swap_pid][0]
+
+
+assert swap_tid == tid2, "Swap tid does not match t2 tid"
+
+#swap trajectories
+# flagging swaps
+t2_swappedV2['swapped_flag'] = False
+t3_swapped['swapped_flag'] = False
+
+# t1: tail becomes tid2
+t2_swappedV2.loc[i1:, 'tid_subid'] = tid2
+t2_swappedV2.loc[i1:, 'swapped_flag'] = True
+
+# t2: tail becomes tid1
+t3_swapped.loc[i2:, 'tid_subid'] = tid1
+t3_swapped.loc[i2:, 'swapped_flag'] = True
+
+
+# add some debugging info
+t2_swappedV2.loc[i1:, 'swapped_from'] = tid1
+t3_swapped.loc[i2:, 'swapped_from'] = tid2
+
+t2_swappedV2.loc[i1:, 'swap_index'] = i1
+t3_swapped.loc[i2:, 'swap_index'] = i2
+
+
+#then concat and split by attribute
+
+
+#%% now split them by their new tid
+t_swapped = pd.concat([t2_swappedV2, t3_swapped])
+
+print(len(t_swapped))
+# split by attribute
+t2_b = t_swapped[t_swapped.tid_subid == tid1]
+t3_a = t_swapped[t_swapped.tid_subid == tid2]  
+
+
+# update swapping opportunities (should now be in t3)
+print(t2_b.tid_subid.unique()) # original tid
+print(t2_b.swapped_from.unique()) # the swapped tid
+
+print(pd.unique(t2_b['swapping_opportunitiy_tid'].explode())) 
+
+print(pd.unique(t_swapped['swapping_opportunitiy_tid'].explode())) # 
+print(pd.unique(t2_swappedV2['swapping_opportunitiy_tid'].explode())) # 
+# only two tid because I only ran the code on t2 and t3
+
+#1987
+#['20200603_fb81403777a9bb326af83b6132c747d414ab0a12_6016']
+#[nan '20191214_fbe906873514e9223ef147d6b827dd559c378aa7_3031'
+# '20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362']
+#[nan]
+#[nan '20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362']
+#[nan '20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362']
+
+#%% this is the interesting one
+print(pd.unique(t3_a['swapping_opportunitiy_tid'].explode())) 
+print(t3_a.tid_subid.unique()) 
+print(t3_a.swapped_from.unique()) # this is the swapped one - can also not swap with this one
+#['20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362' nan]
+#['20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362']
+#['20200603_fb81403777a9bb326af83b6132c747d414ab0a12_6016' nan]
+
+#%% remove tid_subid unique and swapped_from from swapping_opportunity_tid
+def remove_swaps(row):
+    tids = row['swapping_opportunitiy_tid']
+    pids = row['swapping_opportunitiy_point_id']
+
+    # safety
+    if not isinstance(tids, list) or not isinstance(pids, list):
+        return tids, pids
+
+    kept = [
+        (tid, pid)
+        for tid, pid in zip(tids, pids)
+        if tid not in tids_to_remove
+    ]
+
+    if not kept:
+        return [], []
+
+    new_tids, new_pids = zip(*kept)
+    return list(new_tids), list(new_pids)
+
+
+tids_to_remove = set(
+    pd.concat([
+        t3_a['tid_subid'],
+        t3_a['swapped_from']
+    ])
+    .dropna()
+    .unique()
+)
+
+t3_a[['swapping_opportunitiy_tid', 'swapping_opportunitiy_point_id']] = (t3_a.apply(remove_swaps, axis=1, result_type='expand'))
+print(pd.unique(t3_a['swapping_opportunitiy_tid'].explode())) # only the remaining trajecories, here t3
+
+# look at order of points in both t2 and t3
+# points to calcualte distance in between:
+t3_a = t3_a.reset_index(drop=True) # because there where duplicate index values
+
+first_true_idx = t3_a.index[t3_a['swapped_flag'] == True].min()
+last_true_idx = t3_a.index[t3_a['swapped_flag'] == True].max()
+first_false_idx = t3_a.index[t3_a['swapped_flag'] == False].min()
+last_false_idx = t3_a.index[t3_a['swapped_flag'] == False].max()
+
+dist_TrueFalse = t3_a.loc[last_true_idx].geometry.distance(
+    t3_a.loc[first_false_idx].geometry
+)
+
+dist_FalseTrue = t3_a.loc[last_false_idx].geometry.distance(
+    t3_a.loc[first_true_idx].geometry
+)
+
+dist_TrueFalse, dist_FalseTrue 
+# for first t2 swap (33717.026704886914, 551.5679080234409)
+# now, here (30779.247381147543, 166.39991107611078)
+# --> same paterh, dist_FalseTrue is smaller
+#%% reorder points of t2
+true_block  = t3_a[t3_a["swapped_flag"]]
+false_block = t3_a[~t3_a["swapped_flag"]]
+
+if dist_FalseTrue < dist_TrueFalse:
+    t3_a_ordered = pd.concat([false_block, true_block], ignore_index=True)
+else:
+    t3_a_ordered = pd.concat([true_block, false_block], ignore_index=True)
+
+# must add new point_id after swapping
+t3_a_ordered['pointid_afterSwap'] = t3_a_ordered.reset_index(drop=True).index + 1
+t3_a_ordered['pointid_afterSwap'] = "t3_" + t3_a_ordered['pointid_afterSwap'].astype('str')
+t3_a_ordered
+
+#%% look at these two trajectories in qgis
+t2_b.to_parquet(r"E:/paper3/data/SampleTids/SwappingAtNodes/t2SwappedWithT1_final_swappedWithT3.parquet")
+t3_a_ordered.to_parquet(r"E:/paper3/data/SampleTids/SwappingAtNodes/t3_swappedWithT2SwappedWithT1_final.parquet")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+########################################################
+
+
+#%% must check order of points for t1 after swap (are ok, but to follow protocol)
+# and renumber points for t1 after swap
+t1_a
+
+
+
 #%% code above is not taking direction of travel or time into account, neither repeated swaps with the same other trajector/user
