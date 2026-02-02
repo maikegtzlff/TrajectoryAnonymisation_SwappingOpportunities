@@ -204,8 +204,6 @@ t1.head()
 
 
 
-#%%
-points_with_lines_1 = points_with_lines.copy()
 
 #%% now do the same for t2
 # only interested in osmid_uv (and geometry)
@@ -232,10 +230,7 @@ print(points_with_lines.dist_to_line.min())     # 0
 print(points_with_lines.dist_to_line.max())     # 1.02
 points_with_lines.head() # dist to line way too large
 
-#%% get uv for each tid_subid
-# again, as dictionary? drop duplicates?
 
-# %%
 # Group by point_id and combine u and v into lists
 points_combined = points_with_lines.groupby('point_id').agg({
     'u': lambda x: list(x),
@@ -253,126 +248,38 @@ points_combined = points_combined.rename(columns={'u': 'point_nodes_inbetween'})
 t2 = t2.merge(points_combined, on='point_id', how='left')
 t2.head()
 
-#%% compare the two point_nodes_inbetween/ keep matching ones
-# Convert list to tuple in both DataFrames
-#t1['point_nodes_inbetween'] = t1['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-#t2['point_nodes_inbetween'] = t2['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-
-# j
-
-#so_edge = t1.merge(t2, on='point_nodes_inbetween', how='inner')# so swapping opportunitiy
-so_edge = t1.merge(t2, on='point_nodes_inbetween', how='inner')# so swapping opportunitiy
-
-so_edge # 96 rows - but I can't do this for every trajectory combination
-# but onley so_edge.point_nodes_inbetween.nunique()
-
-#%% or merge them based on osmid_uv
-so_edge_uv = points_with_lines_1.merge(points_with_lines, on='osmid_uv', how='inner')# so swapping opportunitiy
-so_edge_uv.osmid_uv.nunique() # print 43
-so_edge_uv # also 96 rows
-
-# same as based ons point_nodes_inbetween
-
-
-
-#%%
-# 1️⃣ Ensure point_nodes_inbetween is hashable (tuple) in both
-t1['point_nodes_inbetween'] = t1['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-t2['point_nodes_inbetween'] = t2['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-
-# 2️⃣ Merge t1 with t2 to get matching tid_subid and point_id
-t1_swaps = t1.merge(
-    t2[['point_nodes_inbetween', 'tid_subid', 'point_id']],
-    on='point_nodes_inbetween',
-    how='left',   # keep all rows in t1
-    suffixes=('', '_swap')  # columns from t2 get _swap
-)
-
-# 3️⃣ Create the swapping opportunity columns
-t1_swaps['swapping_opportunitiy_tid'] = t1_swaps['tid_subid_swap']
-t1_swaps['swapping_opportunitiy_point_id'] = t1_swaps['point_id_swap']
-
-# 4️⃣ Drop the temporary merge columns
-t1_swaps = t1_swaps.drop(columns=['tid_subid_swap', 'point_id_swap'])
-
-# ✅ Same for t2
-t2_swaps = t2.merge(
-    t1[['point_nodes_inbetween', 'tid_subid', 'point_id']],
-    on='point_nodes_inbetween',
-    how='left',
-    suffixes=('', '_swap')
-)
-t2_swaps['swapping_opportunitiy_tid'] = t2_swaps['tid_subid_swap']
-t2_swaps['swapping_opportunitiy_point_id'] = t2_swaps['point_id_swap']
-t2_swaps = t2_swaps.drop(columns=['tid_subid_swap', 'point_id_swap'])
-t2_swaps[t2_swaps.swapping_opportunitiy_tid.notna()] #96 rows
-
-#%%
-t1_swaps.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t1_swappingopportunitiesTot2.parquet")
-t2_swaps.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t2_swappingopportunitiesTot1.parquet")
-
 
 
 #%% work with dictonaries instead
-# (1) builidng a loopuk dictonary for the trajectory of interest
-import pandas as pd
-# Ensure hashable keys
-t2['point_nodes_inbetween'] = t2['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-
-# Create a dictionary
-swap_lookup_t2 = dict(zip(t2['point_nodes_inbetween'], zip(t2['tid_subid'], t2['point_id'])))
-
-
-# (2) apply the lookup to trajectory 1
-# Make sure t1 keys are hashable
-t1['point_nodes_inbetween'] = t1['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-
-# Use .map() to create the new columns
-t1[['swapping_opportunitiy_tid', 'swapping_opportunitiy_point_id']] = t1['point_nodes_inbetween'].map(
-    lambda k: swap_lookup_t2.get(k, (None, None))
-).apply(pd.Series)
-
-#%% (3) and look for t3
-# Suppose you have t3
-t3['point_nodes_inbetween'] = t3['point_nodes_inbetween'].apply(lambda x: tuple(x) if isinstance(x, list) else x)
-swap_lookup_t3 = dict(zip(t3['point_nodes_inbetween'], zip(t3['tid_subid'], t3['point_id'])))
-
-# Update t1 columns only where they are still None
-t1['swapping_opportunitiy_tid'] = t1.apply(
-    lambda row: swap_lookup_t3[row['point_nodes_inbetween']][0]
-                if pd.isna(row['swapping_opportunitiy_tid']) and row['point_nodes_inbetween'] in swap_lookup_t3
-                else row['swapping_opportunitiy_tid'],
-    axis=1
-)
-t1['swapping_opportunitiy_point_id'] = t1.apply(
-    lambda row: swap_lookup_t3[row['point_nodes_inbetween']][1]
-                if pd.isna(row['swapping_opportunitiy_point_id']) and row['point_nodes_inbetween'] in swap_lookup_t3
-                else row['swapping_opportunitiy_point_id'],
-    axis=1
-)
-
-# but this only adds opportuntities for swaps with t3 if there is no opportunity for this points to be swapped with t2
-
-
-
 #%% append swapping opportuntities instead.
 t1['swapping_opportunitiy_tid'] = [[] for _ in range(len(t1))]
 t1['swapping_opportunitiy_point_id'] = [[] for _ in range(len(t1))]
 
 def append_swaps(target, source):
+
     lookup = {}
+
+    # build lookup from source
     for k, tid, pid in zip(
         source['point_nodes_inbetween'],
         source['tid_subid'],
         source['point_id']
     ):
+        if not k:                 # skip empty lists
+            continue
+        k = tuple(k)              # 🔑 MAKE HASHABLE
         lookup.setdefault(k, []).append((tid, pid))
 
+    # apply to target
     for i, k in target['point_nodes_inbetween'].items():
+        if not k:
+            continue
+        k = tuple(k)              # 🔑 MUST MATCH SOURCE
         if k in lookup:
             tids, pids = zip(*lookup[k])
             target.at[i, 'swapping_opportunitiy_tid'].extend(tids)
             target.at[i, 'swapping_opportunitiy_point_id'].extend(pids)
+
 
 # Apply in order
 append_swaps(t1, t2)
@@ -385,6 +292,7 @@ print((t1['swapping_opportunitiy_tid'].str.len().max())) # 3 = some points have 
 
 #%% find opportunities with t3
 t3=gpd.read_file(r'E:/paper3/data/SampleTids/SwappingAtNodes/t3_20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362_points.gpkg')
+
 # must find nodes inbetween points first
 # only interested in osmid_uv (and geometry)
 points_with_lines = gpd.sjoin_nearest(
@@ -426,4 +334,89 @@ t3['point_nodes_inbetween'] = t3['point_nodes_inbetween'].apply(lambda x: tuple(
 append_swaps(t1, t3)
 print((t1['swapping_opportunitiy_tid'].str.len() > 0).sum()) # 96, that is 3 more than on t2 alone
 
+
+#%% look at these in qgis
+t1.to_parquet(r'E:/paper3/data/SampleTids/SwappingAtNodes/t1_swappingOppt2andt3.parquet')
+
+
+#%% look at first swapping opportunitiy
+mask = t1['swapping_opportunitiy_tid'].apply(
+    lambda x: isinstance(x, list) and len(x) > 0
+)
+
+row = t1.loc[mask].iloc[0]
+
+row1 = t1.loc[mask].iloc[0]
+
+first_tid = row1['swapping_opportunitiy_tid'][0]
+first_pid = row1['swapping_opportunitiy_point_id'][0]
+
+print(first_tid, first_pid) # ok onlye one opportunity, not a list to randomly chose from
+
+# keep reecord of index 
+first_idx_t1 = row1.name 
+
+#%% swap at this first opportunity
+t1_swapped = t1.copy()
+t2_swapped = t2.copy()
+
+#%% update tid in t1 after the first swapping opportunity
+# identify tid to be swapped
+tid1 = t1_swapped['tid_subid'].iloc[0]
+tid2 = t2_swapped['tid_subid'].iloc[0]
+
+# locate swapping point
+mask = t1_swapped['swapping_opportunitiy_tid'].apply(
+    lambda x: isinstance(x, list) and len(x) > 0
+)
+
+row1 = t1_swapped.loc[mask].iloc[0]
+
+swap_tid = row1['swapping_opportunitiy_tid'][0]
+swap_pid = row1['swapping_opportunitiy_point_id'][0]
+
+i1 = row1.name
+i2 = t2_swapped.index[t2_swapped['point_id'] == swap_pid][0]
+
+assert swap_tid == tid2, "Swap tid does not match t2 tid"
+
+#swap trajectories
+# flagging swaps
+t1_swapped['swapped_flag'] = False
+t2_swapped['swapped_flag'] = False
+
+# t1: tail becomes tid2
+t1_swapped.loc[i1:, 'tid_subid'] = tid2
+t1_swapped.loc[i1:, 'swapped_flag'] = True
+
+# t2: tail becomes tid1
+t2_swapped.loc[i2:, 'tid_subid'] = tid1
+t2_swapped.loc[i2:, 'swapped_flag'] = True
+
+
+#%% look at these in qgis
+t1_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t1SwappedWitht2.parquet")
+t2_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t2SwappedWitht1.parquet")
+
+#%% add some debugging info
+t1_swapped.loc[i1:, 'swapped_from'] = tid1
+t2_swapped.loc[i2:, 'swapped_from'] = tid2
+
+t1_swapped.loc[i1:, 'swap_index'] = i1
+t2_swapped.loc[i2:, 'swap_index'] = i2
+
+#%% now split them by their new tid
+t_swapped = pd.concat([t1_swapped, t2_swapped])
+groups = dict(tuple(t_swapped.groupby('tid_subid')))
+
+t1_a, t2_a = groups.values()
+print(t1_a.tid_subid.unique())
+print(t2_a.tid_subid.unique())
+
+
+#%% look at these in qgis
+t1_a.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t1SwappedWitht2_final.parquet")
+t1_a.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t2SwappedWitht1_final.parquet")
+#%%
+t_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes/t_swapped.parquet")
 #%% code above is not taking direction of travel or time into account, neither repeated swaps with the same other trajector/user
