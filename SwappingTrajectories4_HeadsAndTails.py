@@ -3,6 +3,8 @@
 import geopandas as gpd
 import pandas as pd
 
+import random
+
 def split_at_uv(df, u_val, v_val):
     """
     Splits df into head (up to and including the row where u==u_val and v==v_val)
@@ -13,7 +15,7 @@ def split_at_uv(df, u_val, v_val):
     if not idx:
         return df.copy(), pd.DataFrame(columns=df.columns)
     
-    split_idx = idx[0]  # take first match
+    split_idx = idx[0]  # take first match 
     head = df.iloc[:split_idx + 1].copy()
     tail = df.iloc[split_idx + 1:].copy()
 
@@ -42,9 +44,39 @@ def find_first_common_uv(df1, df2):
     
     return None  # no common point found
 
+# instead randomly select one of the first 3 
+def find_first_n_common_uv(df1, df2, n=3):
+    """
+    Finds the first `n` (u, v) pairs from df1 that also exist in df2.
+    Returns a randomly chosen one among them, or None if no match found.
+    """
+    uv_set2 = set(zip(df2['u'], df2['v']))
+    
+    matches = []
+    
+    for u, v in zip(df1['u'], df1['v']):
+        if (u, v) in uv_set2:
+            matches.append((u, v))
+            if len(matches) == n:
+                break  # stop after first n matches
+    
+    if not matches:
+        return None
+    
+    # pick one randomly
+    choice_index = random.randrange(len(matches))
+    
+    # debugging: print which match was picked
+    print(f"randomly picked match #{choice_index + 1} of the first {len(matches)} matches")
+    
+    return matches[choice_index]
 
-def swap_tails_auto(df1, df2):
-    common_uv = find_first_common_uv(df1, df2)
+
+
+def swap_tails_auto(df1, df2, n=3):
+    #common_uv = find_first_common_uv(df1, df2)
+    common_uv = find_first_n_common_uv(df1, df2, n=n)
+
     if common_uv is None:
         # No common point to swap, return original dfs
         return df1.copy(), df2.copy()
@@ -93,7 +125,7 @@ t2.head()
 #%% swap
 # First swap t1 <-> t2 
 #t1_swapped, t2_swapped = swap_tails_auto(t1, t2)
-t1_swapped, t3_swapped = swap_tails_auto(t1, t3) # no overlap with t2
+t1_swapped, t3_swapped = swap_tails_auto(t1, t3, n=3) # no overlap with t2
 
 
 # debugging ouput 
@@ -123,5 +155,5 @@ print(t3_swapped.tid_subid.nunique())
 #print(t1_swapped2nd.tid_subid.nunique()) # 1
 
 #%% look at these in Q
-t1_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_swapped_t3.parquet")
-t3_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t3_swapped_t1.parquet")
+t1_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_swapped_t3_randomSwapPoint.parquet")
+t3_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t3_swapped_t1_randomSwapPoint.parquet")
