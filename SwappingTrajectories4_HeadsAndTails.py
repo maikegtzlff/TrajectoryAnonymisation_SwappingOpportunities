@@ -74,6 +74,18 @@ def find_first_n_common_uv(df1, df2, n=3):
 
 
 def swap_tails_auto(df1, df2, n=3):
+    # ensure tid has not been swapped before
+    # actually, two users should never be swapped twice. eliminates the tid issue too
+    # uid remains the same as input after swapping, so check can be based on uid
+    # if i was to swap with the same tid again, it should recognise the uid being the same
+    # Check for overlap in original sources
+    source1 = set(df1['uid'].unique())
+    source2 = set(df2['uid'].unique())
+    if source1 & source2: # & to find elemens that exist in both sets
+        print(f"Cannot swap: overlapping user {source1 & source2}")
+        return df1.copy(), df2.copy()
+
+
     #common_uv = find_first_common_uv(df1, df2)
     common_uv = find_first_n_common_uv(df1, df2, n=n)
 
@@ -127,6 +139,7 @@ t = t_bckp.copy()
 # must keep track of original tid
 t['source_tid_subid'] = t['tid_subid']
 
+
 for i, (_, df) in enumerate(t.groupby('tid_subid'), start=1):
     print(f"building t{i}")
     df = df.reset_index(drop=True)
@@ -171,6 +184,9 @@ t1_swapped, t3_swapped = swap_tails_auto(t1, t3, n=3) # no overlap with t2
 # Then swap the (new) t1 <-> t3 
 #t1_swapped2nd, t3_swapped = swap_tails_auto(t1_swapped, t3)
 
+#%% see if not swapping the same user twice works
+t1_swapped_2, t3_swapped_2 = swap_tails_auto(t1_swapped, t3, n=3) # works!
+#Cannot swap: overlapping user {'f6f64a1846eb2f50552c23394c64a02663acadbc'}
 
 #%%
 print(t1_swapped.tid_subid.nunique()) # updated tid
