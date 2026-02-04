@@ -44,6 +44,7 @@ def find_first_common_uv(df1, df2):
     
     return None  # no common point found
 
+
 # instead randomly select one of the first 3 
 def find_first_n_common_uv(df1, df2, n=3):
     """
@@ -61,6 +62,7 @@ def find_first_n_common_uv(df1, df2, n=3):
                 break  # stop after first n matches
     
     if not matches:
+        print("find_first_n_common_uv: no matching (u,v) found between the two trajectories")
         return None
     
     # pick one randomly
@@ -115,11 +117,11 @@ def swap_tails_auto(df1, df2, n=3):
 
     # must update tid and keep track of original tid
     # tid is being carried over from head
+    # actually not sure about this assert message. can swap whenever
     # check head1
     unique_tid1 = head1.tid_subid.unique()
     assert len(unique_tid1) == 1, f"Expected 1 unique tid_subid in head1, got {len(unique_tid1)}"
     new_df1['tid_subid'] = unique_tid1[0]
-
     # check head2
     unique_tid2 = head2.tid_subid.unique()
     assert len(unique_tid2) == 1, f"Expected 1 unique tid_subid in head2, got {len(unique_tid2)}"
@@ -183,11 +185,6 @@ t1_swapped, t3_swapped = swap_tails_auto(t1, t3, n=3) # no overlap with t2
 
 # Then swap the (new) t1 <-> t3 
 #t1_swapped2nd, t3_swapped = swap_tails_auto(t1_swapped, t3)
-
-#%% see if not swapping the same user twice works
-t1_swapped_2, t3_swapped_2 = swap_tails_auto(t1_swapped, t3, n=3) # works!
-#Cannot swap: overlapping user {'f6f64a1846eb2f50552c23394c64a02663acadbc'}
-
 #%%
 print(t1_swapped.tid_subid.nunique()) # updated tid
 print(t3_swapped.tid_subid.nunique()) 
@@ -198,3 +195,54 @@ print(t3_swapped.source_tid_subid.nunique())
 #%% look at these in Q
 t1_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_swapped_t3_randomSwapPoint.parquet")
 t3_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t3_swapped_t1_randomSwapPoint.parquet")
+
+#%% see if not swapping the same user twice works
+t1_swapped_2, t3_swapped_2 = swap_tails_auto(t1_swapped, t3, n=3) # error messaging works!
+# Cannot swap: overlapping user {'f6f64a1846eb2f50552c23394c64a02663acadbc'}
+# need more graceful handling of this scenario though, automatically look for the next trajectory instead
+
+#%% what happens if two trajectories do not overlap
+test1, test2 = swap_tails_auto(t1_swapped, t2, n=3) 
+# error message, but still creates an output - though the output is just a copy of the df - doesn't really matter?
+print(test1.equals(t1_swapped)) 
+print(test2.equals(t2)) 
+# n o valid swap = still retusn something --> code doesn't crash
+
+#%% ok now swap t1 for the second  time
+t1_swapped_2, t4_swapped = swap_tails_auto(t1_swapped, t4, n=3) 
+
+#%%
+print('input trajectories:')
+print('number of trajectory identifiers')
+print(t1_swapped.tid_subid.nunique(), t1_swapped_2.tid_subid.unique()) 
+print(t4.tid_subid.nunique(), t4_swapped.tid_subid.unique()) 
+print('number of source trajectories')
+print(t1_swapped.source_tid_subid.nunique(), t1_swapped.source_tid_subid.unique()) 
+print(t4.source_tid_subid.nunique(), t4.source_tid_subid.unique())  
+
+
+print("\n\n\nswaped trajectories")
+print('number of trajectory identifiers')
+print(t1_swapped_2.tid_subid.nunique()) # 1, but has tid beedn updated succesfully?
+print(t1_swapped_2.tid_subid.unique() == t1_swapped.tid_subid.unique())
+print('tid before swapping', t1_swapped.tid_subid.unique())
+print('tid after swapping', t1_swapped_2.tid_subid.unique())
+print(t4_swapped.tid_subid.nunique()) 
+print(t4_swapped.tid_subid.unique() == t4.tid_subid.unique())
+
+print('number of source trajectories')
+print(t1_swapped_2.source_tid_subid.nunique()) # # this has 2 - I think it "lost" the earlier swap becasue t4 can be swapped before t3 was
+# or: has source_tid_subid be overwritten? I don't think so
+print('t1: comparing the source tids before and after swapping directly')
+print('before', t1_swapped.source_tid_subid.unique())
+print('after', t1_swapped_2.source_tid_subid.unique())
+print('t4')
+print(t4_swapped.source_tid_subid.nunique())  # this has 3 - even though only swapped once: because segment that has been swapped had previousl been swapped already
+print(t4_swapped.source_tid_subid.unique())
+#['20200417_f6384b2a85a3248a47853cfbc554efdaac8fc9a2_5567' # this one is t4
+# '20191214_fbe906873514e9223ef147d6b827dd559c378aa7_3031' # this one is t3 (from swapping with t1)
+# '20200212_f6f64a1846eb2f50552c23394c64a02663acadbc_4362'] # this one is t1
+
+#%% look at these in qgis
+t1_swapped_2.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_swapped_t3_swapped_t4_randomSwapPoint.parquet")
+t4_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t4_swapped_t1_prevSwapped_t3_randomSwapPoint.parquet")
