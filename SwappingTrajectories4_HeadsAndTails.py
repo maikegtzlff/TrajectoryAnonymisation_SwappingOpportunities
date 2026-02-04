@@ -1,0 +1,127 @@
+
+#%% define functions
+import geopandas as gpd
+import pandas as pd
+
+def split_at_uv(df, u_val, v_val):
+    """
+    Splits df into head (up to and including the row where u==u_val and v==v_val)
+    and tail (after that row)
+    """
+    idx = df.index[(df['u'] == u_val) & (df['v'] == v_val)].tolist()
+    
+    if not idx:
+        return df.copy(), pd.DataFrame(columns=df.columns)
+    
+    split_idx = idx[0]  # take first match
+    head = df.iloc[:split_idx + 1].copy()
+    tail = df.iloc[split_idx + 1:].copy()
+
+    #debugging
+    print('split_at_uv')
+    print(idx)
+    print('points in head:', len(head))
+    print('points in tail:', len(tail))
+
+    return head, tail
+
+
+
+def find_first_common_uv(df1, df2):
+    """
+    Finds the first (u, v) pair that exists in both df1 and df2.
+    Returns a tuple (u_val, v_val) or None if no match found.
+    """
+    # Convert df2 u,v pairs to a set for fast lookup
+    uv_set2 = set(zip(df2['u'], df2['v']))
+    
+    # Iterate through df1
+    for u, v in zip(df1['u'], df1['v']):
+        if (u, v) in uv_set2:
+            return u, v
+    
+    return None  # no common point found
+
+
+def swap_tails_auto(df1, df2):
+    common_uv = find_first_common_uv(df1, df2)
+    if common_uv is None:
+        # No common point to swap, return original dfs
+        return df1.copy(), df2.copy()
+    
+    u_val, v_val = common_uv
+    head1, tail1 = split_at_uv(df1, u_val, v_val)
+    head2, tail2 = split_at_uv(df2, u_val, v_val)
+
+    #debugging
+    print('swap_tails_auto')
+    print('points in head1:', len(head1))
+    print('points in tail2:', len(tail2))
+    print('points in head2:', len(head2))
+    print('points in tail1:', len(tail1))
+
+    new_df1 = pd.concat([head1, tail2], ignore_index=True)
+    new_df2 = pd.concat([head2, tail1], ignore_index=True)
+    
+    new_df1 = gpd.GeoDataFrame(new_df1, geometry='geometry', crs=df1.crs)
+    new_df2 = gpd.GeoDataFrame(new_df2, geometry='geometry', crs=df2.crs)
+
+    return new_df1, new_df2
+
+#%% load data
+#t_bckp = gpd.read_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\automaticalSwapping/t.parquet")
+t = t_bckp.copy()
+
+for i, (_, df) in enumerate(t.groupby('tid_subid'), start=1):
+    print(f"building t{i}")
+    df = df.reset_index(drop=True)
+    globals()[f"t{i}"] = df.copy()
+
+
+# t_1 to t_6
+print(t1.columns)
+t2.head()
+
+#t1.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_orig.parquet")
+#t2.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t2_orig.parquet")
+#t3.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t3_orig.parquet")
+#t4.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t4_orig.parquet")
+#t5.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t5_orig.parquet")
+#t6.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t6_orig.parquet")
+
+
+#%% swap
+# First swap t1 <-> t2 
+#t1_swapped, t2_swapped = swap_tails_auto(t1, t2)
+t1_swapped, t3_swapped = swap_tails_auto(t1, t3) # no overlap with t2
+
+
+# debugging ouput 
+#split_at_uv
+#[181]
+#points in head: 182
+#points in tail: 478
+#split_at_uv
+#[177]
+#points in head: 178
+#points in tail: 558
+#swap_tails_auto
+#points in head1: 182
+#points in tail2: 558
+#points in head2: 178
+#points in tail1: 478
+
+
+# Then swap the (new) t1 <-> t3 
+#t1_swapped2nd, t3_swapped = swap_tails_auto(t1_swapped, t3)
+
+
+#%%
+print(t1_swapped.tid_subid.nunique()) 
+print(t3_swapped.tid_subid.nunique()) 
+
+#print(t1_swapped2nd.tid_subid.nunique()) # 1
+
+#%% look at these in Q
+t1_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_swapped_t3.parquet")
+t3_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t3_swapped_t1.parquet")
