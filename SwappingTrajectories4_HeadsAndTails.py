@@ -94,6 +94,26 @@ def swap_tails_auto(df1, df2, n=3):
 
     new_df1 = pd.concat([head1, tail2], ignore_index=True)
     new_df2 = pd.concat([head2, tail1], ignore_index=True)
+
+    # must renumber points after swapping
+    new_df1 = new_df1.reset_index(drop=True)
+    new_df1['point_id_s'] = new_df1.index + 1
+    new_df2 = new_df2.reset_index(drop=True)
+    new_df2['point_id_s'] = new_df2.index + 1
+
+    # must update tid and keep track of original tid
+    # tid is being carried over from head
+    # check head1
+    unique_tid1 = head1.tid_subid.unique()
+    assert len(unique_tid1) == 1, f"Expected 1 unique tid_subid in head1, got {len(unique_tid1)}"
+    new_df1['tid_subid'] = unique_tid1[0]
+
+    # check head2
+    unique_tid2 = head2.tid_subid.unique()
+    assert len(unique_tid2) == 1, f"Expected 1 unique tid_subid in head2, got {len(unique_tid2)}"
+    new_df2['tid_subid'] = unique_tid2[0]
+
+
     
     new_df1 = gpd.GeoDataFrame(new_df1, geometry='geometry', crs=df1.crs)
     new_df2 = gpd.GeoDataFrame(new_df2, geometry='geometry', crs=df2.crs)
@@ -104,10 +124,14 @@ def swap_tails_auto(df1, df2, n=3):
 #t_bckp = gpd.read_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\automaticalSwapping/t.parquet")
 t = t_bckp.copy()
 
+# must keep track of original tid
+t['source_tid_subid'] = t['tid_subid']
+
 for i, (_, df) in enumerate(t.groupby('tid_subid'), start=1):
     print(f"building t{i}")
     df = df.reset_index(drop=True)
     globals()[f"t{i}"] = df.copy()
+
 
 
 # t_1 to t_6
@@ -149,10 +173,11 @@ t1_swapped, t3_swapped = swap_tails_auto(t1, t3, n=3) # no overlap with t2
 
 
 #%%
-print(t1_swapped.tid_subid.nunique()) 
+print(t1_swapped.tid_subid.nunique()) # updated tid
 print(t3_swapped.tid_subid.nunique()) 
 
-#print(t1_swapped2nd.tid_subid.nunique()) # 1
+print(t1_swapped.source_tid_subid.nunique()) # source tid
+print(t3_swapped.source_tid_subid.nunique()) 
 
 #%% look at these in Q
 t1_swapped.to_parquet(r"E:\paper3\data\SampleTids\SwappingAtNodes\MoreManual\trajectoryByTrajectory/t1_swapped_t3_randomSwapPoint.parquet")
