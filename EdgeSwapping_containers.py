@@ -11,7 +11,6 @@ mapping = {
 }
 
 for df in trajectories:
-    df.rename(columns={'point_id': 'point_id_t'}, inplace=True)
     df['time_bin_label'] = df['time_bin']
     df['time_bin'] = df['time_bin'].map(mapping)
 
@@ -20,19 +19,13 @@ for df in trajectories:
         raise ValueError("Unexpected time_bin value found")
 
 
-#%% initialize containers etc
-for cid, df in enumerate(trajectories):
-    df["container_id"] = cid                # immutable
-    df["orig_tid"] = df["tid_subid"]         # immutable
-    df["orig_uid"] = df["uid"]               # immutable
-    df["n_container_changes"] = 0
-
 #%% actually work with one gdf instead
 import pandas as pd
 import geopandas as gpd
 
 gdf = pd.concat(trajectories, ignore_index=True)
 gdf = gpd.GeoDataFrame(gdf, geometry='geometry', crs=trajectories[0].crs)
+
 gdf.head()
 #%%
 gdf.to_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_filled_gdf_preppedForSwapping.parquet")
@@ -50,7 +43,10 @@ gdf.to_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_filled_gdf
 #%% read data
 import geopandas as gpd
 gdf = gpd.read_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_filled_gdf_preppedForSwapping.parquet")
+gdf.rename(columns={'point_id_t': 'point_id'}, inplace=True)
 assert gdf['point_id'].is_unique, "point_id is not unique! Check initialization."
+
+#%% initialize containers etc
 
 #%%
 import importlib
@@ -59,34 +55,49 @@ os.chdir("D:\paper3")
 import utils_EdgeSwapping_containers as sw
 importlib.reload(sw)
 
-from collections import deque, defaultdict
+from collections import defaultdict, deque
 import pandas as pd
 import time
 
-# --------------------------
-# 1️⃣ Ensure consistent key types for all containers
-# --------------------------
-for c in containers:
-    c['points']['u'] = c['points']['u'].astype(str)
-    c['points']['v'] = c['points']['v'].astype(str)
-    c['points']['time_bin'] = c['points']['time_bin'].astype(int)
+# === 0️⃣ Prepare point-level columns ===
+# gdf is your full GeoDataFrame (all trajectories concatenated)
+# Keep original point_id, orig_tid, uid, timestamp, geometry
+gdf = gdf.copy()
+if 'swap_count' not in gdf.columns:
+    gdf['swap_count'] = 0  # equivalent to old n_container_changes
+if 'container_id' not in gdf.columns:
+    gdf['container_id'] = -1  # will be set per container
 
-    c['keys'] = list(zip(c['points']['u'], c['points']['v'], c['points']['time_bin']))
-    c['key_to_idx'] = {k: i for i, k in enumerate(c['keys'])}
-    c['length'] = len(c['points'])
-    c['uids'] = set(c['points']['uid'])
+# === 1️⃣ Initialize containers ===
+containers = []
+for cid, (tid, df_tid) in enumerate(gdf.groupby("tid_subid", sort=False)):
+    df_tid = df_tid.copy()
+    df_tid['container_id'] = cid
+    df_tid['swap_count'] = 0  # n_container_changes equivalent
 
-# --------------------------
-# 2️⃣ Build key → container mapping
-# --------------------------
+    container = {
+        'cid': cid,
+        'tid_subid': tid,
+        'points': df_tid.reset_index(drop=True),
+        'keys': list(zip(df_tid['u'].astype(str),
+                         df_tid['v'].astype(str),
+                         df_tid['time_bin'].astype(int))),
+        'key_to_idx': {k: i for i, k in enumerate(zip(
+            df_tid['u'].astype(str),
+            df_tid['v'].astype(str),
+            df_tid['time_bin'].astype(int)))},
+        'length': len(df_tid),
+        'uids': set(df_tid['uid'])
+    }
+    containers.append(container)
+
+# === 2️⃣ Build key → container mapping ===
 key_to_cids = defaultdict(set)
 for c in containers:
     for k in c['keys']:
         key_to_cids[k].add(c['cid'])
 
-# --------------------------
-# 3️⃣ Initialize queue, swap memory, swap log
-# --------------------------
+# === 3️⃣ Initialize queue, swap memory, swap log ===
 queue = deque(range(len(containers)))
 seen_swaps = set()
 swap_log = []
@@ -281,7 +292,9 @@ container_summary_df.to_parquet(r"D:\paper3\Data\output/container_summary_df.par
 #tail_points_a	Number of points moved from container A
 #tail_points_b	Number of points moved from container B
 #timestamp	    Time elapsed since start of swap loop
-swap_log_df.to_parquet(r"D:\paper3\Data\output/swap_log_df.parquet")
+swap_log_df[['u', 'v', 'time_bin']] = pd.DataFrame(swap_log_df['key'].tolist(), index=swap_log_df.index)
+swap_log_df = swap_log_df.drop(columns='key')
+swap_log_df.to_parquet(r"D:\paper3\Data\output\swap_log_df.parquet", index=False)
 
 
 
