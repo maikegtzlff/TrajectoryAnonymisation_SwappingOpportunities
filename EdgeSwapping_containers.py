@@ -20,19 +20,14 @@ for df in trajectories:
         raise ValueError("Unexpected time_bin value found")
 
 
-#%%
-trajectories[0].head()
-
-
 #%% initialize containers etc
 for cid, df in enumerate(trajectories):
     df["container_id"] = cid                # immutable
     df["orig_tid"] = df["tid_subid"]         # immutable
     df["orig_uid"] = df["uid"]               # immutable
-    df["point_id"] = range(len(df))          # or existing
     df["n_container_changes"] = 0
 
-#%% actually worki with one gdf instead
+#%% actually work with one gdf instead
 import pandas as pd
 import geopandas as gpd
 
@@ -46,10 +41,16 @@ gdf.to_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_filled_gdf
 
 
 
+
+
+
+
+
+
 #%% read data
 import geopandas as gpd
 gdf = gpd.read_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_filled_gdf_preppedForSwapping.parquet")
-
+assert gdf['point_id'].is_unique, "point_id is not unique! Check initialization."
 
 #%%
 import importlib
@@ -187,6 +188,101 @@ while queue:
 
 print("\nAll swaps completed!")
 swap_log_df = pd.DataFrame(swap_log)
+#[Swap 210000] Processed ~107397243 points
+
+
+#%%
+print(len(gdf)) #7,334,941
+print(len(swap_log_df)) # number of swaps perfomerd: 215,805
+# one tail swap between two containers at one key
+total_points_moved = swap_log_df['tail_points_a'].sum() + swap_log_df['tail_points_b'].sum()
+print(total_points_moved) #109,406,029
+
+#%%
+print(len(containers[0]['points'])) # 266
+containers[0]['points'].orig_tid.nunique() # 19
+
+#%%
+print(len(gdf)) #7,334,941
+
+#for c in containers:
+#    cid = c['cid']
+#    n_points = len(c['points'])
+#    print(f"Container {cid}: {n_points} points")
+
+final_gdf = pd.concat([c['points'] for c in containers], ignore_index=True)
+print(f"Total points across all containers: {len(final_gdf)}")
+print(len(gdf)==len(final_gdf))
+
+#%% quality control: duplicate points?
+total_original = len(gdf)
+# 3️⃣ Check for duplicates
+duplicate_points = final_gdf['point_id'].duplicated().sum()
+print(f"Number of duplicate points after swaps: {duplicate_points}")
+
+# 4️⃣ Check for missing points
+missing_points = total_original - final_gdf['point_id'].nunique()
+print(f"Number of points lost: {missing_points}")
+
+# 5️⃣ Optional: list point_ids that are missing (if any)
+if missing_points > 0:
+    missing_ids = set(gdf['point_id']) - set(final_gdf['point_id'])
+    print("Missing point_ids:", missing_ids)
+
+#%% export both, final_gdf and containers and swap_log_df
+# point level results
+# each row is a point from the orginal trajectories, after all swaps
+# shows which container each point ended up in, how many times it swaped, preserved oirginal tid
+#point_id	                                Unique ID of the point
+#orig_tid	                                Original trajectory this point belonged to
+#container_id	                            Final container after all swaps
+#swap_count	                                How many times this point changed containers
+#u, v, time_bin, uid, timestamp, geometry	Original point info for analysis / plotting
+final_gdf = pd.concat([c['points'] for c in containers], ignore_index=True)
+if 'geometry' in final_gdf.columns:
+    final_gdf = gpd.GeoDataFrame(final_gdf, geometry='geometry', crs=gdf.crs)
+
+final_gdf.to_parquet(r"D:\paper3\Data\output/final_points.parquet")
+
+# container-level results
+# one row per container, summarizing the points it contains after all swaps
+# shows how trajectories merged, how many original trajectories contributed, and swap activity
+#container_id	        Container identifier
+#tid_subid	            Original trajectory label for container (head label)
+#num_points	            Total points in container
+#num_orig_trajectories	How many original trajectories contributed points
+#avg_swaps_per_point	Mean number of swaps per point in container
+#max_swaps	            Maximum swap count for any point in container
+#temporal_span	        Time difference between first and last point (optional)
+container_summary = []
+for c in containers:
+    df = c['points']
+    container_summary.append({
+        'container_id': c['cid'],
+        'tid_subid': c['tid'],
+        'num_points': len(df),
+        'num_orig_trajectories': df['orig_tid'].nunique(),
+        'avg_swaps_per_point': df['swap_count'].mean(),
+        'max_swaps': df['swap_count'].max(),
+        'temporal_span': df['timestamp'].max() - df['timestamp'].min() if 'timestamp' in df.columns else None
+    })
+
+container_summary_df = pd.DataFrame(container_summary)
+container_summary_df.to_parquet(r"D:\paper3\Data\output/container_summary_df.parquet")
+
+
+#swap-level results
+# each row: one swap between two containers at a particular key
+# shows how points were shuffled and tail sizes
+#swap_id        Sequential ID of the swap
+#container_a	First container in swap
+#container_b	Second container in swap
+#key	        Swap point (u,v,time_bin)
+#tail_points_a	Number of points moved from container A
+#tail_points_b	Number of points moved from container B
+#timestamp	    Time elapsed since start of swap loop
+swap_log_df.to_parquet(r"D:\paper3\Data\output/swap_log_df.parquet")
+
 
 
 
