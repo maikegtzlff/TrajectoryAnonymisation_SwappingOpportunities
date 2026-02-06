@@ -46,7 +46,6 @@ gdf = gpd.read_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_fi
 gdf.rename(columns={'point_id_t': 'point_id'}, inplace=True)
 assert gdf['point_id'].is_unique, "point_id is not unique! Check initialization."
 
-#%% initialize containers etc
 
 #%%
 import importlib
@@ -55,49 +54,52 @@ os.chdir("D:\paper3")
 import utils_EdgeSwapping_containers as sw
 importlib.reload(sw)
 
-from collections import defaultdict, deque
 import pandas as pd
+import numpy as np
+from collections import defaultdict, deque
 import time
 
-# === 0️⃣ Prepare point-level columns ===
-# gdf is your full GeoDataFrame (all trajectories concatenated)
-# Keep original point_id, orig_tid, uid, timestamp, geometry
-gdf = gdf.copy()
-if 'swap_count' not in gdf.columns:
-    gdf['swap_count'] = 0  # equivalent to old n_container_changes
-if 'container_id' not in gdf.columns:
-    gdf['container_id'] = -1  # will be set per container
+# --------------------------
+# 0️⃣ Prepare points
+# --------------------------
+# Assume your GeoDataFrame is called gdf, with columns:
+# ['point_id', 'tid_subid', 'uid', 'u', 'v', 'time_bin', 'geometry', 'unix_timestamp']
 
-# === 1️⃣ Initialize containers ===
+gdf['container_id'] = -1          # will be set per container
+gdf['orig_tid'] = gdf['tid_subid']
+gdf['orig_uid'] = gdf['uid']
+gdf['swap_count'] = 0
+gdf['visited_containers'] = gdf.apply(lambda _: [], axis=1)  # track path history
+
+# --------------------------
+# 1️⃣ Initialize containers
+# --------------------------
 containers = []
 for cid, (tid, df_tid) in enumerate(gdf.groupby("tid_subid", sort=False)):
     df_tid = df_tid.copy()
     df_tid['container_id'] = cid
-    df_tid['swap_count'] = 0  # n_container_changes equivalent
-
-    container = {
+    df_tid['visited_containers'] = df_tid['visited_containers'].apply(lambda x: [cid])  # first container visited
+    containers.append({
         'cid': cid,
-        'tid_subid': tid,
-        'points': df_tid.reset_index(drop=True),
-        'keys': list(zip(df_tid['u'].astype(str),
-                         df_tid['v'].astype(str),
-                         df_tid['time_bin'].astype(int))),
-        'key_to_idx': {k: i for i, k in enumerate(zip(
-            df_tid['u'].astype(str),
-            df_tid['v'].astype(str),
-            df_tid['time_bin'].astype(int)))},
-        'length': len(df_tid),
-        'uids': set(df_tid['uid'])
-    }
-    containers.append(container)
+        'tid': tid,
+        'points': df_tid,
+        'keys': list(zip(df_tid['u'].astype(str), df_tid['v'].astype(str), df_tid['time_bin'].astype(int))),
+        'key_to_idx': {k: i for i, k in enumerate(df_tid[['u','v','time_bin']].itertuples(index=False, name=None))},
+        'uids': set(df_tid['uid']),
+        'length': len(df_tid)
+    })
 
-# === 2️⃣ Build key → container mapping ===
+# --------------------------
+# 2️⃣ Build key → container mapping
+# --------------------------
 key_to_cids = defaultdict(set)
 for c in containers:
     for k in c['keys']:
         key_to_cids[k].add(c['cid'])
 
-# === 3️⃣ Initialize queue, swap memory, swap log ===
+# --------------------------
+# 3️⃣ Queue-based swapping loop
+# --------------------------
 queue = deque(range(len(containers)))
 seen_swaps = set()
 swap_log = []
@@ -105,9 +107,6 @@ swap_counter = 0
 start_time = time.time()
 points_processed_so_far = 0
 
-# --------------------------
-# 4️⃣ Queue-based swapping loop
-# --------------------------
 while queue:
     cid_a = queue.popleft()
     a = containers[cid_a]
@@ -121,39 +120,43 @@ while queue:
     for cid_b in candidate_cids:
         b = containers[cid_b]
 
-        # UID constraint: skip if any overlap
+        # UID constraint: skip if any overlap of original uids
         if not a['uids'].isdisjoint(b['uids']):
             continue
 
-        # Compute safe intersection of keys
-        common_keys = set(a['keys']).intersection(set(b['key_to_idx'].keys()))
+        # Compute common keys
+        common_keys = set(a['keys']).intersection(b['key_to_idx'].keys())
         for k in common_keys:
-            # double-check key exists in both
             if k not in a['key_to_idx'] or k not in b['key_to_idx']:
-                continue  # skip safely
+                continue
+
+            # Prevent oscillation: check path-history
+            idx_a = a['key_to_idx'][k]
+            idx_b = b['key_to_idx'][k]
+
+            tail_a = a['points'].iloc[idx_a+1:]
+            tail_b = b['points'].iloc[idx_b+1:]
+
+            if ((tail_a['visited_containers'].apply(lambda x: cid_b in x)).any() or
+                (tail_b['visited_containers'].apply(lambda x: cid_a in x)).any()):
+                continue  # skip swap if path-history violated
 
             sig = tuple(sorted([cid_a, cid_b]) + list(k))
             if sig in seen_swaps:
                 continue
             seen_swaps.add(sig)
 
-            # Split indices
-            idx_a = a['key_to_idx'][k]
-            idx_b = b['key_to_idx'][k]
-
-            # Extract tails
-            tail_a = a['points'].iloc[idx_a+1:]
-            tail_b = b['points'].iloc[idx_b+1:]
-
             # Swap tails
             new_a_points = pd.concat([a['points'].iloc[:idx_a+1], tail_b], ignore_index=True)
             new_b_points = pd.concat([b['points'].iloc[:idx_b+1], tail_a], ignore_index=True)
 
-            # Update container_id
+            # Update container_id and visited_containers
             new_a_points['container_id'] = cid_a
             new_b_points['container_id'] = cid_b
+            new_a_points.loc[idx_a+1:, 'visited_containers'] = new_a_points.loc[idx_a+1:, 'visited_containers'].apply(lambda x: x + [cid_a])
+            new_b_points.loc[idx_b+1:, 'visited_containers'] = new_b_points.loc[idx_b+1:, 'visited_containers'].apply(lambda x: x + [cid_b])
 
-            # Increment swap_count for swapped points
+            # Increment swap counts
             new_a_points.loc[idx_a+1:, 'swap_count'] += 1
             new_b_points.loc[idx_b+1:, 'swap_count'] += 1
 
@@ -161,14 +164,16 @@ while queue:
             a['points'] = new_a_points
             b['points'] = new_b_points
 
-            # Recompute keys, key_to_idx, length, and uids
+            # Recompute keys, key_to_idx, length, uids
             for container in [a, b]:
-                container['keys'] = list(zip(container['points']['u'], container['points']['v'], container['points']['time_bin']))
-                container['key_to_idx'] = {k: i for i, k in enumerate(container['keys'])}
+                container['keys'] = list(zip(container['points']['u'].astype(str),
+                                             container['points']['v'].astype(str),
+                                             container['points']['time_bin'].astype(int)))
+                container['key_to_idx'] = {k: i for i, k in enumerate(container['points'][['u','v','time_bin']].itertuples(index=False, name=None))}
                 container['length'] = len(container['points'])
                 container['uids'] = set(container['points']['uid'])
 
-            # Re-add to queue for further swaps
+            # Re-add to queue
             if cid_a not in queue:
                 queue.append(cid_a)
             if cid_b not in queue:
@@ -193,52 +198,43 @@ while queue:
                 'timestamp': time.time() - start_time
             })
 
-            # Print first swap and every 500th swap
-            if swap_counter == 1 or swap_counter % 10000 == 0:
+            # Print first swap and every 500th
+            if swap_counter == 1 or swap_counter % 500 == 0:
                 print(f"[Swap {swap_counter}] Processed ~{points_processed_so_far} points")
 
 print("\nAll swaps completed!")
 swap_log_df = pd.DataFrame(swap_log)
-#[Swap 210000] Processed ~107397243 points
+
+# --------------------------
+# 4️⃣ Container summary stats
+# --------------------------
+container_summary = []
+for c in containers:
+    df = c['points']
+    container_summary.append({
+        'container_id': c['cid'],
+        'num_orig_trajectories': df['orig_tid'].nunique(),
+        'num_unique_uids': df['orig_uid'].nunique(),
+        'avg_swaps_per_point': df['swap_count'].mean(),
+        'max_swaps': df['swap_count'].max(),
+        'num_points': len(df)
+    })
+
+container_summary_df = pd.DataFrame(container_summary)
+final_points = pd.concat([c['points'] for c in containers], ignore_index=True)
 
 
 #%%
-print(len(gdf)) #7,334,941
-print(len(swap_log_df)) # number of swaps perfomerd: 215,805
-# one tail swap between two containers at one key
-total_points_moved = swap_log_df['tail_points_a'].sum() + swap_log_df['tail_points_b'].sum()
-print(total_points_moved) #109,406,029
+# Check for path-history violations
+# 'visited_containers' is a column that stores a list/set of all containers a point has been in
+violations = final_points[final_points.apply(lambda row: row['container_id'] in row['visited_containers'][:-1], axis=1)]
 
-#%%
-print(len(containers[0]['points'])) # 266
-containers[0]['points'].orig_tid.nunique() # 19
+print(f"Number of points that violated path-history: {len(violations)}")
+if len(violations) > 0:
+    print(violations[['point_id', 'orig_tid', 'orig_uid', 'container_id', 'visited_containers']].head(10))
+else:
+    print("No violations — all points respected path-history constraint.")
 
-#%%
-print(len(gdf)) #7,334,941
-
-#for c in containers:
-#    cid = c['cid']
-#    n_points = len(c['points'])
-#    print(f"Container {cid}: {n_points} points")
-
-final_gdf = pd.concat([c['points'] for c in containers], ignore_index=True)
-print(f"Total points across all containers: {len(final_gdf)}")
-print(len(gdf)==len(final_gdf))
-
-#%% quality control: duplicate points?
-total_original = len(gdf)
-# 3️⃣ Check for duplicates
-duplicate_points = final_gdf['point_id'].duplicated().sum()
-print(f"Number of duplicate points after swaps: {duplicate_points}")
-
-# 4️⃣ Check for missing points
-missing_points = total_original - final_gdf['point_id'].nunique()
-print(f"Number of points lost: {missing_points}")
-
-# 5️⃣ Optional: list point_ids that are missing (if any)
-if missing_points > 0:
-    missing_ids = set(gdf['point_id']) - set(final_gdf['point_id'])
-    print("Missing point_ids:", missing_ids)
 
 #%% export both, final_gdf and containers and swap_log_df
 # point level results
@@ -253,7 +249,7 @@ final_gdf = pd.concat([c['points'] for c in containers], ignore_index=True)
 if 'geometry' in final_gdf.columns:
     final_gdf = gpd.GeoDataFrame(final_gdf, geometry='geometry', crs=gdf.crs)
 
-final_gdf.to_parquet(r"D:\paper3\Data\output/final_points.parquet")
+final_gdf.to_parquet(r"D:\paper3\Data\output/final_points_edgeSwap.parquet")
 
 # container-level results
 # one row per container, summarizing the points it contains after all swaps
@@ -264,22 +260,12 @@ final_gdf.to_parquet(r"D:\paper3\Data\output/final_points.parquet")
 #num_orig_trajectories	How many original trajectories contributed points
 #avg_swaps_per_point	Mean number of swaps per point in container
 #max_swaps	            Maximum swap count for any point in container
-#temporal_span	        Time difference between first and last point (optional)
-container_summary = []
-for c in containers:
-    df = c['points']
-    container_summary.append({
-        'container_id': c['cid'],
-        'tid_subid': c['tid'],
-        'num_points': len(df),
-        'num_orig_trajectories': df['orig_tid'].nunique(),
-        'avg_swaps_per_point': df['swap_count'].mean(),
-        'max_swaps': df['swap_count'].max(),
-        'temporal_span': df['timestamp'].max() - df['timestamp'].min() if 'timestamp' in df.columns else None
-    })
 
-container_summary_df = pd.DataFrame(container_summary)
-container_summary_df.to_parquet(r"D:\paper3\Data\output/container_summary_df.parquet")
+# --------------------------
+# Container summary statistics
+# --------------------------
+print(container_summary_df.head())
+container_summary_df.to_parquet(r"D:\paper3\Data\output/container_summary_edgeSwap.parquet")
 
 
 #swap-level results
@@ -294,61 +280,6 @@ container_summary_df.to_parquet(r"D:\paper3\Data\output/container_summary_df.par
 #timestamp	    Time elapsed since start of swap loop
 swap_log_df[['u', 'v', 'time_bin']] = pd.DataFrame(swap_log_df['key'].tolist(), index=swap_log_df.index)
 swap_log_df = swap_log_df.drop(columns='key')
-swap_log_df.to_parquet(r"D:\paper3\Data\output\swap_log_df.parquet", index=False)
+swap_log_df.to_parquet(r"D:\paper3\Data\output\swap_log__edgeSwap.parquet", index=False)
 
 
-
-
-
-
-#%%
-import pandas as pd
-import geopandas as gpd
-
-# --------------------------
-# 1️⃣ Combine all container points into a single GeoDataFrame
-# --------------------------
-final_gdf = pd.concat([c['points'] for c in containers], ignore_index=True)
-
-# Make sure geometry is preserved
-if 'geometry' in final_gdf.columns:
-    final_gdf = gpd.GeoDataFrame(final_gdf, geometry='geometry', crs=gdf.crs)
-
-# Optional: sort for readability
-if 'point_id' in final_gdf.columns:
-    final_gdf = final_gdf.sort_values(['container_id', 'point_id']).reset_index(drop=True)
-
-print("Final GeoDataFrame ready")
-print(final_gdf.head())
-print(f"Total points: {len(final_gdf)}")
-
-# --------------------------
-# 2️⃣ Generate per-container summary
-# --------------------------
-container_summary = []
-
-for c in containers:
-    df = c['points']
-    summary = {
-        'container_id': c['cid'],
-        'tid_subid': c['tid'],                     # original container label
-        'num_points': len(df),
-        'num_orig_trajectories': df['orig_tid'].nunique(),
-        'avg_swaps_per_point': df['swap_count'].mean(),
-        'max_swaps': df['swap_count'].max(),
-        'temporal_span': df['timestamp'].max() - df['timestamp'].min() if 'timestamp' in df.columns else None
-    }
-    container_summary.append(summary)
-
-container_summary_df = pd.DataFrame(container_summary)
-container_summary_df = container_summary_df.sort_values('container_id').reset_index(drop=True)
-
-print("Container summary ready")
-print(container_summary_df.head())
-
-# --------------------------
-# 3️⃣ Optional: Export results
-# --------------------------
-# final_gdf.to_file("final_trajectories.geojson", driver="GeoJSON")
-# final_gdf.to_csv("final_trajectories.csv", index=False)
-# container_summary_df.to_csv("container_summary.csv", index=False)
