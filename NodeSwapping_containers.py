@@ -90,81 +90,77 @@ gdf.head(100)
 # don't think I am actually using these, marking node arrival instead in code chunk below
 
 #%% working with utils file
+import os
+os.chdir(r"D:\paper3")
+
+
 import utils_NodeSwapping_containers as nsw
+from collections import deque
+import time
 
+import importlib
+importlib.reload(nsw) 
 
-#%% swap based on common v: swapping logic (v_intersection_id_swap, time_bin)
-# mark node arrivals - 26 minutes
-points_by_tid = {}
+#%%# --------------------------
+# build containers from trajectories
+# --------------------------
+print("Building containers from trajectories...")
+containers = nsw.build_containers_from_gdf(gdf, swap_mode='node')
+print(f"Built {len(containers)} containers.")
 
-for tid, df_tid in gdf.groupby("tid_subid", sort=False):
-    points_list = []
-    df_tid = df_tid.sort_values("time_bin").reset_index(drop=True)
+#%% save containers for reloading
+import pickle
+with open(r"D:\paper3\Data\filled_trajectories_list/containers_node_swapping.pkl", "wb") as f:
+    pickle.dump(containers, f)
 
-    for i, row in df_tid.iterrows():
-        # Node arrival: last point before leaving edge
-        if i == len(df_tid) - 1:
-            is_node_arrival = True
-        else:
-            next_row = df_tid.iloc[i+1]
-            is_node_arrival = (row.v != next_row.v)
+#%% --------------------------
+# multi-iteration node swaps
+# --------------------------
+import importlib
+importlib.reload(nsw) 
 
-        p = nsw.Point(
-            point_id=row.point_id,
-            u=row.u,
-            v=row.v,
-            time_bin=int(row.time_bin),
-            geometry=row.geometry,
-            timestamp=row.unix_timestamp,
-            uid=row.uid,
-            orig_tid=row.tid_subid,
-            v_is_intersection=row.v_intersection,
-            is_node_arrival=is_node_arrival
-        )
-        points_list.append(p)
+print("Running node swaps (queue-based)...")
+start_time = time.time()
+swap_log = nsw.run_node_swaps_queue_incremental(containers, print_every=500)
+print(f"Node swaps completed in {(time.time() - start_time)/60:.2f} minutes.")
+print(f"Total swaps: {len(swap_log)}")
 
-    points_by_tid[tid] = points_list
-
-#%% initialize containers
-containers = []
-for cid, (tid, points_list) in enumerate(points_by_tid.items()):
-    container = nsw.Container(
-        container_id=cid,
-        points=points_list,
-        tid_subid=tid,
-        key_set=set(),
-        swap_mode="node"
-    )
-    container.rebuild_key_set()
-    containers.append(container)
-
-#%% run node swaps
-swap_log = nsw.run_node_swaps_queue(containers)
-
-#%% export final gdf
-import geopandas as gpd
-import pandas as pd
-
-rows = []
-for c in containers:
-    for p in c.points:
-        rows.append({
-            "point_id": p.point_id,
-            "orig_tid": p.orig_tid,
-            "container_id": c.container_id,
-            "u": p.u,
-            "v": p.v,
-            "time_bin": p.time_bin,
-            "uid": p.uid,
-            "v_is_intersection": p.v_is_intersection,
-            "is_node_arrival": p.is_node_arrival,
-            "geometry": p.geometry,
-            "timestamp": p.timestamp
-        })
-
-final_gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs=gdf.crs)
-#final_gdf.to_parquet(r"D:\paper3\Data\output/final_points_nodeSwap.parquet")
-
-# Also export swap log
+# save swap log
 swap_log_df = pd.DataFrame(swap_log)
-#swap_log_df.to_parquet(r"D:\paper3\Data\output/swap_log_nodeSwap.parquet", index=False)
+swap_log_df.to_parquet(r"D:\paper3\Data\filled_trajectories_list/swap_log_node.parquet", index=False)
+
+
+
+#%%--------------------------
+# Combine points from all containers into a final GeoDataFrame
+# --------------------------
+print("Assembling final points GeoDataFrame...")
+all_points = []
+for c in containers:
+    all_points.extend(c.points)
+
+# Convert to DataFrame
+final_df = pd.DataFrame([{
+    "point_id": p.point_id,
+    "orig_tid": p.orig_tid,
+    "uid": p.uid,
+    "container_id": c.container_id,
+    "swap_mode": c.swap_mode,
+    "u": p.u,
+    "v": p.v,
+    "time_bin": p.time_bin,
+    "v_intersection_id_swap": p.v_intersection_id_swap,
+    "is_node_arrival": p.is_node_arrival,
+    "geometry": p.geometry,
+    "timestamp": p.timestamp
+} for c in containers for p in c.points])
+
+# Convert to GeoDataFrame
+final_gdf = gpd.GeoDataFrame(final_df, geometry='geometry', crs=gdf.crs)
+
+#%% save final points
+final_gdf.to_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_swapped_nodes.parquet")
+
+
+print(f"Number of points: {len(final_gdf)}")
+print(f"Number of containers: {len(containers)}")
