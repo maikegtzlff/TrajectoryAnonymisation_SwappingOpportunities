@@ -83,122 +83,146 @@ gdf_nodess_swppd.to_parquet(r"D:\paper3\output\NodeSwapping/trajectories_swapped
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Data
-data = gdf_edges_swppd.groupby('container_id')['uid'].nunique().values
-data_sorted = np.sort(data)
-cdf = np.arange(1, len(data_sorted) + 1) / len(data_sorted) * 100  # percent
+# -----------------------------
+# First dataset: gdf_edges_swppd
+# -----------------------------
+data1 = gdf_edges_swppd.groupby('container_id')['uid'].nunique().values
+data1_sorted = np.sort(data1)
+cdf1 = np.arange(1, len(data1_sorted) + 1) / len(data1_sorted) * 100
+color1 = "#fcc72d"
 
-percentiles = [50]
-perc_values = np.percentile(data_sorted, percentiles)
+# -----------------------------
+# Second dataset: gdf_nosed_swppd
+# -----------------------------
+data2 = gdf_nodess_swppd.groupby('container_id')['uid'].nunique().values
+data2_sorted = np.sort(data2)
+cdf2 = np.arange(1, len(data2_sorted) + 1) / len(data2_sorted) * 100
+color2 = "#C09003"
 
-line_color = "#fcc72d"  # new color
-
+# -----------------------------
+# Plotting
+# -----------------------------
 fig, ax = plt.subplots(figsize=(8, 5))
-
-# White background
 ax.set_facecolor('white')
 
-# Plot CDF line
-ax.plot(data_sorted, cdf, color=line_color, linewidth=2)
+# Plot CDF lines with updated legend labels (remove 'swapping')
+ax.plot(data1_sorted, cdf1, color=color1, linewidth=2, label="Edge")
+ax.plot(data2_sorted, cdf2, color=color2, linewidth=2, label="Intersection")
 
-# Add percentile points and annotation
-for p, val in zip(percentiles, perc_values):
-    y_val = p
-    x_val = val
-    ax.plot(x_val, y_val, marker='o', color=line_color, markersize=6)
-    ax.text(
-        x_val - 1,
-        y_val + 2,
-        f'{int(x_val)}',
-        color=line_color,
-        fontsize=14,
-        ha='center',
-        va='bottom',
-        fontweight='bold'
-    )
-
-# -----------------------------
-# Annotation at CDF 100%
-# -----------------------------
-x_last = data_sorted[-1]
-y_last = cdf[-1]  # 100
-ax.text(
-    x_last + 1,  # slightly to the right of last point
-    y_last,      # same height as CDF 100
-    "Edge-based swapping",
-    color=line_color,
-    fontsize=14,
-    ha='left',
-    va='center',  # vertically centered on the line
-    fontweight='bold'
-)
-
-# Set limits and ticks
+# Limits and ticks
 ax.set_xlim(left=0)
 ax.set_ylim(0, 105)
 ax.set_yticks([0, 25, 50, 75, 100])
 
-# Axis labels (titles for x and y)
-ax.set_xlabel("Number of trajectories per container", fontsize=14)  # x-axis label font size
-ax.set_ylabel("CDF (%)", fontsize=14)  # y-axis label font size
+# Axis labels
+ax.set_xlabel("Number of pseudonyms per trajectory", fontsize=14, color='#555555')
+ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
 
-# Tick labels (numbers along the axes)
-ax.tick_params(axis='x', labelsize=12)  # x-axis ticks font size
-ax.tick_params(axis='y', labelsize=12)  # y-axis ticks font size
+# Tick labels and tick lines (ggplot-style gray)
+tick_color = '#555555'
+for tick, label in zip(ax.yaxis.get_major_ticks(), ax.get_yticklabels()):
+    if label.get_text() == "50":  # 50% special case
+        tick.tick1line.set_color('red')
+        tick.tick2line.set_color('red')
+        label.set_color('red')
+    else:
+        tick.tick1line.set_color(tick_color)
+        tick.tick2line.set_color(tick_color)
+        label.set_color(tick_color)
+
+for tick, label in zip(ax.xaxis.get_major_ticks(), ax.get_xticklabels()):
+    tick.tick1line.set_color(tick_color)
+    tick.tick2line.set_color(tick_color)
+    label.set_color(tick_color)
+
+ax.tick_params(axis='x', labelsize=12)
+ax.tick_params(axis='y', labelsize=12)
 
 # Solid axes
 ax.spines['left'].set_visible(True)
-ax.spines['left'].set_color('black')
+ax.spines['left'].set_color(tick_color)
 ax.spines['left'].set_linewidth(0.8)
-
 ax.spines['bottom'].set_visible(True)
-ax.spines['bottom'].set_color('black')
+ax.spines['bottom'].set_color(tick_color)
 ax.spines['bottom'].set_linewidth(0.8)
-
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
-# Dotted grid
-ax.grid(True, which='both', linestyle=':', color='gray', alpha=0.7, zorder=0)
+# Horizontal lines at 25, 50, 75, 100 (skip 0)
+for y in [25, 50, 75, 100]:
+    if y == 50:
+        ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
+    else:
+        ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
+
 ax.set_axisbelow(True)
 
-# Labels
-ax.set_xlabel("Number of pseudonyms per trajectory")
-ax.set_ylabel("CDF (%)")
+# Legend with title and ggplot-style text color
+leg = ax.legend(title="Swapping Opportunity", fontsize=12, loc='lower right', frameon=False)
+leg.get_title().set_fontsize(12)
+leg.get_title().set_color(tick_color)
+for text in leg.get_texts():
+    text.set_color(tick_color)
 
-# export to svg
-plt.savefig(r"\\tsclient\R\paper3\Figures/cdf_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
-
+plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersection.svg", format="svg", bbox_inches="tight", dpi=300)
 plt.show()
 
+
+
 #%% look at containers with no swaps
-data = gdf_edges_swppd.groupby('container_id')['uid'].nunique().values
-n_single = np.sum(data == 1)
-n_total = len(data)
+import pandas as pd
+import numpy as np
 
-print(f"Containers with exactly 1 pseudonym: {n_single}")
-print(f"Total containers: {n_total}")
-print(f"Percentage: {n_single / n_total * 100:.2f}%")
+# -----------------------------
+# Dataset 1: Edge-swapping
+# -----------------------------
+data1 = gdf_edges_swppd.groupby('container_id')['uid'].nunique().values
+n_single_e = np.sum(data1 == 1)
+n_total_e = len(data1)
+perc_single_e = n_single_e / n_total_e * 100
 
-#%%
-# Number of unique uids per container
-uid_counts = gdf_edges_swppd.groupby('container_id')['uid'].nunique()
+# Points per container for single-uid containers
+uid_counts_e = gdf_edges_swppd.groupby('container_id')['uid'].nunique()
+single_uid_containers_e = uid_counts_e[uid_counts_e == 1].index
+point_counts_e = gdf_edges_swppd.groupby('container_id').size()
+single_uid_point_counts_e = point_counts_e.loc[single_uid_containers_e]
 
-# Containers that have exactly one pseudonym
-single_uid_containers = uid_counts[uid_counts == 1].index
+median_points_e = single_uid_point_counts_e.median()
+max_points_e = single_uid_point_counts_e.max()
 
-# Count total rows (points) per container
-point_counts = gdf_edges_swppd.groupby('container_id').size()
+# -----------------------------
+# Dataset 2: Intersection-swapping
+# -----------------------------
+data2 = gdf_nodess_swppd.groupby('container_id')['uid'].nunique().values
+n_single_i = np.sum(data2 == 1)
+n_total_i = len(data2)
+perc_single_i = n_single_i / n_total_i * 100
 
-# Keep only the single-uid containers
-single_uid_point_counts = point_counts.loc[single_uid_containers]
+# Points per container for single-uid containers
+uid_counts_i = gdf_nodess_swppd.groupby('container_id')['uid'].nunique()
+single_uid_containers_i = uid_counts_i[uid_counts_i == 1].index
+point_counts_i = gdf_nodess_swppd.groupby('container_id').size()
+single_uid_point_counts_i = point_counts_i.loc[single_uid_containers_i]
 
-median_points = single_uid_point_counts.median()
-max_points = single_uid_point_counts.max()
+median_points_i = single_uid_point_counts_i.median()
+max_points_i = single_uid_point_counts_i.max()
 
-print(f"Median number of points: {median_points}")
-print(f"Maximum number of points: {max_points}")
+#%%-----------------------------
+# Build summary table
+# -----------------------------
+summary_table = pd.DataFrame({
+    "Dataset": ["Edge-swapping", "Intersection-swapping"],
+    #"Percentage (%)": [round(perc_single_e,2), round(perc_single_i,2)],
+    #"Trajectories with no swaps": [n_single_e, n_single_i],
+    #"Total trajectories": [n_total_e, n_total_i],
+    "Trajectories with no swaps": [f"{perc_single_e:.2f}% ({n_single_e})",
+                                    f"{perc_single_i:.2f}% ({n_single_i})"],
+    "Median points": [f"{median_points_e:.0f}", f"{median_points_i:.0f}"],
+    #"Max points": [max_points_e, max_points_i]
+})
 
+from IPython.display import display, HTML
+display(HTML(summary_table.to_html(index=False)))
 
 
 
