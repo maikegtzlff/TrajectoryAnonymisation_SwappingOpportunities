@@ -129,38 +129,59 @@ print(f"Total swaps: {len(swap_log)}")
 swap_log_df = pd.DataFrame(swap_log)
 swap_log_df.to_parquet(r"D:\paper3\Data\filled_trajectories_list/swap_log_node.parquet", index=False)
 
+# 478.28 minutes run time --> 8 hours
+#Total swaps: 186212
+
+
+#%% get total points involved in swaps and average points moved per swap
+# Total points involved in all swaps
+total_points = swap_log_df['points_moved_a'].sum() + swap_log_df['points_moved_b'].sum()
+
+# Average points moved per swap
+average_points_per_swap = total_points / len(swap_log_df)
+
+print(f"Total points involved in swaps: {total_points}") #84232582
+print(f"Average points moved per swap: {average_points_per_swap:.2f}") #452.35
+
+
+#%%
+import pickle
+
+with open("D:\paper3\Data\filled_trajectories_list/containers_node_swapping_AfterSwapping.pkl", "wb") as f:
+    pickle.dump(containers, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 #%%--------------------------
 # Combine points from all containers into a final GeoDataFrame
 # --------------------------
 print("Assembling final points GeoDataFrame...")
-all_points = []
-for c in containers:
-    all_points.extend(c.points)
 
-# Convert to DataFrame
-final_df = pd.DataFrame([{
-    "point_id": p.point_id,
-    "orig_tid": p.orig_tid,
-    "uid": p.uid,
-    "container_id": c.container_id,
-    "swap_mode": c.swap_mode,
-    "u": p.u,
-    "v": p.v,
-    "time_bin": p.time_bin,
-    "v_intersection_id_swap": p.v_intersection_id_swap,
-    "is_node_arrival": p.is_node_arrival,
-    "geometry": p.geometry,
-    "timestamp": p.timestamp
-} for c in containers for p in c.points])
+from dataclasses import asdict
+
+rows = []
+
+for c in containers:
+    c_dict = asdict(c)
+    c_dict.pop("points")
+
+    for p in c.points:
+        rows.append({**c_dict, **asdict(p)})
+
+final_df = pd.DataFrame.from_records(rows)
 
 # Convert to GeoDataFrame
 final_gdf = gpd.GeoDataFrame(final_df, geometry='geometry', crs=gdf.crs)
+final_gdf.head()
 
 #%% save final points
 final_gdf.to_parquet(r"D:\paper3\Data\filled_trajectories_list/trajectories_swapped_nodes.parquet")
 
-
 print(f"Number of points: {len(final_gdf)}")
-print(f"Number of containers: {len(containers)}")
+print(f"Number of containers: {len(containers)}") #319189
+
+
+#%% look at some of the mixed points in qgis
+final_gdf[final_gdf['container_id']==1].to_parquet(r"D:\paper3\Data\output/trajectories_swapped_nodes_container1.parquet")
+
+#%%
+final_gdf[final_gdf['container_id']==0].to_parquet(r"D:\paper3\Data\output/trajectories_swapped_nodes_container0.parquet")
