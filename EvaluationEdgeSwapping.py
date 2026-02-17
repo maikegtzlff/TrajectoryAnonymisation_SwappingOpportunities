@@ -238,3 +238,164 @@ plt.show()
 
 #################################################
 #%% Figrues on longest sub-segment
+container_counts = gdf_edges_swppd.groupby('container_id').agg(
+    n_tid_subid=('tid_subid', 'nunique'),
+    n_orig_tid_subid=('orig_tid_subid', 'nunique'),
+    n_orig_tid=('orig_tid', 'nunique'),
+    n_points=('uid', 'size')
+).reset_index()
+
+print(container_counts.head())
+
+#%% longest sub-segment based on points
+import pandas as pd
+
+
+# 1️⃣ Count number of points per container & segment
+container_segment_counts = (
+    gdf_edges_swppd
+    .groupby(['container_id', 'tid_subid'])
+    .size()
+    .reset_index(name='n_points_segment')
+)
+
+# 2️⃣ For each container, find the segment with the max points
+idx_max = container_segment_counts.groupby('container_id')['n_points_segment'].idxmax()
+longest_segments = container_segment_counts.loc[idx_max].copy()
+
+# 3️⃣ Total points per container
+total_points = gdf_edges_swppd.groupby('container_id').size().rename('n_points_container')
+
+# Merge to get proportion
+longest_segments = longest_segments.merge(total_points, left_on='container_id', right_index=True)
+longest_segments['prop_longest_segment'] = longest_segments['n_points_segment'] / longest_segments['n_points_container']
+
+# Optional: select relevant columns
+longest_segments = longest_segments[['container_id', 'tid_subid', 'n_points_segment', 'n_points_container', 'prop_longest_segment']]
+
+longest_segments.head()
+
+#%%
+#%%
+import matplotlib.pyplot as plt
+
+# Apply ggplot style
+plt.style.use("ggplot")
+
+# Create figure
+fig, ax = plt.subplots(figsize=(8, 5))
+
+# Histogram (in %)
+ax.hist(
+    longest_segments['prop_longest_segment']*100, 
+    bins=30, 
+    color="#fcc72d", 
+    edgecolor="black"
+)
+
+# White background
+ax.set_facecolor("white")
+
+# Remove default grid
+ax.grid(False)
+
+# Add horizontal dotted grid lines at y-axis ticks
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+
+# Solid y-axis line
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+
+# Hide other spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.spines['bottom'].set_visible(True)
+ax.spines['bottom'].set_color('black')
+ax.spines['bottom'].set_linewidth(0.8)
+
+# Labels
+ax.set_xlabel("Trajectory points of longest segment in relation to total number of points (%)")
+ax.set_ylabel("Swapped trajectories")
+
+# Add median line and rotated annotation
+median_val = longest_segments['prop_longest_segment'].median()*100
+ax.axvline(median_val, color="black", linestyle="--", linewidth=1.5, alpha=0.5)
+
+ax.text(
+    median_val + 2,
+    ax.get_ylim()[1]*0.9,  # near top
+    f"{median_val:.0f}%",
+    color="black",
+    fontsize=12,
+    ha='center',
+    va='bottom',
+    rotation=90
+)
+
+plt.tight_layout()
+plt.show()
+
+#%% and as a boxplot (to compare swapping methods)
+import matplotlib.pyplot as plt
+
+plt.style.use("ggplot")
+
+# Convert to %
+data_percent = longest_segments['prop_longest_segment'] * 100
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+# Boxplot
+ax.boxplot(
+    data_percent,
+    patch_artist=True,
+    boxprops=dict(facecolor="#fcc72d", edgecolor="black"),
+    medianprops=dict(color="black", linewidth=2),
+    whiskerprops=dict(color="black"),
+    capprops=dict(color="black"),
+    flierprops=dict(
+        marker='o',
+        markerfacecolor="#fcc72d",
+        markeredgecolor="#fcc72d",
+        markersize=4,
+        alpha=0.01  # make outliers faint
+    )
+)
+
+# White background
+ax.set_facecolor("white")
+ax.grid(False)
+
+# Horizontal dotted grid lines at y-axis ticks
+ax.yaxis.grid(True, linestyle=":", color="gray", alpha=0.7, zorder=0)
+
+# Solid y-axis line
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+
+# Hide top and right spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Labels
+ax.set_ylabel("Trajectory points of longest segment (%)")
+ax.set_xticks([1])
+ax.set_xticklabels([r"$t_{se}$"])  # your x-label
+
+# Median annotation
+median_val = data_percent.median()
+ax.text(
+    x=1,  # box x-position
+    y=median_val,
+    s=f"{median_val:.0f}%",  # show value
+    color='black',
+    fontsize=12,
+    ha='center',
+    va='bottom',
+    alpha=0.7
+)
+
+plt.tight_layout()
+plt.show()
