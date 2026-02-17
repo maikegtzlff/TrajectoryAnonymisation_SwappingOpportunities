@@ -314,7 +314,6 @@ print(container_counts.head())
 #%% longest sub-segment based on points
 import pandas as pd
 
-
 # 1️⃣ Count number of points per container & segment
 container_segment_counts = (
     gdf_edges_swppd
@@ -340,93 +339,142 @@ longest_segments = longest_segments[['container_id', 'tid_subid', 'n_points_segm
 longest_segments.head()
 
 #%%
-#%%
-import matplotlib.pyplot as plt
-
-# Apply ggplot style
-plt.style.use("ggplot")
-
-# Create figure
-fig, ax = plt.subplots(figsize=(8, 5))
-
-# Histogram (in %)
-ax.hist(
-    longest_segments['prop_longest_segment']*100, 
-    bins=30, 
-    color="#fcc72d", 
-    edgecolor="black"
+# Step 1: Count points per container & segment (using orig_tid)
+container_segment_counts_i = (
+    gdf_nodess_swppd
+    .groupby(['container_id', 'orig_tid'])
+    .size()
+    .reset_index(name='n_points_segment')
 )
+
+# Step 2: Find the segment with max points for each container
+idx_max_i = container_segment_counts_i.groupby('container_id')['n_points_segment'].idxmax()
+longest_segments_i = container_segment_counts_i.loc[idx_max_i].copy()
+
+# Step 3: Total points per container
+total_points_i = gdf_nodess_swppd.groupby('container_id').size().rename('n_points_container')
+
+# Step 4: Merge and compute proportion
+longest_segments_i = longest_segments_i.merge(total_points_i, left_on='container_id', right_index=True)
+longest_segments_i['prop_longest_segment'] = longest_segments_i['n_points_segment'] / longest_segments_i['n_points_container']
+
+# Inspect
+print(longest_segments_i.head())
+print(longest_segments_i['prop_longest_segment'].describe())
+
+#%%
+# %%
+# %%
+# %%
+# %%
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Data as percentages
+data_list = [data_percent_edge, data_percent_intersection]
+colors = ["#fcc72d", "#C09003"]  # match boxplot colors
+custom_labels = ["Edge-swapping (T$_{se}$)", "Intersection-swapping (T$_{si}$)"]
+
+fig, ax = plt.subplots(figsize=(8,5))
+
+bins = 30
+
+# Plot histograms
+for data, color in zip(data_list, colors):
+    ax.hist(
+        data, 
+        bins=bins, 
+        color=color, 
+        edgecolor='black', 
+        alpha=0.6  # semi-transparent for overlap
+    )
+
+# Annotate medians
+for i, (data, color) in enumerate(zip(data_list, colors)):
+    median_val = np.median(data)
+    ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5, alpha=0.9)
+    ax.text(
+        median_val-1.15, 
+        ax.get_ylim()[1]*0.9,  # near top
+        f"{median_val:.0f}%", 
+        color=color, 
+        fontsize=12, 
+        ha='center', 
+        va='bottom',
+        rotation=90
+    )
 
 # White background
 ax.set_facecolor("white")
-
-# Remove default grid
 ax.grid(False)
 
-# Add horizontal dotted grid lines at y-axis ticks
-ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+# Horizontal dotted grid lines at y-axis ticks
+ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
 
-# Solid y-axis line
+# Solid x and y axes
 ax.spines['left'].set_visible(True)
 ax.spines['left'].set_color('black')
 ax.spines['left'].set_linewidth(0.8)
-
-# Hide other spines
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
 ax.spines['bottom'].set_visible(True)
 ax.spines['bottom'].set_color('black')
 ax.spines['bottom'].set_linewidth(0.8)
 
-# Labels
-ax.set_xlabel("Trajectory points of longest segment in relation to total number of points (%)")
-ax.set_ylabel("Swapped trajectories")
+# Hide top and right spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
 
-# Add median line and rotated annotation
-median_val = longest_segments['prop_longest_segment'].median()*100
-ax.axvline(median_val, color="black", linestyle="--", linewidth=1.5, alpha=0.5)
+# Axis labels
+ax.set_xlabel("Trajectory points of longest segment (%)", fontsize=14, color="#555555")
+ax.set_ylabel("Swapped trajectories", fontsize=14, color="#555555")
 
-ax.text(
-    median_val + 2,
-    ax.get_ylim()[1]*0.9,  # near top
-    f"{median_val:.0f}%",
-    color="black",
-    fontsize=12,
-    ha='center',
-    va='bottom',
-    rotation=90
-)
+# Tick labels
+tick_color = "#555555"
+ax.tick_params(axis='x', colors=tick_color, labelsize=12)
+ax.tick_params(axis='y', colors=tick_color, labelsize=12)
+
+# Legend below with custom labels
+handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
+ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False, fontsize=12)
 
 plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_medianAnnotated.svg",
+            format="svg", bbox_inches="tight", dpi=300)
 plt.show()
 
+
+
 #%% and as a boxplot (to compare swapping methods)
+# %%
+# %%
 import matplotlib.pyplot as plt
+import numpy as np
 
-plt.style.use("ggplot")
+# Data (as percentages)
+data_list = [data_percent_edge, data_percent_intersection]
+labels = [r"T$_{se}$", r"T$_{si}$"]  # subscripts
+colors = ["#fcc72d", "#C09003"]
 
-# Convert to %
-data_percent = longest_segments['prop_longest_segment'] * 100
-
-fig, ax = plt.subplots(figsize=(8, 5))
+fig, ax = plt.subplots(figsize=(6,5))
 
 # Boxplot
-ax.boxplot(
-    data_percent,
+bp = ax.boxplot(
+    data_list,
     patch_artist=True,
-    boxprops=dict(facecolor="#fcc72d", edgecolor="black"),
     medianprops=dict(color="black", linewidth=2),
     whiskerprops=dict(color="black"),
     capprops=dict(color="black"),
-    flierprops=dict(
-        marker='o',
-        markerfacecolor="#fcc72d",
-        markeredgecolor="#fcc72d",
-        markersize=4,
-        alpha=0.01  # make outliers faint
-    )
+    flierprops=dict(marker='o', markersize=4, alpha=0.7),  # base alpha
+    labels=labels
 )
+
+# Apply colors to boxes and fliers
+for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
+    patch.set_facecolor(color)
+    patch.set_edgecolor('black')
+    # Set fliers color and transparency
+    flier.set_markerfacecolor(color)
+    flier.set_markeredgecolor(color)
+    flier.set_alpha(0.01)  # more transparent
 
 # White background
 ax.set_facecolor("white")
@@ -446,25 +494,21 @@ ax.spines['right'].set_visible(False)
 
 # Labels
 ax.set_ylabel("Trajectory points of longest segment (%)")
-ax.set_xticks([1])
-ax.set_xticklabels([r"$t_{se}$"])  # your x-label
 
-# Median annotation
-median_val = data_percent.median()
-ax.text(
-    x=1,  # box x-position
-    y=median_val,
-    s=f"{median_val:.0f}%",  # show value
-    color='black',
-    fontsize=12,
-    ha='center',
-    va='bottom',
-    alpha=0.7
-)
+# Annotate medians
+for i, data in enumerate(data_list, start=1):
+    median_val = np.median(data)
+    ax.text(i, median_val, f"{median_val:.0f}%", ha='center', va='bottom', fontsize=10)
+
+# Legend below without title
+handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
+custom_labels = ["Edge-swapping (T$_{se}$)", "Intersection-swapping (T$_{si}$)"]  
+ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
 
 plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentLengthNrPoints_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_NrPoits_edgeAndNode.svg", format="svg", bbox_inches="tight", dpi=300)
 plt.show()
+
 
 
 
