@@ -36,9 +36,48 @@ gdf_edges_swppd.columns
 
 
 #%% node swapping outcomes
-gdf_nodess_swppd = gpd.read_parquet(r"D:\paper3\output\NodeSwapping/trajectories_swapped_nodes.parquet")
+node_swp_lg = pd.read_parquet(r"d:\paper3\output\NodeSwapping\swap_log_node.parquet")
+#gdf_nodess_swppd = gpd.read_parquet(r"D:\paper3\output\NodeSwapping/trajectories_swapped_nodes.parquet")
 
-#%% evaluation figures
+
+#%% load node swapping df without the one massive column
+import pyarrow.parquet as pq
+import pandas as pd
+import geopandas as gpd
+from shapely import wkb
+
+pf = pq.ParquetFile(r"D:\paper3\output\NodeSwapping/trajectories_swapped_nodes.parquet")
+
+dfs = []
+for i in range(pf.num_row_groups):
+    try:
+        # Skip key_set
+        table = pf.read_row_group(i, columns=[
+            "container_id", "tid_subid", "swap_mode", "point_id", 
+            "u","v","time_bin","geometry","timestamp",
+            "uid","orig_tid","v_intersection_id_swap","is_node_arrival"
+        ])
+        df = table.to_pandas()
+        dfs.append(df)
+    except Exception as e:
+        print(f"Failed row group {i}: {e}")
+
+full_df = pd.concat(dfs, ignore_index=True)
+# Convert WKB to Shapely
+full_df["geometry"] = full_df["geometry"].apply(wkb.loads)
+gdf_nodess_swppd = gpd.GeoDataFrame(full_df, geometry="geometry")
+gdf_nodess_swppd.set_crs("EPSG:2193", inplace=True)
+
+
+#%%
+gdf_nodess_swppd.to_parquet(r"D:\paper3\output\NodeSwapping/trajectories_swapped_nodes_NoKeySetReadable.parquet")
+
+
+
+
+
+
+#%% EVALUATION FIGURES
 #(1) CDF
 # %%
 import numpy as np
