@@ -158,3 +158,83 @@ max_points = single_uid_point_counts.max()
 
 print(f"Median number of points: {median_points}")
 print(f"Maximum number of points: {max_points}")
+
+
+
+
+
+################################################
+#%% (2) pseudonym changes by point
+import matplotlib.pyplot as plt
+
+plt.tight_layout()
+plt.show()
+plt.style.use("ggplot")
+
+fig, ax = plt.subplots(figsize=(6, 4))
+
+changes = gdf_edges_swppd['swap_count']
+
+ax.boxplot(
+    changes,
+    patch_artist=True,
+    boxprops=dict(facecolor="#fcc72d", edgecolor="black"),
+    medianprops=dict(color="black", linewidth=2),
+    whiskerprops=dict(color="black"),
+    capprops=dict(color="black"),
+    flierprops=dict(
+        marker='o',
+        markerfacecolor='#fcc72d',
+        markeredgecolor='#fcc72d',
+        markersize=4,
+        alpha=0.01  
+    )
+)
+
+# White background
+ax.set_facecolor('white')
+
+# Hide the default grid
+ax.grid(False)
+# Add horizontal dotted grid lines at y-axis ticks
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+
+# Solid y-axis line
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+
+# Hide top and right spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+ax.set_ylabel("Pseudonym changes")
+
+# Custom x-axis label
+ax.set_xticks([1])
+ax.set_xticklabels([r"$t_{se}$"])
+
+# Get the median from the data
+median_val = changes.median()
+
+# Annotate the median on top of the existing median line
+ax.text(
+    x=1,  # x-position aligned with the box
+    y=median_val,  # y-position exactly at the median
+    s=f"{int(median_val)}",  # text to display
+    color='black',  # same as median line
+    fontsize=10,
+    ha='center',  # horizontally centered over the box
+    va='bottom',   # place text just above the line
+    alpha=0.5
+)
+
+plt.tight_layout()
+plt.savefig(r"\\tsclient\R\paper3\Figures/PointsSwapped_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.show()
+
+
+
+
+#################################################
+#%% Figrues on longest sub-segment
