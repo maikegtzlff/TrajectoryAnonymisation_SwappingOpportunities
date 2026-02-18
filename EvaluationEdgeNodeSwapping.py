@@ -361,19 +361,19 @@ longest_segments_i['prop_longest_segment'] = longest_segments_i['n_points_segmen
 # Inspect
 print(longest_segments_i.head())
 print(longest_segments_i['prop_longest_segment'].describe())
+#%%
+data_percent_edge = longest_segments['prop_longest_segment'] * 100
+data_percent_intersection = longest_segments_i['prop_longest_segment'] * 100
 
 #%%
-# %%
-# %%
-# %%
-# %%
+
 import matplotlib.pyplot as plt
 import numpy as np
 
 # Data as percentages
 data_list = [data_percent_edge, data_percent_intersection]
 colors = ["#fcc72d", "#C09003"]  # match boxplot colors
-custom_labels = ["Edge-swapping (T$_{se}$)", "Intersection-swapping (T$_{si}$)"]
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]
 
 fig, ax = plt.subplots(figsize=(8,5))
 
@@ -444,14 +444,13 @@ plt.show()
 
 
 #%% and as a boxplot (to compare swapping methods)
-# %%
-# %%
+
 import matplotlib.pyplot as plt
 import numpy as np
 
 # Data (as percentages)
 data_list = [data_percent_edge, data_percent_intersection]
-labels = [r"T$_{se}$", r"T$_{si}$"]  # subscripts
+labels = [r"t$_{se}$", r"t$_{si}$"]  # subscripts
 colors = ["#fcc72d", "#C09003"]
 
 fig, ax = plt.subplots(figsize=(6,5))
@@ -502,7 +501,7 @@ for i, data in enumerate(data_list, start=1):
 
 # Legend below without title
 handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
-custom_labels = ["Edge-swapping (T$_{se}$)", "Intersection-swapping (T$_{si}$)"]  
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
 ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
 
 plt.tight_layout()
@@ -532,121 +531,93 @@ longest_segment.rename(columns={'duration_sec': 'longest_segment_sec'}, inplace=
 longest_segment['longest_segment_min'] = longest_segment['longest_segment_sec'] / 60
 longest_segment
 
-
-
+#%%
+gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'timestamp': 'unix_timestamp'})
 
 
 #%% as a boxplot
-# %%
 import matplotlib.pyplot as plt
+import numpy as np
 
-# Use ggplot style
 plt.style.use("ggplot")
+fig, ax = plt.subplots(figsize=(6,5))
 
-# Create figure
-fig, ax = plt.subplots(figsize=(8, 5))
+data_list = [data_hours_edge, data_hours_intersection]
+labels = [r"t$_{se}$", r"t$_{si}$"]
+colors = ["#fcc72d", "#C09003"]
 
-# Data: longest segment in hours
-data_hours = longest_segment['longest_segment_min'] / 60  # minutes → hours
-
-# Boxplot
-ax.boxplot(
-    data_hours,
+# Boxplot with wider boxes
+bp = ax.boxplot(
+    data_list,
     patch_artist=True,
-    boxprops=dict(facecolor="#fcc72d", edgecolor="black"),
     medianprops=dict(color="black", linewidth=2),
     whiskerprops=dict(color="black"),
     capprops=dict(color="black"),
-    flierprops=dict(
-        marker='o',
-        markerfacecolor="#fcc72d",
-        markeredgecolor="#fcc72d",
-        markersize=4,
-        alpha=0.05
-    )
+    flierprops=dict(marker='o', markersize=4, alpha=0.2),
+    labels=labels,
+    widths=0.7  # <-- make boxes wider
 )
 
-# White background
-ax.set_facecolor("white")
+# Apply colors to boxes and fliers
+for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
+    patch.set_facecolor(color)
+    patch.set_edgecolor('black')
+    flier.set_markerfacecolor(color)
+    flier.set_markeredgecolor(color)
 
-# Horizontal dotted grid
+# Axis formatting
+ax.set_ylabel("Longest segment duration (hours)")
+ax.set_facecolor("white")
 ax.grid(False)
 ax.yaxis.grid(True, linestyle=":", color="gray", alpha=0.7, zorder=0)
-
-# Solid y-axis line
 ax.spines['left'].set_visible(True)
 ax.spines['left'].set_color('black')
 ax.spines['left'].set_linewidth(0.8)
-
-# Hide top and right spines
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
-# Labels
-ax.set_ylabel("Longest segment duration (hours)")
-ax.set_xticks([1])
-ax.set_xticklabels([r"$t_{se}$"])
+# Annotate medians
+for i, data in enumerate(data_list, start=1):
+    median_val = np.median(data)
+    median_hours_int = int(median_val)
+    median_minutes = int((median_val - median_hours_int) * 60)
+    ax.text(
+        x=i,
+        y=median_val,
+        s=f"{median_hours_int}h {median_minutes}m",
+        color='black',
+        fontsize=10,
+        ha='center',
+        va='bottom',
+        alpha=0.7
+    )
 
-# Annotate median
-median_val = data_hours.median()
+# Legend below without title
+handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
+ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
 
-median_hours_int = int(median_val)
-median_minutes = int((median_val - median_hours_int) * 60)
-
-ax.text(
-    x=1,
-    y=median_val,
-    s=f"{median_hours_int}h {median_minutes}m",
-    color='black',
-    fontsize=12,
-    ha='center',
-    va='bottom',
-    alpha=0.6
-)
-
-# Quartiles
-#q1, q2, q3 = data_hours.quantile([0.25, 0.5, 0.75])
-#quartiles = {
-#    "Q1": q1,
-#    "Median": q2,
-#    "Q3": q3
-#}
-# Annotate each quartile
-#for label, val in quartiles.items():
-#    hours = int(val)
-#    minutes = int((val - hours) * 60)
-#    ax.text(
-#        x=1.05,  # slightly to the right of the box
-#        y=val,
-#        s=f"{hours}h {minutes}m",
-#        color='black',
-#        fontsize=10,
-#        ha='left',
-#        va='center',
-#        rotation=0
-#    )
 
 plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentLengthDuration_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
-
+plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_edgeAndNode.svg", format="svg", bbox_inches="tight", dpi=300)
 plt.show()
 
 
 #%% look at segment durations
-# Copy data for safety
-df = gdf_edges_swppd.copy()
+# %%
+#%%
+import matplotlib.pyplot as plt
+import numpy as np
 
-# Compute duration of each segment (tid_subid) per container
-segments = df.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min', 'max']).reset_index()
-segments['duration_sec'] = segments['max'] - segments['min']  # duration in seconds
-segments['duration_min'] = segments['duration_sec'] / 60
-segments['duration_hr'] = segments['duration_sec'] / 3600
+plt.style.use("ggplot")
 
+# Thresholds
 thresholds_min = [15, 60, 240]  # in minutes
 thresholds_label = ["<15 min", "<1 h", "<4 h"]
 
-#%% all segments in container
-# Function to compute % of segments under thresholds per container
+# -----------------------------
+# Function to compute % segments under thresholds
+# -----------------------------
 def pct_segments_under(df_seg, thresholds):
     result = []
     for cid, group in df_seg.groupby('container_id'):
@@ -657,48 +628,71 @@ def pct_segments_under(df_seg, thresholds):
         result.append(pct_dict)
     return pd.DataFrame(result)
 
-pct_all = pct_segments_under(segments, thresholds_min)
+# -----------------------------
+# Compute segment durations for edges
+# -----------------------------
+df_edges = gdf_edges_swppd.copy()
+df_edges_segments = df_edges.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min','max']).reset_index()
+df_edges_segments['duration_sec'] = df_edges_segments['max'] - df_edges_segments['min']
+df_edges_segments['duration_min'] = df_edges_segments['duration_sec'] / 60
 
-#%% longest segment in container
-# Get longest segment duration per container
-longest_seg = segments.groupby('container_id')['duration_min'].max().reset_index()
+pct_edges = pct_segments_under(df_edges_segments, thresholds_min)
 
-# Compare to thresholds
-for th in thresholds_min:
-    longest_seg[f'under_{th}min'] = (longest_seg['duration_min'] < th) * 100  # 0 or 100%
+# -----------------------------
+# Compute segment durations for intersections
+# -----------------------------
+df_nodes = gdf_nodess_swppd.copy()
+df_nodes_segments = df_nodes.groupby(['container_id', 'orig_tid'])['unix_timestamp'].agg(['min','max']).reset_index()
+df_nodes_segments['duration_sec'] = df_nodes_segments['max'] - df_nodes_segments['min']
+df_nodes_segments['duration_min'] = df_nodes_segments['duration_sec'] / 60
 
-#%%
-# %%
-# %%
-import matplotlib.pyplot as plt
-import numpy as np
+pct_nodes = pct_segments_under(df_nodes_segments, thresholds_min)
 
-plt.style.use("ggplot")
-fig, ax = plt.subplots(figsize=(8,5), facecolor="white")
+# -----------------------------
+# Prepare data for boxplot (all segments)
+# Each element is a list of values for a threshold
+data_all_edges = [pct_edges[f'under_{th}min'] for th in thresholds_min]
+data_all_nodes = [pct_nodes[f'under_{th}min'] for th in thresholds_min]
+
+# Combine for grouped boxplot: [edges_thresh1, nodes_thresh1, edges_thresh2, nodes_thresh2, ...]
+data_grouped = []
+for e, n in zip(data_all_edges, data_all_nodes):
+    data_grouped.extend([e, n])
+
+# Colors: alternate edges and nodes
+colors = ["#fcc72d", "#C09003"] * len(thresholds_min)
+
+# X-axis positions
+positions = []
+for i in range(len(thresholds_min)):
+    positions.extend([i*3+1, i*3+2])  # space between threshold groups
+
+# -----------------------------
+# Plot
+# -----------------------------
+fig, ax = plt.subplots(figsize=(10,5), facecolor="white")
 ax.set_facecolor("white")
 
-# Prepare data for boxplot (all segments)
-data_all = [pct_all[f'under_{th}min'] for th in thresholds_min]
-
-# Boxplot
 bp = ax.boxplot(
-    data_all,
+    data_grouped,
     patch_artist=True,
-    boxprops=dict(facecolor="#fcc72d", edgecolor="black"),
+    positions=positions,
+    widths=0.8,
     medianprops=dict(color="black", linewidth=2),
     whiskerprops=dict(color="black"),
     capprops=dict(color="black"),
-    flierprops=dict(
-        marker='o',
-        markerfacecolor="#fcc72d",
-        markeredgecolor="#fcc72d",
-        markersize=4,
-        alpha=0.05
-    )
+    flierprops=dict(marker='o', markersize=4, alpha=0.05),
 )
 
-# Labels
-ax.set_xticks([1,2,3])
+# Color boxes and fliers
+for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
+    patch.set_facecolor(color)
+    patch.set_edgecolor("black")
+    flier.set_markerfacecolor(color)
+    flier.set_markeredgecolor(color)
+
+# X-axis
+ax.set_xticks([1.5, 4.5, 7.5])
 ax.set_xticklabels(thresholds_label)
 ax.set_ylabel("% of segments under threshold")
 ax.set_ylim(0, 100)
@@ -714,13 +708,24 @@ ax.spines['left'].set_linewidth(0.8)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
-# Add median values on top of each box
-for i, y in enumerate([np.median(d) for d in data_all], start=1):
-    ax.text(i, y + 1, f"{y:.1f}%", ha='center', va='bottom', fontweight='bold', alpha=0.7)
+# Add median annotations for both boxes
+for i, d in zip(positions, data_grouped):
+    median_val = np.median(d)
+    ax.text(i, median_val + 1, f"{median_val:.1f}%", ha='center', va='bottom', fontweight='bold', alpha=0.7)
+
+# Custom legend
+handles = [plt.Line2D([0],[0], color="#fcc72d", lw=8),
+           plt.Line2D([0],[0], color="#C09003", lw=8)]
+labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
+
+ax.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
 
 plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentDuration_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentDuration_edges_and_nodes.svg",
+            format="svg", bbox_inches="tight", dpi=300)
 plt.show()
+
+
 
 
 
@@ -756,43 +761,28 @@ plt.show()
 
 
 #%% longest segment in terms of meters
+import movingpandas as mpd
+import pandas as pd
+
 gdf_edges_swppd.crs
 
 #%% calculate trajectory length - new trajectory
-# update timestamp in container
 # timestamp doesnn't matter for length calculaion
-
-
 # Create TrajectoryCollection
 traj_collection2 = mpd.TrajectoryCollection(gdf_edges_swppd, traj_id_col='container_id', t='unix_timestamp')
-
 # Extract trajectory lengths as a DataFrame
 lengths_df2 = pd.DataFrame([
     {'container_id': traj.id, 'container_length': traj.get_length()}
     for traj in traj_collection2.trajectories
 ])
-
 # Merge back into your original GeoDataFrame
 gdf_edges_swppd = gdf_edges_swppd.merge(lengths_df2, on='container_id', how='left')
-
 print(gdf_edges_swppd.head())
-
-
-
-
-
-
 
 #%% calculate trajectory length: trajectory segments
 # add new identifier
 gdf_edges_swppd['container_segment_tid'] = gdf_edges_swppd['container_id'].astype('str') + '_' + gdf_edges_swppd['tid_subid']
 gdf_edges_swppd[['container_segment_tid', 'container_id', 'tid_subid']]
-
-
-#%%
-import movingpandas as mpd
-import pandas as pd
-
 # Create TrajectoryCollection
 traj_collection = mpd.TrajectoryCollection(gdf_edges_swppd, traj_id_col='container_segment_tid', t='unix_timestamp')
 
@@ -804,14 +794,88 @@ lengths_df = pd.DataFrame([
 
 # Merge back into your original GeoDataFrame
 gdf_edges_swppd = gdf_edges_swppd.merge(lengths_df, on='container_segment_tid', how='left')
-
 print(gdf_edges_swppd.head())
-
 
 #%% 
 gdf_edges_swppd.to_parquet(r"d:\paper3\output\EdgeSwapping\final_points_edgeSwap_tidLength.parquet")
 
+
+#%% get length of node swapped trajectories
+import geopandas as gpd
+gdf_nodess_swppd = gpd.read_parquet(r"D:\paper3\output\NodeSwapping/trajectories_swapped_nodes_NoKeySetReadable.parquet")
+gdf_nodess_swppd.set_crs(2193, inplace=True)
+gdf_nodess_swppd.crs
+
+#%% get trajectory length
+import movingpandas as mpd
+import pandas as pd
+
+gdf_nodess_swppd_tc_t = mpd.TrajectoryCollection(gdf_nodess_swppd, traj_id_col='container_id', t='timestamp')
+
+# Extract trajectory lengths as a DataFrame
+gdf_nodess_swppd_tc_t_length = pd.DataFrame([
+    {'container_id': traj.id, 'container_length': traj.get_length()}
+    for traj in gdf_nodess_swppd_tc_t.trajectories
+])
+# Merge back into your original GeoDataFrame
+gdf_nodess_swppd = gdf_nodess_swppd.merge(gdf_nodess_swppd_tc_t_length, on='container_id', how='left')
+print(gdf_nodess_swppd.head())
+
+
+
+
+#%% get segment length
+# add new identifier
+gdf_nodess_swppd['container_segment_tid'] = gdf_nodess_swppd['container_id'].astype('str') + '_' + gdf_nodess_swppd['orig_tid']
+
+# Create TrajectoryCollection
+gdf_nodess_swppd_tc_cs = mpd.TrajectoryCollection(gdf_nodess_swppd, traj_id_col='container_segment_tid', t='timestamp')
+
+# Extract trajectory lengths as a DataFrame
+gdf_nodess_swppd_tc_cs_length = pd.DataFrame([
+    {'container_segment_tid': traj.id, 'traj_length_container_segment': traj.get_length()}
+    for traj in gdf_nodess_swppd_tc_cs.trajectories
+])
+
+# Merge back into your original GeoDataFrame
+gdf_nodess_swppd = gdf_nodess_swppd.merge(gdf_nodess_swppd_tc_cs_length, on='container_segment_tid', how='left')
+gdf_nodess_swppd.to_parquet(r"D:\paper3\output\NodeSwapping/trajectories_swapped_nodes_NoKeySetReadable_length.parquet")
+
+
+
+#%% prep node swap data 
+# Remove duplicate segments within containers
+gdf_nodes_segmentLength = gdf_nodess_swppd.drop_duplicates(subset=['container_id', 'orig_tid'])
+
+# Longest segment per container
+longest_segment_nodes = (
+    gdf_nodes_segmentLength
+    .groupby('container_id')['traj_length_container_segment']
+    .max()
+    .reset_index(name='longest_segment')
+)
+
+# Container lengths
+container_lengths_nodes = (
+    gdf_nodes_segmentLength
+    .drop_duplicates(subset=['container_id'])
+    [['container_id', 'container_length']]
+)
+
+# Merge to get fraction
+longest_fraction_nodes = longest_segment_nodes.merge(container_lengths_nodes, on='container_id')
+longest_fraction_nodes['longest_fraction'] = (
+    longest_fraction_nodes['longest_segment'] / longest_fraction_nodes['container_length']
+)
+
+print(longest_fraction_nodes.head())
+
 #%%
+gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\output\EdgeSwapping\final_points_edgeSwap_tidLength.parquet")
+
+
+
+#%% plot trajectory length in me
 # Remove duplicate segments within containers
 gdf_edges_segmentLength = gdf_edges_swppd.drop_duplicates(subset=['container_id', 'tid_subid'])
 
@@ -844,229 +908,417 @@ print(longest_fraction.head())
 
 
 
+
 #%% boxplot all segment length
 import matplotlib.pyplot as plt
 import numpy as np
 
+# -------------------
 # Prepare data in km
-segment_data_km = gdf_edges_segmentLength['traj_length_container_segment'].dropna() / 1000
-container_lengths_unique = gdf_edges_segmentLength.drop_duplicates(subset=['container_id'])
-container_data_km = container_lengths_unique['container_length'].dropna() / 1000
+# -------------------
+container_data_edge = gdf_edges_swppd.drop_duplicates(subset=['container_id'])['container_length'].dropna() / 1000
+container_data_nodes = gdf_nodess_swppd.drop_duplicates(subset=['container_id'])['container_length'].dropna() / 1000
+segment_data_edge = gdf_edges_swppd['traj_length_container_segment'].dropna() / 1000
+segment_data_nodes = gdf_nodess_swppd['traj_length_container_segment'].dropna() / 1000
 
-# Create figure with 2 subplots side by side
+colors = ['#fcc72d', '#C09003']
+labels = ['t$_{se}$', 't$_{si}$']
+
+# -------------------
+# Create figure with 2 subplots
+# -------------------
 fig, (axA, axB) = plt.subplots(1, 2, figsize=(14,6))
-
-# Remove grey background
 fig.patch.set_facecolor('white')
-axA.set_facecolor('white')
-axB.set_facecolor('white')
+for ax in (axA, axB):
+    ax.set_facecolor('white')
+    ax.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)
 
 # -------------------
-# Plot A: Container lengths
+# Plot boxplots
 # -------------------
-bpA = axA.boxplot(container_data_km, showfliers=False,
-                  patch_artist=True,
-                  boxprops=dict(facecolor='#fcc72d', color='black'),
-                  medianprops={'color': 'black', 'linewidth': 2})
-axA.set_ylabel("Length (km)", fontsize=16)
-axA.set_title("A Container Lengths", fontsize=22)
-axA.set_xticks([1])
-axA.set_xticklabels([r'$t_{se}$'], fontsize=16)
-axA.tick_params(axis='y', labelsize=12)
+datasets = [[container_data_edge, container_data_nodes],
+            [segment_data_edge, segment_data_nodes]]
+
+axes = [axA, axB]
+titles = ["A Container Lengths", "B Segment Lengths"]
+
+for ax, data, title in zip(axes, datasets, titles):
+    bp = ax.boxplot(data,
+                    patch_artist=True,
+                    showfliers=False,
+                    widths=0.8,
+                    medianprops={'color': 'black', 'linewidth': 2})
+    
+    # Apply colors
+    for patch, color in zip(bp['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_edgecolor('black')
+    
+    # Annotate medians
+    for i, d in enumerate(data, start=1):
+        median_val = np.median(d)
+        ax.text(i, median_val + 0.5, f"{median_val:.0f} km",
+                ha='center', va='bottom', fontsize=12, fontweight='bold')
+    
+    # Labels and title
+    ax.set_title(title, fontsize=22)
+    ax.set_xticks([1,2])
+    ax.set_xticklabels(labels, fontsize=16)
+    ax.tick_params(axis='y', labelsize=12)
+
+# -------------------
+# Adjust spines
+# -------------------
+# Left y-axis for axA, right y-axis for axB, no x-axis lines
+axA.spines['left'].set_visible(True)
 axA.spines['left'].set_linewidth(1.5)
 axA.spines['left'].set_color('black')
-axA.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)
+axA.spines['bottom'].set_visible(False)
+axA.spines['top'].set_visible(False)
+axA.spines['right'].set_visible(False)
 
-# Annotate median
-medianA = np.median(container_data_km)
-axA.text(0.95, medianA+18.5, f"{medianA:.0f}km", va='center', ha='left', fontsize=12, fontweight='bold', color='black')
-
-# -------------------
-# Plot B: Segment lengths
-# -------------------
-bpB = axB.boxplot(segment_data_km, showfliers=False,
-                  patch_artist=True,
-                  boxprops=dict(facecolor='#C09003', color='black'),
-                  medianprops={'color': 'black', 'linewidth': 2})
-axB.set_ylabel("Length (km)", fontsize=16)
-axB.set_title("B Segment Lengths", fontsize=22)
-axB.set_xticks([1])
-axB.set_xticklabels([r'$t_{se}$'], fontsize=16)
-axB.yaxis.tick_right()
-axB.yaxis.set_label_position("right")
-axB.tick_params(axis='y', labelsize=12)
+axB.spines['right'].set_visible(True)
 axB.spines['right'].set_linewidth(1.5)
 axB.spines['right'].set_color('black')
-axB.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)
+axB.spines['bottom'].set_visible(False)
+axB.spines['top'].set_visible(False)
+axB.spines['left'].set_visible(False)
+axB.yaxis.tick_right()
+axB.yaxis.set_label_position("right")
 
-# Annotate median
-medianB = np.median(segment_data_km)
-axB.text(0.975, medianB+0.5, f"{medianB:.0f}km", va='center', ha='left', fontsize=12, fontweight='bold', color='black')
+# -------------------
+# Add single legend below plots
+# -------------------
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]
+handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
+fig.legend(handles, custom_labels,
+           loc='upper center',
+           bbox_to_anchor=(0.5, -0.05),
+           ncol=2,
+           frameon=False,
+           labelspacing=0.3,
+           fontsize=16)
 
 plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentLengths_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentLengths_both_swapping.svg",
+            format="svg", bbox_inches="tight", dpi=300)
 plt.show()
 
 #%% and as historgams
-# %%
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Prepare data in km
-segment_data_km = gdf_edges_segmentLength['traj_length_container_segment'].dropna() / 1000
-container_lengths_unique = gdf_edges_segmentLength.drop_duplicates(subset=['container_id'])
-container_data_km = container_lengths_unique['container_length'].dropna() / 1000
+# -------------------
+# Set ggplot style globally
+# -------------------
+plt.style.use('ggplot')
+plt.rcParams.update({
+    'font.family': 'sans-serif',  # ggplot-like font
+    'font.sans-serif': 'DejaVu Sans',  # default matplotlib ggplot font
+    'axes.titleweight': 'bold',
+    'axes.titlesize': 22,
+    'axes.labelsize': 16,
+    'xtick.labelsize': 16,
+    'ytick.labelsize': 12
+})
 
-# Remove outliers using 1.5*IQR rule
+# -------------------
+# Prepare data in km
+# -------------------
+container_data_edge = gdf_edges_swppd.drop_duplicates(subset=['container_id'])['container_length'].dropna() / 1000
+container_data_nodes = gdf_nodess_swppd.drop_duplicates(subset=['container_id'])['container_length'].dropna() / 1000
+segment_data_edge = gdf_edges_swppd['traj_length_container_segment'].dropna() / 1000
+segment_data_nodes = gdf_nodess_swppd['traj_length_container_segment'].dropna() / 1000
+
+colors = ['#fcc72d', '#C09003']
+labels = ['t$_{se}$', 't$_{si}$']
+
+# -------------------
+# Create figure with 2 subplots
+# -------------------
+fig, (axA, axB) = plt.subplots(1, 2, figsize=(14,6))
+fig.patch.set_facecolor('white')
+for ax in (axA, axB):
+    ax.set_facecolor('white')
+    ax.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)
+
+# -------------------
+# Plot boxplots
+# -------------------
+datasets = [[container_data_edge, container_data_nodes],
+            [segment_data_edge, segment_data_nodes]]
+axes = [axA, axB]
+titles = ["A Trajectory Lengths (km)", "B Segment Lengths (km)"]
+
+for ax, data, title in zip(axes, datasets, titles):
+    bp = ax.boxplot(data,
+                    patch_artist=True,
+                    showfliers=False,
+                    widths=0.8,
+                    medianprops={'color': 'black', 'linewidth': 2})
+    
+    # Apply colors to boxes
+    for patch, color in zip(bp['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_edgecolor('black')
+    
+    # Annotate medians
+    for i, d in enumerate(data, start=1):
+        median_val = np.median(d)
+        ax.text(i, median_val + 0.5, f"{median_val:.0f} km",
+                ha='center', va='bottom', fontsize=12, fontweight='bold')
+    
+    # Labels and title
+    ax.set_title(title)
+    ax.set_xticks([1,2])
+    ax.set_xticklabels(labels)
+
+# -------------------
+# Adjust spines
+# -------------------
+# Left y-axis for axA, right y-axis for axB, no x-axis lines
+axA.spines['left'].set_visible(True)
+axA.spines['left'].set_linewidth(1.5)
+axA.spines['left'].set_color('black')
+axA.spines['bottom'].set_visible(False)
+axA.spines['top'].set_visible(False)
+axA.spines['right'].set_visible(False)
+
+axB.spines['right'].set_visible(True)
+axB.spines['right'].set_linewidth(1.5)
+axB.spines['right'].set_color('black')
+axB.spines['bottom'].set_visible(False)
+axB.spines['top'].set_visible(False)
+axB.spines['left'].set_visible(False)
+axB.yaxis.tick_right()
+axB.yaxis.set_label_position("right")
+
+# -------------------
+# Add single legend below plots
+# -------------------
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]
+handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
+fig.legend(handles, custom_labels,
+           loc='upper center',
+           bbox_to_anchor=(0.5, -0.05),
+           ncol=2,
+           frameon=False,
+           labelspacing=0.3,
+           fontsize=16)
+
+plt.tight_layout()
+plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentLengths_both_swapping.svg",
+            format="svg", bbox_inches="tight", dpi=300)
+plt.show()
+
+
+
+
+
+
+
+
+#%% categorizing container length
+# %%
+import pandas as pd
+
+def make_summary_table_with_median(labels, counts1, percent1, counts2, percent2,
+                                   col1_name, col2_name,
+                                   median1_km, median2_km):
+    """
+    Create a summary table with percentages and counts in parentheses,
+    and append median lengths at the bottom.
+    """
+    # Ensure all labels are included, fill missing with 0
+    counts1_full = counts1.reindex(labels, fill_value=0)
+    percent1_full = percent1.reindex(labels, fill_value=0)
+    
+    counts2_full = counts2.reindex(labels, fill_value=0)
+    percent2_full = percent2.reindex(labels, fill_value=0)
+    
+    # Format as "percent% (count)"
+    formatted1 = [f"{p:.1f}% ({c})" for p, c in zip(percent1_full, counts1_full)]
+    formatted2 = [f"{p:.1f}% ({c})" for p, c in zip(percent2_full, counts2_full)]
+    
+    # Build DataFrame
+    table = pd.DataFrame({
+        "Length category": labels,
+        col1_name: formatted1,
+        col2_name: formatted2
+    })
+    
+    # Append median row
+    table = pd.concat([
+        table,
+        pd.DataFrame({
+            "Length category": ["Median length (km)"],
+            col1_name: [f"{median1_km:.2f}"],
+            col2_name: [f"{median2_km:.2f}"]
+        })
+    ], ignore_index=True)
+    
+    return table
+
+# -------------------
+# Create summary table for container lengths
+# -------------------
+labels_order = [
+    "<10km", "10–15km", "15–20km", "20–30km", 
+    "30–50km", "50–100km", ">100km"
+]
+
+summary_table_containers = make_summary_table_with_median(
+    labels_order,
+    counts_edges, percent_edges,
+    counts_nodes, percent_nodes,
+    "Edge-swapping", "Intersection-swapping",
+    median_edges_km, median_nodes_km
+)
+
+print("Container Lengths Summary:")
+from IPython.display import display, HTML
+display(HTML(summary_table_containers.to_html(index=False)))
+
+# -------------------
+# For segment/trajectory lengths
+# -------------------
+# Categorize segments similarly
+def categorize_segments(df, name="dataset", bins=None, labels=None):
+    """
+    Categorize segment lengths into bins, compute counts, percentages, median.
+    """
+    df_unique = df.drop_duplicates(subset=['container_id']).copy()
+    df_unique['segment_km'] = df_unique['traj_length_container_segment'] / 1000
+    df_unique['length_category'] = pd.cut(df_unique['segment_km'], bins=bins, labels=labels)
+    
+    counts = df_unique['length_category'].value_counts().sort_index()
+    percent = (counts / counts.sum() * 100).round(2)
+    
+    median_km = df_unique['segment_km'].median()
+    
+    return df_unique, counts, percent, median_km
+
+# Use same bins/labels as containers
+gdf_edges_seg_unique, counts_edges_seg, percent_edges_seg, median_edges_seg_km = categorize_segments(
+    gdf_edges_swppd, name="Edge-swapping", bins=[0,10,15,20,30,50,100,float('inf')], labels=labels_order
+)
+gdf_nodes_seg_unique, counts_nodes_seg, percent_nodes_seg, median_nodes_seg_km = categorize_segments(
+    gdf_nodess_swppd, name="Intersection-swapping", bins=[0,10,15,20,30,50,100,float('inf')], labels=labels_order
+)
+
+summary_table_segments = make_summary_table_with_median(
+    labels_order,
+    counts_edges_seg, percent_edges_seg,
+    counts_nodes_seg, percent_nodes_seg,
+    "Edge-swapping", "Intersection-swapping",
+    median_edges_seg_km, median_nodes_seg_km
+)
+
+print("\nSegment Lengths Summary:")
+from IPython.display import display, HTML
+display(HTML(summary_table_segments.to_html(index=False)))
+
+
+
+
+#%% histogram
+import matplotlib.pyplot as plt
+import numpy as np
+
+# -------------------
+# Prepare data in km
+# -------------------
+container_edge = gdf_edges_swppd.drop_duplicates(subset=['container_id'])['container_length'].dropna() / 1000
+container_nodes = gdf_nodess_swppd.drop_duplicates(subset=['container_id'])['container_length'].dropna() / 1000
+
+segment_edge = gdf_edges_swppd['traj_length_container_segment'].dropna() / 1000
+segment_nodes = gdf_nodess_swppd['traj_length_container_segment'].dropna() / 1000
+
+colors = ['#fcc72d', '#C09003']
+labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]
+
+# -------------------
+# Function to remove outliers using 1.5*IQR
+# -------------------
 def remove_outliers(data):
     q1, q3 = np.percentile(data, [25, 75])
     iqr = q3 - q1
-    lower = q1 - 1.5*iqr
-    upper = q3 + 1.5*iqr
+    lower, upper = q1 - 1.5*iqr, q3 + 1.5*iqr
     return data[(data >= lower) & (data <= upper)]
 
-container_no_outliers = remove_outliers(container_data_km)
-segment_no_outliers = remove_outliers(segment_data_km)
+container_edge_no = remove_outliers(container_edge)
+container_nodes_no = remove_outliers(container_nodes)
+segment_edge_no = remove_outliers(segment_edge)
+segment_nodes_no = remove_outliers(segment_nodes)
 
-# Create figure
-fig, (axA, axB) = plt.subplots(1, 2, figsize=(14,6))
-fig.patch.set_facecolor('white')
-axA.set_facecolor('white')
-axB.set_facecolor('white')
-
+# -------------------
+# Compute consistent bins
+# -------------------
 n_bins = 20
 
-# Function to select a few ticks
-def select_ticks(bins, n_ticks=5):
-    idx = np.linspace(0, len(bins)-1, n_ticks, dtype=int)
-    return bins[idx]
+# Container bins
+container_min = min(container_edge_no.min(), container_nodes_no.min())
+container_max = max(container_edge_no.max(), container_nodes_no.max())
+container_bins = np.linspace(container_min, container_max, n_bins + 1)
+
+# Segment bins
+segment_min = min(segment_edge_no.min(), segment_nodes_no.min())
+segment_max = max(segment_edge_no.max(), segment_nodes_no.max())
+segment_bins = np.linspace(segment_min, segment_max, n_bins + 1)
 
 # -------------------
-# Histogram A
+# Create figure with 2 rows
 # -------------------
-countsA, binsA, _ = axA.hist(container_no_outliers, bins=n_bins, 
-                             weights=np.ones_like(container_no_outliers)/len(container_no_outliers)*100,
-                             color='#fcc72d', edgecolor='black')
-
-
-axA.set_title("A Container Lengths", fontsize=22)
-axA.set_xlabel("Length (km)", fontsize=16)
-axA.set_ylabel("Percentage (%)", fontsize=16)
-axA.tick_params(axis='both', labelsize=12)
-axA.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)
-axA.spines['left'].set_linewidth(1.5)
-axA.spines['left'].set_color('black')
-
-# Select 5 x-axis ticks evenly across bins
-x_ticks_A = select_ticks(binsA, n_ticks=5)
-axA.set_xticks(x_ticks_A)
-axA.set_xticklabels([f"{tick:.0f}" for tick in x_ticks_A])  # round to 0 decimals
+fig, (axC, axS) = plt.subplots(2, 1, figsize=(12, 10))
+fig.patch.set_facecolor('white')
+axC.set_facecolor('white')
+axS.set_facecolor('white')
 
 # -------------------
-# Histogram B
+# Container lengths histogram
 # -------------------
-countsB, binsB, _ = axB.hist(segment_no_outliers, bins=n_bins,
-                             weights=np.ones_like(segment_no_outliers)/len(segment_no_outliers)*100,
-                             color='#C09003', edgecolor='black')
+for data, color, label in zip([container_edge_no, container_nodes_no], colors, labels):
+    axC.hist(data, bins=container_bins, weights=np.ones_like(data)/len(data)*100,
+             color=color, edgecolor='black', alpha=0.7, label=label)
 
-axB.set_title("B Segment Lengths", fontsize=22)
-axB.set_xlabel("Length (km)", fontsize=16)
-axB.set_ylabel("Percentage (%)", fontsize=16)
-axB.tick_params(axis='both', labelsize=12)
-axB.yaxis.tick_right()
-axB.yaxis.set_label_position("right")
-axB.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)
-axB.spines['right'].set_linewidth(1.5)
-axB.spines['right'].set_color('black')
+axC.set_title("A Container Lengths", fontsize=20)
+axC.set_xlabel("Length (km)", fontsize=14)
+axC.set_ylabel("Percentage (%)", fontsize=14)
+axC.tick_params(axis='both', labelsize=12)
+axC.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)  # only horizontal
+axC.xaxis.grid(False)  # remove vertical grid lines
+axC.legend(frameon=False, fontsize=14)
 
-# Select 5 x-axis ticks evenly across bins
-x_ticks_B = select_ticks(binsB, n_ticks=5)
-axB.set_xticks(x_ticks_B)
-axB.set_xticklabels([f"{tick:.0f}" for tick in x_ticks_B])  # round to 0 decimals
+# Align x-ticks with bin edges and round up
+xticks_c = container_bins[::max(1, n_bins//8)]
+axC.set_xticks(xticks_c)
+axC.set_xticklabels([f"{int(np.ceil(x))}" for x in xticks_c])
 
-# After plotting both histograms, get the maximum y value
-ymax = max(axA.get_ylim()[1], axB.get_ylim()[1])
+# -------------------
+# Segment lengths histogram
+# -------------------
+for data, color, label in zip([segment_edge_no, segment_nodes_no], colors, labels):
+    axS.hist(data, bins=segment_bins, weights=np.ones_like(data)/len(data)*100,
+             color=color, edgecolor='black', alpha=0.7, label=label)
 
-# Set the same y-limit for both axes
-axA.set_ylim(0, ymax)
-axB.set_ylim(0, ymax)
+axS.set_title("B Segment Lengths", fontsize=20)
+axS.set_xlabel("Length (km)", fontsize=14)
+axS.set_ylabel("Percentage (%)", fontsize=14)
+axS.tick_params(axis='both', labelsize=12)
+axS.yaxis.grid(True, linestyle=':', color='grey', alpha=0.7)  # horizontal only
+axS.xaxis.grid(False)  # remove vertical lines
+axS.legend(frameon=False, fontsize=14)
 
+# Align x-ticks with bin edges and round up
+xticks_s = segment_bins[::max(1, n_bins//8)]
+axS.set_xticks(xticks_s)
+axS.set_xticklabels([f"{int(np.ceil(x))}" for x in xticks_s])
 
 plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/histogram_segmentLengths_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
-
+plt.subplots_adjust(hspace=0.35) 
+plt.savefig(r"\\tsclient\R\paper3\Figures/histograms_container_segment_both_swapping.svg",
+            format="svg", bbox_inches="tight", dpi=300)
 plt.show()
-#%%
-print("Bin width for B:", binsB[1] - binsB[0])
-print("Bin width for A:", binsA[1] - binsA[0])
-
-#%% categorizing container length
-# Convert to km
-container_lengths_unique['container_km'] = (
-    container_lengths_unique['container_length'] / 1000
-)
-
-# Categorize
-bins = [0, 10, 15, 20, 30, 50, 100, float('inf')]
-labels = [
-    "<10km",
-    "10–15km",
-    "15–20km",
-    "20–30km",
-    "30–50km",
-    "50–100km",
-    ">100km"
-]
-
-container_lengths_unique['length_category'] = pd.cut(
-    container_lengths_unique['container_km'],
-    bins=bins,
-    labels=labels
-)
-
-# Count per category
-category_counts = container_lengths_unique['length_category'].value_counts().sort_index()
-
-print(category_counts)
-#%% and in %
-# Convert to km
-container_lengths_unique['container_km'] = (
-    container_lengths_unique['container_length'] / 1000
-)
-
-# Categorize
-bins = [0, 10, 15, 20, 30, 50, 100, float('inf')]
-labels = [
-    "<10km",
-    "10–15km",
-    "15–20km",
-    "20–30km",
-    "30–50km",
-    "50–100km",
-    ">100km"
-]
-
-container_lengths_unique['length_category'] = pd.cut(
-    container_lengths_unique['container_km'],
-    bins=bins,
-    labels=labels
-)
-
-# Count per category
-category_counts = container_lengths_unique['length_category'].value_counts().sort_index()
-
-# Convert to percentage
-category_percent = (category_counts / category_counts.sum()) * 100
-
-# Optional: round for readability
-category_percent = category_percent.round(2)
-
-print(category_percent)
-
-#%%
-median_length = container_lengths_unique['container_length'].median()
-print("Median container length (meters):", median_length)
-print("Median container length (km):", median_length / 1000)
 
 
 #%% road network coverage
