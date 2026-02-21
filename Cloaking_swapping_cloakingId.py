@@ -44,10 +44,11 @@ cloakinggeom.head()
 #%% cloakinggeom has cluster_id and RANK and uid
 # --> can get rank per uid
 cloakinggeom["uid"] = cloakinggeom["cluster_id"].str.split("_").str[0]
-cloakinggeom["rank_uid"] = cloakinggeom["rank"].astype("Int64").astype(str) + "_" + cloakinggeom["uid"] 
+cloakinggeom["cloakingArea_id"] = cloakinggeom["rank"].astype("Int64").astype(str) + "_" + cloakinggeom["uid"] 
 cloakinggeom.head()
 
-
+#%%
+cloakinggeom.to_parquet(r"d:\paper3\Data\trajectories\cloakingGeom_2sigLoc_100150m.parquet")
 
 # TRAJECTORY POINTS, NOT CLOAKED, SENSITIVE POINTS, BOTH MAP-MATCHED AND RAW GEOMETRY (and MCP)
 #%% look at my trajectories: ideally before sensitive vs nan, but raw vs synthetic also works
@@ -216,6 +217,8 @@ percent_missing = missing_rank_uid / total_gap * 100
 print(f"{missing_rank_uid} rows out of {total_gap} ({percent_missing:.2f}%) "
       "have a valid gap_label but no rank_uid_firstLast_tid")
 
+#%%
+gdf_enriched.rename(columns={'rank_uid_firstLast_tid':'cloakingArea_id'}, inplace=True)
 
 #%% 
 gdf_enriched.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
