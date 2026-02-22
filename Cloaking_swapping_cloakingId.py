@@ -103,40 +103,55 @@ import numpy as np
 t = t.sort_values(['tid','tid_subid', 'point_id_t'])
 t['cloaking'] = t['cloaking'].replace({None: np.nan})
 
-import numpy as np
 
-import numpy as np
-
-import numpy as np
 
 def compute_gap_label_valid(group):
+
     group = group.copy()
     group['gap_label_valid'] = np.nan
     group['gap_label_valid'] = group['gap_label_valid'].astype(object)
 
+    # sensitive mask
     is_sensitive = group['cloaking'] == 'sensitive'
+    non_sensitive = ~is_sensitive
 
-    # previous and next cloaking
+    # trajectory structure
     cloaking_prev = is_sensitive.shift(1, fill_value=False)
     cloaking_next = is_sensitive.shift(-1, fill_value=False)
 
-    non_sensitive = ~is_sensitive
+    # -------------------------
+    # 1. STRUCTURE-BASED LABELS
+    # -------------------------
 
-    # assign 'last' if next row is sensitive
-    mask_last = non_sensitive & cloaking_next
-    group.loc[mask_last, 'gap_label_valid'] = 'last'
-
-    # assign 'first' if previous row is sensitive
+    # start of a gap
     mask_first = non_sensitive & cloaking_prev
     group.loc[mask_first, 'gap_label_valid'] = 'first'
 
-    # explicit gap_label overrides
-    group.loc[group['gap_label'] == 'last', 'gap_label_valid'] = 'last'
-    group.loc[group['gap_label'] == 'first', 'gap_label_valid'] = 'first'
+    # end of a gap
+    mask_last = non_sensitive & cloaking_next
+    group.loc[mask_last, 'gap_label_valid'] = 'last'
 
-    # assign 'first, last' if both prev and next are sensitive
+    # single-point gap
     mask_first_last = non_sensitive & cloaking_prev & cloaking_next
     group.loc[mask_first_last, 'gap_label_valid'] = 'first, last'
+
+    # -------------------------
+    # 2. ONLY USE gap_label
+    #    WHERE STRUCTURE IS
+    #    AMBIGUOUS
+    # -------------------------
+
+    no_structure = non_sensitive & ~cloaking_prev & ~cloaking_next
+
+    group.loc[no_structure & (group['gap_label'] == 'first'), 'gap_label_valid'] = 'first'
+    group.loc[no_structure & (group['gap_label'] == 'last'),  'gap_label_valid'] = 'last'
+
+    # -------------------------
+    # 3. ENSURE SENSITIVE
+    #    NEVER GET LABELLED
+    # -------------------------
+
+    group.loc[is_sensitive, 'gap_label_valid'] = np.nan
 
     return group
 
@@ -218,6 +233,7 @@ t['rank_uid_firstLast_tid'] = t['rank_uid']
 t.loc[(t['gap_label_valid'] == 'first') & t['rank_uid_firstLast_tid'].isna(), 'rank_uid_firstLast_tid'] = prev
 t.loc[(t['gap_label_valid'] == 'last') & t['rank_uid_firstLast_tid'].isna(),'rank_uid_firstLast_tid'] = next_
 
+t.head()
 
 #%% look at gap_label_pairs
 # Extract the gap number from gap_label_pair
@@ -235,9 +251,6 @@ tid = tids_multi_gap[0]
 df_tid = t[t['tid_subid'] == tid].sort_values('point_id_t')
 pd.set_option('display.max_rows', None)
 df_tid[['tid_subid','point_id_t','cloaking','gap_label_valid','gap_label_pair']]
-#%%
-pd.reset_option('display.max_rows')
-
 
 
 #%% quality control: have all gap_labels been assigned a cloaking_id (YES, because gap_label has been corrected)
