@@ -379,6 +379,8 @@ gdf['point_type'] = np.where(
     'synthetic'
 )
 
+print(gdf['point_type'].unique())
+
 # this is where synpoint_id comes from
 # # assign sequential index per odid
 # #d_syn_points_gdf["synpoint_id"] = d_syn_points_gdf.groupby("odid").cumcount() + 1 
@@ -400,26 +402,180 @@ gdf['point_type'] = np.where(
 #print(gdf.odid.notna().sum()) # also the same 523739
 #gdf.loc[gdf.odid.notna(), 'odid'].unique()
 
+#%% must upadte gap_label for gdf to include one-point sequences inbetween cloaking gaps
+print(gdf.gap_label.unique())
 
+
+import pandas as pd
+import numpy as np
+
+gdf = gdf.sort_values(['tid','tid_subid', 'point_id_t'])
+
+gdf['cloaking'] = np.where(
+    gdf['point_type'] == 'synthetic',
+    'sensitive', 
+    np.nan         
+)
+
+print(gdf['cloaking'].unique())
+
+#%%
+import numpy as np
+
+def compute_gap_label_valid(group):
+    """
+    Compute gap_label_valid for a single trajectory (group by tid).
+    Only assigns the new column; does not touch any existing columns.
+    """
+    group = group.copy(deep=False)  # shallow copy; avoids overwriting other columns
+
+    # Initialize new column as object type
+    group['gap_label_valid'] = np.nan
+    group['gap_label_valid'] = group['gap_label_valid'].astype(object)
+
+    # sensitive mask (do not modify original column!)
+    is_sensitive = group['cloaking'] == 'sensitive'
+    non_sensitive = ~is_sensitive
+
+    # trajectory structure
+    cloaking_prev = is_sensitive.shift(1, fill_value=False)
+    cloaking_next = is_sensitive.shift(-1, fill_value=False)
+
+    # -------------------------
+    # 1. STRUCTURE-BASED LABELS
+    # -------------------------
+
+    # single-point gaps first
+    mask_first_last = non_sensitive & cloaking_prev & cloaking_next
+    group.loc[mask_first_last, 'gap_label_valid'] = 'first, last'
+
+    # start of a multi-point gap
+    mask_first = non_sensitive & cloaking_prev & ~cloaking_next
+    group.loc[mask_first, 'gap_label_valid'] = 'first'
+
+    # end of a multi-point gap
+    mask_last = non_sensitive & ~cloaking_prev & cloaking_next
+    group.loc[mask_last, 'gap_label_valid'] = 'last'
+
+    # -------------------------
+    # 2. STRUCTURE-AMBIGUOUS POINTS
+    # -------------------------
+    no_structure = non_sensitive & ~cloaking_prev & ~cloaking_next
+    group.loc[no_structure & (group['gap_label'] == 'first'), 'gap_label_valid'] = 'first'
+    group.loc[no_structure & (group['gap_label'] == 'last'), 'gap_label_valid']  = 'last'
+
+    # -------------------------
+    # 3. ENSURE SENSITIVE POINTS ARE NEVER LABELED
+    # -------------------------
+    group.loc[is_sensitive, 'gap_label_valid'] = np.nan
+
+    return group[['gap_label_valid']]  # return only the new column
+
+
+# apply by tid
+gdf['gap_label_valid'] = gdf.groupby('tid', group_keys=False).apply(
+    lambda group: compute_gap_label_valid(group)
+)
+
+print(gdf['cloaking'].unique()) 
+print(gdf['gap_label_valid'].unique()) # no 'first, last" in  [nan 'last' 'first'] 
+
+#%% no single non-sensitive point sandwhiched between two sensitive points
+is_sensitive = gdf['cloaking'] == 'sensitive'
+non_sensitive = ~is_sensitive
+
+cloaking_prev = is_sensitive.shift(1, fill_value=False)
+cloaking_next = is_sensitive.shift(-1, fill_value=False)
+
+mask_first_last = non_sensitive & cloaking_prev & cloaking_next
+print(mask_first_last.sum())  # 0 
+
+# whereas t has 13565 of those sandwhiched points
+is_sensitive = t['cloaking'] == 'sensitive'
+non_sensitive = ~is_sensitive
+
+cloaking_prev = is_sensitive.shift(1, fill_value=False)
+cloaking_next = is_sensitive.shift(-1, fill_value=False)
+
+mask_first_last = non_sensitive & cloaking_prev & cloaking_next
+print(mask_first_last.sum())  # 13,565
+
+
+
+#%% comparing number of non-sensitive points in the two df
+num_missing_t = t['cloaking'].isna().sum() + (t['cloaking'] == 'nan').sum()
+num_missing_gdf = gdf['cloaking'].isna().sum() + (gdf['cloaking'] == 'nan').sum()
+
+print(f"t: {num_missing_t} points with cloaking NaN or 'nan'")      # 6,787,408 
+print(f"gdf: {num_missing_gdf} points with cloaking NaN or 'nan'")  # 6,811,202  - more points...
+
+
+
+#%% what about the 0.31% ones that I droped for gap_label final? will get dropped autonatically because of merge key
 
 #%% add cloaking geometry ids for valid gap labels
 gdf.rename(columns={'gap_label':'gap_label_invalid'}, inplace=True)
-gdf_enriched = gdf.merge(t[['uid', 'point_id', 'point_id_t', 'gap_label_valid', 'rank_uid_firstLast_tid', 'sensitivity_rank']], left_on =['uid', 'point_id', 'point_id_t', 'gap_label_invalid'], right_on =['uid', 'point_id', 'point_id_t', 'gap_label_valid'], how='left')
+gdf_enriched = gdf.merge(t[['uid', 'point_id', 'point_id_t', 'gap_label_valid_final', 'gap_label_pair_final' ,'rank_uid_firstLast_tid']], left_on =['uid', 'point_id', 'point_id_t', 'gap_label_invalid'], right_on =['uid', 'point_id', 'point_id_t', 'gap_label_valid_final'], how='left')
 gdf_enriched.head()
+
+#%%
+print(t.gap_label_valid_final.unique())
+print(gdf_enriched.gap_label_valid_final.unique()) 
+# gdf doesn't have first last either 
+print(gdf.gap_label_invalid.unique())
+
+gdf_enriched['rank_uid_firstLast_tid'].nunique()
+
+
 
 #%% look at gap labels after mereg
 # if gap_label_valid has a label but gap_label (coming from t) does not, then gap labels and point_ids do not align
 # total number of valid gap_label rows
-total_gap = gdf_enriched['gap_label_valid'].notna().sum()
+total_gap = gdf_enriched['gap_label_valid_final'].notna().sum()
 
 # number of valid gap_label rows where rank_uid_firstLast_tid is missing
-missing_rank_uid = gdf_enriched.loc[gdf_enriched['gap_label_valid'].notna() & gdf_enriched['rank_uid_firstLast_tid'].isna()].shape[0]
+missing_rank_uid = gdf_enriched.loc[gdf_enriched['gap_label_valid_final'].notna() & gdf_enriched['rank_uid_firstLast_tid'].isna()].shape[0]
 
 # percentage
 percent_missing = missing_rank_uid / total_gap * 100
 
 print(f"{missing_rank_uid} rows out of {total_gap} ({percent_missing:.2f}%) "
       "have a valid gap_label but no rank_uid_firstLast_tid")
+#0 rows out of 65956 (0.00%) have a valid gap_label but no rank_uid_firstLast_tid
+
+
+
+#%% why include gap_labels in merge key??
+gdf_enriched2 = gdf.merge(t[['uid', 'point_id', 'point_id_t', 'gap_label_valid_final', 'gap_label_pair_final' ,'rank_uid_firstLast_tid']], left_on =['uid', 'point_id', 'point_id_t'], right_on =['uid', 'point_id', 'point_id_t'], how='left')
+gdf_enriched2.head()
+
+#%%
+print(t.gap_label_valid_final.unique())
+print(gdf_enriched2.gap_label_valid_final.unique()) # now includes first, last
+# gdf doesn't have first last either 
+print(gdf_enriched2.gap_label_invalid.unique()) 
+
+print(gdf_enriched2['rank_uid_firstLast_tid'].nunique()) # now a few more (228, instad of 186)
+
+#%%
+#%% look at gap labels after mereg
+# if gap_label_valid has a label but gap_label (coming from t) does not, then gap labels and point_ids do not align
+# total number of valid gap_label rows
+total_gap = gdf_enriched2['gap_label_valid_final'].notna().sum()
+
+# number of valid gap_label rows where rank_uid_firstLast_tid is missing
+missing_rank_uid = gdf_enriched2.loc[gdf_enriched2['gap_label_valid_final'].notna() & gdf_enriched2['rank_uid_firstLast_tid'].isna()].shape[0]
+
+# percentage
+percent_missing = missing_rank_uid / total_gap * 100
+
+print(f"{missing_rank_uid} rows out of {total_gap} ({percent_missing:.2f}%) "
+      "have a valid gap_label but no rank_uid_firstLast_tid")
+# now 0 rows out of 113919 (0.00%) have a valid gap_label but no rank_uid_firstLast_tid
+# instead of #0 rows out of 65956 (0.00%) have a valid gap_label but no rank_uid_firstLast_tid
+
+
+
 
 #%%
 gdf_enriched.rename(columns={'rank_uid_firstLast_tid':'cloakingArea_id'}, inplace=True)
