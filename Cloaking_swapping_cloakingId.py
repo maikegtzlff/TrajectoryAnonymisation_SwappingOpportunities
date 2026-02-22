@@ -50,6 +50,8 @@ cloakinggeom.head()
 #%%
 cloakinggeom.to_parquet(r"d:\paper3\Data\trajectories\cloakingGeom_2sigLoc_100150m.parquet")
 
+
+
 # TRAJECTORY POINTS, NOT CLOAKED, SENSITIVE POINTS, BOTH MAP-MATCHED AND RAW GEOMETRY (and MCP)
 #%% look at my trajectories: ideally before sensitive vs nan, but raw vs synthetic also works
 import geopandas as gpd
@@ -170,8 +172,6 @@ tid_t[['tid_subid','point_id_t','gap_label','cloaking','gap_label_valid']]
 
 #%% there can be consecutive gap labels, i.e., one point after leaving a cloaing area,
 # next point is the last one before re-enetering the cloaking area
-
-
 def assign_gap_label_pair(df):
     df = df.copy()
     
@@ -266,29 +266,100 @@ pd.set_option('display.max_rows', None)
 tid_t = t[t['tid_subid'] == '20190104_47304939bf6162effb1f812959fb20398a098145_13'].copy()
 tid_t[['point_id_t','cloaking', 'gap_label_pair', 'rank_uid', 'rank_uid_firstLast_tid']]
 
-#%% look at gap_label_pairs
-# Extract the gap number from gap_label_pair
-t['gap_num'] = t['gap_label_pair'].str.extract(r'_(\d+)$').astype(float)
+#%% save to parquet
+# Convert all tuple/object columns to strings if necessary
+for col in t.columns:
+    if t[col].dtype == 'object':
+        # Only convert if there is a tuple inside
+        if t[col].apply(lambda x: isinstance(x, tuple)).any():
+            t[col] = t[col].apply(lambda x: str(x) if x is not None else None)
 
-# Count how many unique gap numbers per tid_subid
-gap_counts = t.groupby('tid_subid')['gap_num'].nunique()
+#%% 
+t.to_parquet(r"d:\paper3\Data\trajectories\mapmatched_150kmh_onOsmid_CloakingGeomIDPairs.parquet")
 
-# Select tid_subid with more than 1 gap
-tids_multi_gap = gap_counts[gap_counts > 1].index
+#%%
+import geopandas as gpd
+t = gpd.read_parquet(r"d:\paper3\Data\trajectories\mapmatched_150kmh_onOsmid_CloakingGeomIDPairs.parquet")
 
-# Pick the first one
-tid = tids_multi_gap[0]
+#%% nan must be np nan and not strings
+import numpy as np
+import pandas as pd
 
-df_tid = t[t['tid_subid'] == tid].sort_values('point_id_t')
-pd.set_option('display.max_rows', None)
-df_tid[['tid_subid','point_id_t','cloaking','gap_label_valid','gap_label_pair']]
+def fix_missing(x):
+    # Keep tuples as is
+    if isinstance(x, tuple):
+        return x
+    # Convert anything that is None, pd.NA, or a placeholder string to np.nan
+    if x is pd.NA or x is None:
+        return np.nan
+    if isinstance(x, str) and x.lower() in ['<NA>', 'nan', 'none', '']:
+        return np.nan
+    return x
+
+t['rank_uid_firstLast_tid'] = t['rank_uid_firstLast_tid'].apply(fix_missing)
+
+print(t['rank_uid_firstLast_tid'].isna().sum())
+t['rank_uid_firstLast_tid'].head()
 
 
+#%%
 #%% quality control: have all gap_labels been assigned a cloaking_id (YES, because gap_label has been corrected)
 total_gap = t['gap_label_valid'].notna().sum()
 missing_rank_uid = t.loc[t['gap_label_valid'].notna() & t['rank_uid_firstLast_tid'].isna()].shape[0]
 percent_missing = missing_rank_uid / total_gap * 100
 print(f"{missing_rank_uid} rows out of {total_gap} ({percent_missing:.2f}%) have a valid gap_label but no rank_uid_firstLast_tid")
+# 354 rows out of 114273 (0.31%) have a valid gap_label but no rank_uid_firstLast_tid
+
+#%%
+# Only keep the columns we need for this check
+cols = ['tid', 'tid_subid', 'point_id_t', 'gap_label_valid', 'rank_uid_firstLast_tid']
+t_small = t[cols].copy()
+t_small = t_small.sort_values(['tid_subid', 'point_id_t']).reset_index()
+
+# mask for missing rank_uid_firstLast_tid
+mask_missing = t_small['gap_label_valid'].notna() & t_small['rank_uid_firstLast_tid'].isna()
+
+# indices of missing rows
+missing_idx = t_small.index[mask_missing].to_numpy()
+
+
+# indices of previous rows
+prev_idx = missing_idx - 1
+# indices of next rows
+next_idx = missing_idx + 1
+
+# filter out-of-bounds indices
+prev_idx = prev_idx[prev_idx >= 0]
+next_idx = next_idx[next_idx < len(t_small)]
+
+# only keep neighbors with same tid_subid
+prev_idx = prev_idx[t_small.loc[prev_idx, 'tid'].values == t_small.loc[prev_idx + 1, 'tid'].values]
+next_idx = next_idx[t_small.loc[next_idx, 'tid'].values == t_small.loc[next_idx - 1, 'tid'].values]
+
+import pandas as pd
+all_idx = pd.Index(missing_idx).union(prev_idx).union(next_idx)
+inspect_mask = t.index.isin(t_small.loc[all_idx, 'index'])
+t.loc[inspect_mask, :].head(50)
+
+#%%
+t.loc[inspect_mask, :].sensitivity_rank.unique() # all nan, no matter whetehr looking at tid or tid_subid
+
+#%% 354 rows out of 114273 (0.31%) have a valid gap_label but no rank_uid_firstLast_tid
+# I suspect that all of these gap labels have been assigned incorrectly - so ignore them
+
+t['gap_label_valid_final'] = t['gap_label_valid'].where(t['rank_uid_firstLast_tid'].notna(), np.nan)
+t['gap_label_pair_final']  = t['gap_label_pair'].where(t['rank_uid_firstLast_tid'].notna(), np.nan)
+
+
+total_gap = t['gap_label_valid_final'].notna().sum()
+missing_rank_uid = t.loc[t['gap_label_valid_final'].notna() & t['rank_uid_firstLast_tid'].isna()].shape[0]
+percent_missing = missing_rank_uid / total_gap * 100
+print(f"{missing_rank_uid} rows out of {total_gap} ({percent_missing:.2f}%) have a valid gap_label_final but no rank_uid_firstLast_tid")
+#0 rows out of 113919 (0.00%) have a valid gap_label_final but no rank_uid_firstLast_tid
+
+#%%
+t.to_parquet(r"d:\paper3\Data\trajectories\mapmatched_150kmh_onOsmid_CloakingGeomIDPairs_GapLabelsFinal.parquet")
+
 
 
 #%% (2) # add cloaking geom id to trajectory gdf used for swapping (must seperate synthetic points before swapping)
