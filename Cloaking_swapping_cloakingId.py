@@ -223,17 +223,48 @@ tid_t[['tid_subid','point_id_t','gap_label','cloaking','gap_label_valid', 'gap_l
 #%% adding cloaking geom id to gap_label
 # extend the values of rank_uid to one row above and one below aka last and first
 # staying within same tid
-t = t.sort_values(['tid', 'tid_subid', 'point_id_t']) 
+# sort first
+t = t.sort_values(['tid', 'tid_subid', 'point_id_t'])
+
+# group
 g = t.groupby('tid')
 
+# prev / next rank_uid within tid
 prev = g['rank_uid'].shift(1)
 next_ = g['rank_uid'].shift(-1)
 
-t['rank_uid_firstLast_tid'] = t['rank_uid']
-t.loc[(t['gap_label_valid'] == 'first') & t['rank_uid_firstLast_tid'].isna(), 'rank_uid_firstLast_tid'] = prev
-t.loc[(t['gap_label_valid'] == 'last') & t['rank_uid_firstLast_tid'].isna(),'rank_uid_firstLast_tid'] = next_
+# start fresh
+t['rank_uid_firstLast_tid'] = np.nan
 
-t.head()
+# masks
+mask_first = t['gap_label_valid'] == 'first'
+mask_last  = t['gap_label_valid'] == 'last'
+mask_both  = t['gap_label_valid'] == 'first, last'
+
+# assign values
+t.loc[mask_first, 'rank_uid_firstLast_tid'] = prev[mask_first]
+t.loc[mask_last,  'rank_uid_firstLast_tid'] = next_[mask_last]
+
+# for 'first, last' assign a tuple (prev, next_)
+both_values = pd.Series(
+    list(zip(prev[mask_both], next_[mask_both])),
+    index=t.index[mask_both]
+)
+t.loc[mask_both, 'rank_uid_firstLast_tid'] = both_values
+
+#%% simplify tuples
+mask_both = t['gap_label_valid'] == 'first, last'
+
+def simplify_tuple(x):
+    if isinstance(x, tuple):
+        return x[0] if x[0] == x[1] else x
+    return x
+
+t.loc[mask_both, 'rank_uid_firstLast_tid'] = t.loc[mask_both, 'rank_uid_firstLast_tid'].apply(simplify_tuple)
+#%%
+pd.set_option('display.max_rows', None)
+tid_t = t[t['tid_subid'] == '20190104_47304939bf6162effb1f812959fb20398a098145_13'].copy()
+tid_t[['point_id_t','cloaking', 'gap_label_pair', 'rank_uid', 'rank_uid_firstLast_tid']]
 
 #%% look at gap_label_pairs
 # Extract the gap number from gap_label_pair
