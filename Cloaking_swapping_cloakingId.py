@@ -100,40 +100,108 @@ t.loc[mask, "rank_uid"] = (
 import pandas as pd
 import numpy as np
 
-# ensure sorted by tid and some ordering column, e.g., point_id_t
 t = t.sort_values(['tid','tid_subid', 'point_id_t'])
+t['cloaking'] = t['cloaking'].replace({None: np.nan})
 
 import numpy as np
 
-# ensure ordering and missing values handled
-t['cloaking'] = t['cloaking'].replace({None: np.nan})
+import numpy as np
 
-def compute_gap_label_valid_shift(group):
+import numpy as np
+
+def compute_gap_label_valid(group):
     group = group.copy()
-    group['gap_label_valid'] = np.nan  # default
-    
-    # previous and next cloaking for the group
-    group['cloaking_next'] = group['cloaking'].shift(-1)
-    group['cloaking_prev'] = group['cloaking'].shift(1)
-    
-    # 'last' -> next row cloaking is 'sensitive'
-    mask_last = (group['gap_label'] == 'last') & (group['cloaking_next'] == 'sensitive')
+    group['gap_label_valid'] = np.nan
+    group['gap_label_valid'] = group['gap_label_valid'].astype(object)
+
+    is_sensitive = group['cloaking'] == 'sensitive'
+
+    # previous and next cloaking
+    cloaking_prev = is_sensitive.shift(1, fill_value=False)
+    cloaking_next = is_sensitive.shift(-1, fill_value=False)
+
+    non_sensitive = ~is_sensitive
+
+    # assign 'last' if next row is sensitive
+    mask_last = non_sensitive & cloaking_next
     group.loc[mask_last, 'gap_label_valid'] = 'last'
-    
-    # 'first' -> previous row cloaking is 'sensitive'
-    mask_first = (group['gap_label'] == 'first') & (group['cloaking_prev'] == 'sensitive')
+
+    # assign 'first' if previous row is sensitive
+    mask_first = non_sensitive & cloaking_prev
     group.loc[mask_first, 'gap_label_valid'] = 'first'
-    
-    # drop helper columns
-    group = group.drop(columns=['cloaking_next','cloaking_prev'])
-    
+
+    # explicit gap_label overrides
+    group.loc[group['gap_label'] == 'last', 'gap_label_valid'] = 'last'
+    group.loc[group['gap_label'] == 'first', 'gap_label_valid'] = 'first'
+
+    # assign 'first, last' if both prev and next are sensitive
+    mask_first_last = non_sensitive & cloaking_prev & cloaking_next
+    group.loc[mask_first_last, 'gap_label_valid'] = 'first, last'
+
     return group
 
 # apply by tid
-t = t.groupby('tid', group_keys=False).apply(compute_gap_label_valid_shift)
-pd.set_option('display.max_colwidth', None)     
-t[['tid_subid','point_id_t','gap_label','cloaking','gap_label_valid']].head(50)
+t = t.groupby('tid', group_keys=False).apply(compute_gap_label_valid)
+print(t.gap_label_valid.unique()) 
 
+
+#%% lok at this tid 20190104_47304939bf6162effb1f812959fb20398a098145_13
+pd.set_option('display.max_rows', None)
+tid_t = t[t['tid_subid'] == '20190104_47304939bf6162effb1f812959fb20398a098145_13'].copy()
+tid_t[['tid_subid','point_id_t','gap_label','cloaking','gap_label_valid']]
+
+#pd.reset_option('display.max_rows')
+
+
+#%% there can be consecutive gap labels, i.e., one point after leaving a cloaing area,
+# next point is the last one before re-enetering the cloaking area
+
+
+def assign_gap_label_pair(df):
+    df = df.copy()
+    
+    def pair_within_group(group):
+        group = group.copy()
+        pair_labels = [np.nan] * len(group)
+        counter = 1
+
+        for i, val in enumerate(group['gap_label_valid']):
+            if pd.isna(val):
+                continue
+
+            # single 'last'
+            if val == 'last':
+                pair_labels[i] = f'last_{counter}'
+
+            # single 'first'
+            elif val == 'first':
+                pair_labels[i] = f'first_{counter}'
+                counter += 1  # increment counter after closing the pair
+
+            # 'first, last' → assign first to current counter, last to next counter
+            elif val in ['first, last', 'first,last', 'first / last']:
+                first_num = f'first_{counter}'
+                counter += 1
+                last_num = f'last_{counter}'
+                pair_labels[i] = f'{first_num}, {last_num}'
+
+            else:
+                raise ValueError(f"Unexpected gap_label_valid: {val}")
+
+        group['gap_label_pair'] = pair_labels
+        return group
+
+    return df.groupby('tid_subid', group_keys=False).apply(pair_within_group)
+
+t = assign_gap_label_pair(t)
+
+#%%
+print(t.gap_label_pair.unique())
+print(t.gap_label_valid.unique())
+
+pd.set_option('display.max_rows', None)
+tid_t = t[t['tid_subid'] == '20190104_47304939bf6162effb1f812959fb20398a098145_13'].copy()
+tid_t[['tid_subid','point_id_t','gap_label','cloaking','gap_label_valid', 'gap_label_pair']]
 
 
 
@@ -149,6 +217,27 @@ next_ = g['rank_uid'].shift(-1)
 t['rank_uid_firstLast_tid'] = t['rank_uid']
 t.loc[(t['gap_label_valid'] == 'first') & t['rank_uid_firstLast_tid'].isna(), 'rank_uid_firstLast_tid'] = prev
 t.loc[(t['gap_label_valid'] == 'last') & t['rank_uid_firstLast_tid'].isna(),'rank_uid_firstLast_tid'] = next_
+
+
+#%% look at gap_label_pairs
+# Extract the gap number from gap_label_pair
+t['gap_num'] = t['gap_label_pair'].str.extract(r'_(\d+)$').astype(float)
+
+# Count how many unique gap numbers per tid_subid
+gap_counts = t.groupby('tid_subid')['gap_num'].nunique()
+
+# Select tid_subid with more than 1 gap
+tids_multi_gap = gap_counts[gap_counts > 1].index
+
+# Pick the first one
+tid = tids_multi_gap[0]
+
+df_tid = t[t['tid_subid'] == tid].sort_values('point_id_t')
+pd.set_option('display.max_rows', None)
+df_tid[['tid_subid','point_id_t','cloaking','gap_label_valid','gap_label_pair']]
+#%%
+pd.reset_option('display.max_rows')
+
 
 
 #%% quality control: have all gap_labels been assigned a cloaking_id (YES, because gap_label has been corrected)
