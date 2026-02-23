@@ -860,4 +860,184 @@ gdf_one_tid = gdf_enriched2.loc[gdf_enriched2['tid_subid'] == example_tid]
 gdf_one_tid[['point_id_t_final', 'point_type', 'gap_label_pair_final_syn_fixed', 'cloakingArea_id_syn_fixed']]
 
 
+
+
+#%% First step: add time bins
+# timebins
+gdf_enriched2["hour"] = (
+    pd.to_datetime(gdf_enriched2["unix_timestamp"], unit="s", utc=True)
+      .dt.tz_convert("Pacific/Auckland")
+      .dt.hour
+)
+
+gdf_enriched2["time_bin"] = np.where(
+    (gdf_enriched2["hour"] >= 7) & (gdf_enriched2["hour"] < 9),
+    "morning peak",
+    np.where(
+        (gdf_enriched2["hour"] >= 9) & (gdf_enriched2["hour"] < 16),
+        "flat peak",
+        np.where(
+            (gdf_enriched2["hour"] >= 16) & (gdf_enriched2["hour"] < 20),
+            "evening peak",
+            "night time"
+        )
+    )
+)
+
+gdf_enriched2.time_bin.unique()
+
 #%%
+import pandas as pd
+mapping = {
+    'night time': 0,
+    'morning peak': 1,
+    'flat peak': 2,
+    'evening peak': 3,
+}
+
+gdf_enriched2['time_bin_label'] = gdf_enriched2['time_bin']
+gdf_enriched2['time_bin'] = gdf_enriched2['time_bin'].map(mapping)
+
+missing = gdf_enriched2['time_bin'].isna().any()
+if missing:
+    raise ValueError("Unexpected time_bin value found")
+
+gdf_enriched2.time_bin.unique()
+
+#%%
+gdf_enriched2.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+#%%
+import geopandas as gpd
+gdf_enriched2 = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+
+
+#%% Second step: assign non-sensitive cloaking geometries to to points 
+# if cloaking geometries overlap one point might be assigned multiple to them non-sensitive cloaking geom
+cloakinggeom = gpd.read_parquet(r"d:\paper3\Data\trajectories\cloakingGeom_2sigLoc_100150m.parquet")
+cloakinggeom.head()
+
+#%% check geom is set to cloaking geometry
+# 'cloaking_geometry'
+# onliy interested in 
+#'cloakingArea_id' # = rank + uid
+# and cloaking range plus actual cloaking distance
+#'og_cloaking_range'
+#'cloaking_distance_m'
+
+cloakinggeom = cloakinggeom[['cloakingArea_id', 'uid','cloaking_geometry', 'og_cloaking_range', 'cloaking_distance_m']].copy()
+print(cloakinggeom.crs)
+cloakinggeom.geometry
+
+#%%
+cloakinggeom = cloakinggeom.rename(columns={"cloakingArea_id": "NonSensitive_CloakingAreaId"})
+gdf_enriched2 = gdf_enriched2.rename(columns={"cloakingArea_id_syn_fixed": "Sensitive_CloakingAreaId"})
+
+
+
+
+#%% must reset index,so sort first
+gdf_enriched2 = gdf_enriched2.sort_values(['tid_subid', 'point_id_t_final']).reset_index(drop=True)
+gdf_enriched2 = gdf_enriched2.reset_index(drop=False).rename(columns={'index': 'row_uid'})
+gdf_enriched2.head()
+
+#%% 
+# (1) only assign raw points to cloaking geometries for swapping purposes
+raw_pts = gdf_enriched2[gdf_enriched2['point_type'] != 'synthetic'].copy()
+# (2) ensure same crs and spatial index
+raw_pts = raw_pts.to_crs(cloakinggeom.crs)
+
+#%% build spatial index using stree
+from collections import defaultdict
+hits = defaultdict(list)
+for poly_idx, poly in cloakinggeom.iterrows():
+    possible_idxs = raw_pts.sindex.query(poly['cloaking_geometry'], predicate='intersects')
+    for idx in possible_idxs:
+        hits[raw_pts.iloc[idx]['row_uid']].append(poly['NonSensitive_CloakingAreaId'])
+
+# index-based mapping 
+gdf_enriched2['intersecting_cloaking_ids'] = gdf_enriched2['row_uid'].map(lambda uid: hits.get(uid, []))
+gdf_enriched2['intersects_cloaking'] = gdf_enriched2['intersecting_cloaking_ids'].apply(lambda x: len(x) > 0)
+
+
+
+
+#%%
+gdf_enriched2.head()
+
+
+
+#%% have synthetic points been handled correctly?
+gdf_enriched2.intersects_cloaking.value_counts()
+#False    6,988,796
+#True      346,145
+# most points actually intersect with a cloaking geometry 
+# synthetic points cannot intersect with a cloaking geometry
+
+#%%
+print(gdf_enriched2.point_type.unique()) #['raw' 'synthetic']
+print(gdf_enriched2['intersects_cloaking'].unique()) # only [ True False]
+print(gdf_enriched2['intersects_cloaking'].isna().any()) # False
+gdf_enriched2[gdf_enriched2['intersects_cloaking'] == False].point_type.unique() # ['raw', 'synthetic']
+
+#%%
+print(gdf_enriched2[gdf_enriched2['point_type'] == 'synthetic'][['point_type', 'intersecting_cloaking_ids', 'intersects_cloaking']].head())
+print(gdf_enriched2[gdf_enriched2['point_type'] == 'synthetic']['intersects_cloaking'].unique()) # [False] - good
+
+#%% export file
+gdf_enriched2.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas.parquet")
+
+
+#%% look at cloaking geom and point assignment in Q, do they align?
+# select points with exactly 1 polygon in the list
+single_poly_points = gdf_enriched2[gdf_enriched2['intersecting_cloaking_ids'].apply(len) == 1]
+# inspect the first few in Q
+single_poly_points.head().to_parquet(r'D:\paper3\Data\tetsing/t_assignedCloakingArea_test.parquet')
+# points are assigned the correct cloaking geom (based on map-matched geometr)
+
+#%% clean up df and export before swapping starts
+# ensure these are what I want
+# Sensitive_CloakingAreaId
+# gap_label_pair_final_syn_fixed
+import numpy as np
+
+# 'HeadTail' column
+gdf_enriched2['HeadTail'] = np.where(
+    gdf_enriched2['gap_label_pair_final_syn_fixed'].str.startswith('last_'),
+    'HeadEnd',
+    np.nan
+)
+
+# 'HeadEndCloakingAreaId' column
+gdf_enriched2['HeadEndCloakingAreaId'] = np.where(
+    gdf_enriched2['HeadTail'] == 'HeadEnd',
+    gdf_enriched2['Sensitive_CloakingAreaId'],  
+    np.nan
+)
+
+gdf_enriched2[gdf_enriched2['HeadTail'] == 'HeadEnd'].head()
+
+
+#%% reduce coloumns
+cols_to_drop = ['unix_timestamp', 'gap_label_invalid', 'syn_point_id_t', 'syn_point_id_t', 'synpoint_id', 
+                'timestamp_ok', 'block', 'overlap_time_gap_sec',
+                'gap_label_valid', 'gap_label_valid_final', 'gap_label_pair_final', 'gap_label_pair_final_syn',
+                'cloakingArea_id', 'cloakingArea_id_syn']  # replace with your column names
+gdf_enriched2 = gdf_enriched2.drop(columns=cols_to_drop)
+gdf_enriched2.head()
+
+#%% replace empty lists with nan
+# replace empty lists with np.nan
+gdf_enriched2['intersecting_cloaking_ids'] = gdf_enriched2['intersecting_cloaking_ids'].apply(
+    lambda x: np.nan if len(x) == 0 else x
+)
+
+gdf_enriched2.head()
+
+#%%
+gdf_enriched2.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet")
+# columns for cloaking based swapping
+# intersecting_cloaking_ids - cloaking areas passing only
+# HeadEndCloakingAreaId - upcoming cloaking area
+# HeadTail - point to split tid before cloaking area
+# then delete all syntithic points until first raw point
+# this is the first point of the tail
