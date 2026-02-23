@@ -578,7 +578,286 @@ print(f"{missing_rank_uid} rows out of {total_gap} ({percent_missing:.2f}%) "
 
 
 #%%
-gdf_enriched.rename(columns={'rank_uid_firstLast_tid':'cloakingArea_id'}, inplace=True)
+gdf_enriched2.rename(columns={'rank_uid_firstLast_tid':'cloakingArea_id'}, inplace=True)
 
 #%% 
-gdf_enriched.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+gdf_enriched2.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+
+#%%
+import geopandas as gpd
+gdf_enriched2 = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+
+#%% sort by tid_subid and point_id_t, then reset index
+gdf_enriched2 = gdf_enriched2.sort_values(by=['tid_subid', 'point_id_t']).reset_index(drop=True)
+gdf_enriched2.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+
+#%% look at gap labels
+import pandas as pd
+import numpy as np
+
+# Filter tid_subid groups that have at least one non-NaN cloakingArea_id
+valid_tid_subid = gdf_enriched2.groupby('tid_subid')['cloakingArea_id'].apply(lambda x: x.notna().any())
+valid_tid_subid = valid_tid_subid[valid_tid_subid].index  # keep only True ones
+
+# Pick one random tid_subid
+random_tid_subid = np.random.choice(valid_tid_subid)
+print("Random tid_subid with at least one cloakingArea_id:", random_tid_subid)
+
+subset = gdf_enriched2[gdf_enriched2['tid_subid'] == random_tid_subid][
+    ['point_id_t', 'point_type', 'cloaking', 'gap_label_valid_final', 'gap_label_pair_final', 'cloakingArea_id']
+]
+
+pd.set_option('display.max_rows', None)  
+subset
+
+# 20200128_ead4f86080d9d0e94db07eba45c54933495c92b5_3960
+# the first one is often still labeled first, last
+# there is labels for points with no synthetic points inbetwene them (but I can see points are missing based on point_id_t)
+# this must (might?) be becuase of the one point inbetweeen sensitive points problem
+# short answer: gap_labels are not valid and must be updated - overlabeled
+
+#%% look at synpointid insted
+gdf_enriched2[['point_id_t', 'point_type', 'syn_point_id_t', 'synpoint_id']].head(150)
+# point id of synthetic points bery easily identifable as they have decimals - raw point ids are integers
+#%%THERE IS POINT_ID_T with NaN?!
+gdf_enriched2.point_id_t.isna().any() # True
+
+#%%
+gdf_enriched2.point_id.isna().any() # True
+#%%
+gdf_enriched2[['point_id', 'point_id_t', 'point_type', 'syn_point_id_t', 'synpoint_id']].head(150)
+
+# the nan point_id_t (raw) do have a point_id
+# the nan point_id are for synthetic points
+
+#%% are point_id_t nan for gdf (i.e. before enrichmen of cloaking areas)
+import geopandas as gpd
+gdf = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware.parquet")
+
+# based on syn point id
+print(gdf['syn_point_id_t'].isna().equals(
+    gdf['synpoint_id'].isna()
+))
+
+import numpy as np
+gdf['point_type'] = np.where(
+    gdf['synpoint_id'].isna(),
+    'raw',
+    'synthetic'
+)
+
+print(gdf['point_type'].unique())
+
+gdf.point_id_t.isna().any() # True
+
+#%% what a bout map-matched ones
+import geopandas as gpd
+t = gpd.read_parquet(r"d:\paper3\Data\trajectories\mapmatched_150kmh_onOsmid.parquet")
+t.head()
+
+t.point_id_t.isna().any() # True
+
+#%%
+t[t.point_id_t.isna()][['point_id', 'point_id_t', 'tid', 'tid_subid']].head() # they do have a tid and tid_subid
+
+#%%
+nan_count = t.point_id_t.isna().sum()
+nan_pct = t.point_id_t.isna().mean() * 100
+
+nan_count, nan_pct
+
+# %%
+gdf_enriched2[gdf_enriched2.point_id_t.isna()][['point_id', 'point_id_t', 'tid', 'tid_subid']].head() # they do have a tid and tid_subid
+
+#%%% do I drop those points? no, order byt timestamp and add final point id
+gdf_enriched2[gdf_enriched2.point_id_t.isna()][['point_id', 'point_id_t', 'tid', 'tid_subid', 'unix_timestamp']].head() # they do have a tid and tid_subid
+
+#%%
+nan_count = gdf_enriched2.point_id_t.isna().sum()
+nan_pct = gdf_enriched2.point_id_t.isna().mean() * 100
+
+nan_count, nan_pct
+
+#%% make new point id
+#gdf_enriched2.unix_timestamp_final.isna().any()
+
+gdf_enriched2 = gdf_enriched2.sort_values(by=['tid_subid', 'unix_timestamp_final']).reset_index(drop=True)
+gdf_enriched2['point_id_t_final'] = gdf_enriched2.groupby('tid_subid').cumcount() + 1
+gdf_enriched2['point_id_t_final'].isna().any() # False
+#%% export updated df
+gdf_enriched2.to_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+
+#%%
+import geopandas as gpd
+gdf_enriched2 = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID.parquet")
+
+#%% must ensure gap labels are valid
+import pandas as pd
+import numpy as np
+
+# Filter tid_subid groups that have at least one non-NaN cloakingArea_id
+valid_tid_subid = gdf_enriched2.groupby('tid_subid')['cloakingArea_id'].apply(lambda x: x.notna().any())
+valid_tid_subid = valid_tid_subid[valid_tid_subid].index  # keep only True ones
+
+# Pick one random tid_subid
+random_tid_subid = np.random.choice(valid_tid_subid)
+print("Random tid_subid with at least one cloakingArea_id:", random_tid_subid)
+
+subset = gdf_enriched2[gdf_enriched2['tid_subid'] == random_tid_subid][
+    ['point_id_t','point_id_t_final', 'point_type', 'cloaking', 'gap_label_valid_final', 'gap_label_pair_final', 'cloakingArea_id']
+]
+
+pd.set_option('display.max_rows', None)  
+subset
+
+#%%
+import numpy as np
+
+cols_to_copy = ['gap_label_pair_final', 'cloakingArea_id']
+
+for col in cols_to_copy:
+    gdf_enriched2[col + '_syn'] = gdf_enriched2.groupby('tid_subid', group_keys=False).apply(
+        lambda g: g[col].where(
+            (g['point_type'].shift(1) == 'synthetic') | (g['point_type'].shift(-1) == 'synthetic')
+        )
+    ).reset_index(level=0, drop=True)
+
+print(gdf_enriched2.gap_label_pair_final_syn.unique())
+print(gdf_enriched2.cloakingArea_id_syn.unique())
+
+#%% explore one random tid_subid
+random_tid_subid = np.random.choice(valid_tid_subid)
+print("Random tid_subid with at least one cloakingArea_id:", random_tid_subid)
+
+subset = gdf_enriched2[gdf_enriched2['tid_subid'] == random_tid_subid][
+    ['point_id_t','point_id_t_final', 'point_type', 'cloaking', 'gap_label_valid_final', 'gap_label_pair_final', 'gap_label_pair_final_syn', 'cloakingArea_id', 'cloakingArea_id_syn']
+]
+
+pd.set_option('display.max_rows', None)  
+subset
+#%% 
+subset.tail(2) # _syn columns work
+
+#%% must update 'first, last' too
+print(gdf_enriched2.cloakingArea_id_syn.nunique())
+print(gdf_enriched2.gap_label_pair_final_syn.nunique())
+      
+mask_comma = gdf_enriched2['gap_label_pair_final'].str.contains(',', na=False)
+num_comma = mask_comma.sum()
+num_single = (~mask_comma).sum()
+print(f"Single-word entries before fixing the gap labels: {num_single}")
+print(f"Comma-separated entries before fixing the gap labels: {num_comma}")
+
+
+mask_comma = gdf_enriched2['gap_label_pair_final_syn'].str.contains(',', na=False)
+num_comma = mask_comma.sum()
+num_single = (~mask_comma).sum()
+print(f"Single-word entries: {num_single}")
+print(f"Comma-separated entries: {num_comma}") # still some "first, last" - must check if these are valid
+print(gdf_enriched2.cloakingArea_id_syn.nunique())
+print(gdf_enriched2.gap_label_pair_final_syn.nunique())
+
+#%%
+subset[['point_id_t_final', 'point_type', 'gap_label_pair_final_syn', 'cloakingArea_id_syn']]
+
+#%% look at the comma seperated labels - are they correct
+mask_comma = gdf_enriched2['gap_label_pair_final_syn'].str.contains(',', na=False)
+print(mask_comma.sum())
+
+tid_with_commas = gdf_enriched2.loc[mask_comma, 'tid_subid'].unique() # 3,829 tids
+print(len(tid_with_commas))
+
+example_tid = tid_with_commas[0]
+gdf_one_tid = gdf_enriched2.loc[gdf_enriched2['tid_subid'] == example_tid]
+#%%
+gdf_one_tid[['point_id_t_final', 'point_type', 'gap_label_pair_final_syn', 'cloakingArea_id_syn']]
+# first entry is first, last - only last is valid
+# last one is first, last - only first is valid
+
+
+#%%
+import numpy as np
+
+def fix_comma_entries(group):
+    # Copy the original columns to avoid modifying in place
+    gap = group['gap_label_pair_final_syn'].copy()
+    cloaking = group['cloakingArea_id_syn'].copy()
+
+    # Prepare new columns
+    gap_fixed = gap.copy()
+    cloaking_fixed = cloaking.copy()
+
+    for i in range(len(group)):
+        val = gap.iloc[i]
+
+        # Only process comma-separated values
+        if isinstance(val, str) and ',' in val:
+            above_synth = i > 0 and group['point_type'].iloc[i-1] == 'synthetic'
+            below_synth = i < len(group)-1 and group['point_type'].iloc[i+1] == 'synthetic'
+
+            parts = [p.strip() for p in val.split(',')]
+
+            # Cloaking parts
+            cloak_val = cloaking.iloc[i]
+            if isinstance(cloak_val, str) and cloak_val.startswith('(') and ',' in cloak_val:
+                cloak_parts = [p.strip().strip("()'\"") for p in cloak_val.strip('()').split(',')]
+            else:
+                cloak_parts = [cloak_val]
+
+            if above_synth and below_synth:
+                # Keep both parts
+                gap_fixed.iloc[i] = ', '.join(parts)
+                cloaking_fixed.iloc[i] = ', '.join(cloak_parts)
+            elif above_synth and not below_synth:
+                # Keep only first part
+                gap_fixed.iloc[i] = parts[0]
+                cloaking_fixed.iloc[i] = cloak_parts[0] if len(cloak_parts) > 0 else np.nan
+            elif below_synth and not above_synth:
+                # Keep only second part
+                gap_fixed.iloc[i] = parts[1] if len(parts) > 1 else parts[0]
+                cloaking_fixed.iloc[i] = cloak_parts[1] if len(cloak_parts) > 1 else (cloak_parts[0] if len(cloak_parts)>0 else np.nan)
+            else:
+                # Neither neighbor is synthetic → set NaN
+                gap_fixed.iloc[i] = np.nan
+                cloaking_fixed.iloc[i] = np.nan
+
+    # Return a DataFrame with the new fixed columns
+    return pd.DataFrame({
+        'gap_label_pair_final_syn_fixed': gap_fixed,
+        'cloakingArea_id_syn_fixed': cloaking_fixed
+    }, index=group.index)
+
+
+# Apply to each tid_subid separately
+fixed_cols = gdf_enriched2.groupby('tid_subid', group_keys=False).apply(fix_comma_entries)
+
+# Join the new columns back to the main GeoDataFrame
+gdf_enriched2 = gdf_enriched2.join(fixed_cols)
+
+#%%
+mask_comma = gdf_enriched2['gap_label_pair_final_syn_fixed'].str.contains(',', na=False)
+num_comma = mask_comma.sum()
+num_single = (~mask_comma).sum()
+print(f"gap_label_pair_final_syn_fixed single-word entries: {num_single}")
+print(f"gap_label_pair_final_syn_fixed comma-separated entries: {num_comma}") # 15
+
+mask_comma = gdf_enriched2['cloakingArea_id_syn_fixed'].str.contains(',', na=False)
+num_comma = mask_comma.sum()
+num_single = (~mask_comma).sum()
+print(f"cloakingArea_id_syn_fixed single-word entries: {num_single}")
+print(f"cloakingArea_id_syn_fixed comma-separated entries: {num_comma}") # 0
+
+
+
+#%% ensure those 15 "sandwhich points" are valid
+mask_comma = gdf_enriched2['gap_label_pair_final_syn_fixed'].str.contains(',', na=False)
+tid_with_comma = gdf_enriched2.loc[mask_comma, 'tid_subid'].unique()
+#%%example_tid = tid_with_comma[0] # legit first, last
+#example_tid = tid_with_comma[1] # legit
+example_tid = tid_with_comma[2] # legit
+gdf_one_tid = gdf_enriched2.loc[gdf_enriched2['tid_subid'] == example_tid]
+
+gdf_one_tid[['point_id_t_final', 'point_type', 'gap_label_pair_final_syn_fixed', 'cloakingArea_id_syn_fixed']]
+
+
+#%%
