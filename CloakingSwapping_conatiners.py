@@ -144,8 +144,14 @@ import pandas as pd
 # List to collect all candidate DataFrames
 all_candidates_list = []
 
-for idx, row in main_rows.iterrows():
-    cands = find_candidates(row)
+from tqdm import tqdm
+for row in tqdm(main_rows.itertuples(index=False), total=len(main_rows), desc="Finding candidates"):
+    cands = helper_candidates[
+        (helper_candidates['clkpassed'] == row.HeadEndCloakingAreaId) &
+        (helper_candidates['time_bin'] == row.time_bin) &
+        (helper_candidates['uid'] != row.uid)
+    ].copy()
+    cands['main_row_uid'] = row.row_uid
     if len(cands) > 0:
         all_candidates_list.append(cands)
 
