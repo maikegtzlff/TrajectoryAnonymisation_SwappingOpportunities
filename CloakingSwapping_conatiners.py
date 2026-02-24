@@ -1,5 +1,7 @@
 #%% load data
 import geopandas as gpd
+import numpy as np
+
 t = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet")
 # columns for cloaking based swapping
 # intersecting_cloaking_ids - cloaking areas passing only
@@ -8,7 +10,7 @@ t = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedT
 # then delete all syntithic points until first raw point
 # this is the first point of the tail
 
-#%% it's actually better to have empty list rather than nan
+# it's actually better to have empty list rather than nan
 # Ensure every cell is a proper list
 t['intersecting_cloaking_ids'] = t['intersecting_cloaking_ids'].apply(
     lambda x: list(x) if isinstance(x, (list, np.ndarray)) else []
@@ -68,288 +70,87 @@ print(t.loc[non_empty_mask, 'intersecting_cloaking_ids'].head())
 # find 3 matches, then stop looking for matches. matches must be same cloaking area and same time bin.
 # pick one of the 3 matches for swapping 
 
+print(len(t[t['HeadEndCloakingAreaId'].notna()])) # these are all the cloaking gaps that need a swapping partner
+# 31,272 rows!
+print(t[t['HeadEndCloakingAreaId'].notna()]['tid_subid'].nunique()) # 11,791 different trajectories
 
-#%% PRECOMPUTE MATCHES PER CLOAKING GEOMETRY
-from collections import defaultdict, Counter
-import random
+
+
+
+#%% FIND SWAPPING CANDIDATES (points)
+#%% cloaking gaps that need matches
+sensitiveC = t[t['HeadEndCloakingAreaId'].notna()]
+
+#%% find matches for the cloaking gaps
+# Only keep points that are passing at least one cloaking geometry,
+# i.e., intersecting cloaking  id list must not be empty 
+helper_candidates = t[t['intersecting_cloaking_ids'].notna()].copy()
+print(len(helper_candidates))                           # 7,334,941 points pass at least one cloaking area
+
+# must explode lists so that each cloaking geom has one row per passing point
+helper_candidates = helper_candidates.explode('intersecting_cloaking_ids')
+helper_candidates.rename(columns={'intersecting_cloaking_ids': 'clkpassed'}, inplace=True)
+print(len(helper_candidates))                           # 7,377,573 points after exploding, i.e. one row per point and cloaking area passed
+print(len(helper_candidates) -len(helper_candidates))   # 42,632 rows extra
+
+#%%
+print(len(t) == t.row_uid.nunique()) # true, and 7334941
+# we can use this id as unique point id
+
+main_rows = sensitiveC[['row_uid', 'tid_subid', 'uid', 'HeadEndCloakingAreaId', 'time_bin']].copy()
+
+def find_candidates(row):
+    cands = helper_candidates[
+        (helper_candidates['clkpassed'] == row['HeadEndCloakingAreaId']) &
+        (helper_candidates['time_bin'] == row['time_bin']) &
+        (helper_candidates['uid'] != row['uid'])  # different trajectory
+    ].copy()
+    cands['main_row_uid'] = row['row_uid']  # track which main row this is for
+    return cands
+
+# Example for first row
+cands_first = find_candidates(main_rows.iloc[0])
+print(len(cands_first))
+cands_first
+
+#%% look at matches
+print('the point loctaing the cloaking gap')
+print(main_rows.head(1).row_uid.unique())
+print('target uid', main_rows.head(1).uid.unique())
+print('target cloaking area', main_rows.head(1).HeadEndCloakingAreaId.unique())
+print('target time bin in cloaking area', main_rows.head(1).time_bin.unique())
+
+
+print('\n swapping candidates')
+print('number of eligible swapping candidates', len(cands_first)) # 
+print('candidate cloaking geom', cands_first.clkpassed.unique()) # should only be one, the same as main_rows.ilow[0]
+print('candidate time bin', cands_first.time_bin.unique())  # comment from above applies
+print('candidate uids', cands_first.uid.unique()) # can be many, but cant be the same as uid of main_rows.ilow[0]
+print('candidate unique point ids', cands_first.row_uid.unique()) # unique identifiers to these points - these will not change during swapping either
+print('kept track of lcoaking gap', cands_first.main_row_uid.notna().any()) 
+
+print('\n ensuring constraints are met')
+main_clk = main_rows.head(1)['HeadEndCloakingAreaId'].iloc[0]
+main_time = main_rows.head(1)['time_bin'].iloc[0]
+main_uid = main_rows.head(1)['uid'].iloc[0]
+print('found matching cloaking geom', all(cands_first['clkpassed'].unique() == main_clk))
+print('time bin is the same', all(cands_first['time_bin'].unique() == main_time))
+print('target uid not in list of candidate uids', main_uid not in cands_first['uid'].unique())
+
+
+#%% find swapping candidates for all ~30k cloaking gaps
 import pandas as pd
 
-# --- 1️⃣ Trajectory summary per tid_subid ---
-traj = (
-    t.groupby('tid_subid')
-    .agg({
-        'uid':'first',
-        'time_bin':'first',
-        'HeadEndCloakingAreaId': lambda x: x.dropna().unique().tolist(),
-        'intersecting_cloaking_ids': lambda x: set().union(*[
-            i for i in x if isinstance(i, list)
-        ])
-    })
-    .reset_index()
-)
+# List to collect all candidate DataFrames
+all_candidates_list = []
 
-# Only trajectories needing swap
-mains = traj[traj['HeadEndCloakingAreaId'].apply(len) > 0]
-print(f"Main trajectories needing swap: {len(mains)}")
+for idx, row in main_rows.iterrows():
+    cands = find_candidates(row)
+    if len(cands) > 0:
+        all_candidates_list.append(cands)
 
-# --- 2️⃣ Pre-index trajectories for fast lookup ---
-# By time_bin
-tids_by_time = defaultdict(set)
-for _, r in traj.iterrows():
-    tids_by_time[r.time_bin].add(r.tid_subid)
-
-# By intersecting_cloaking_ids
-tids_by_cloak = defaultdict(set)
-for _, r in traj.iterrows():
-    for cid in r.intersecting_cloaking_ids:
-        tids_by_cloak[cid].add(r.tid_subid)
-
-# UID lookup
-uid_lookup = dict(zip(traj.tid_subid, traj.uid))
-
-# --- 3️⃣ Initialize tracking structures ---
-matches = {}  # (tid_main, HEID) -> helper_tid
-used_helpers_per_heid = defaultdict(set)  # HEID -> set of helper tids used for this HEID
-
-# --- 4️⃣ Find matches ---
-for _, main in mains.sample(frac=1).iterrows():  # shuffle mains
-    tid_main = main.tid_subid
-    uid_main = main.uid
-    tb_main  = main.time_bin
-    heids    = main.HeadEndCloakingAreaId
-
-    for he in heids:
-        unused_valid = set()
-        reused_valid = set()
-
-        # candidate helpers: same time_bin, passes this HEID
-        cands = tids_by_time[tb_main] & tids_by_cloak.get(he, set())
-        for c in cands:
-            if c == tid_main:
-                continue
-            uid_c = uid_lookup[c]
-            if uid_c == uid_main:
-                continue
-            # check single-use per HEID
-            if c in used_helpers_per_heid[he]:
-                reused_valid.add(c)
-            else:
-                unused_valid.add(c)
-
-        # --- prioritize unused helpers ---
-        if unused_valid:
-            pool = list(unused_valid)[:3]
-            pick = random.choice(pool)
-            used_helpers_per_heid[he].add(pick)
-        # --- fallback to reuse (different main trajectory) ---
-        elif reused_valid:
-            pool = list(reused_valid)[:3]
-            pick = random.choice(pool)
-        else:
-            # no valid helper found for this HEID
-            continue
-
-        matches[(tid_main, he)] = pick
-
-# --- 5️⃣ Reporting ---
-print(f"Total HEID-based matches: {len(matches)}")
-helper_usage = Counter(matches.values())
-print(f"Unique helpers used: {len(helper_usage)}")
-print(f"Helpers reused (any HEID): {sum(v>1 for v in helper_usage.values())}")
-print(f"Max reuse count: {max(helper_usage.values()) if helper_usage else 0}")
-
-# --- 6️⃣ Check for violations ---
-violations = []
-for he, helpers in used_helpers_per_heid.items():
-    counts = Counter(helpers)
-    for h, c in counts.items():
-        if c > 1:
-            violations.append((h, he, c))
-print(f"Number of helpers violating single-use per HEID: {len(violations)}")
-print("Example violations:", violations[:10])
-
-# --- 7️⃣ Optional: record which HEIDs have no helpers ---
-matched_heids = set(h for (_, h) in matches.keys())
-all_heids = set(h for lst in mains['HeadEndCloakingAreaId'] for h in lst)
-heids_without_helpers = all_heids - matched_heids
-print(f"Number of HEIDs without helpers: {len(heids_without_helpers)}")
-
-#Main trajectories needing swap: 11791
-#Total HEID-based matches: 14102
-#Unique helpers used: 4678
-#Helpers reused (any HEID): 1639
-#Max reuse count: 151
-#Number of helpers violating single-use per HEID: 0
-#Example violations: []
-#Number of HEIDs without helpers: 10
-
-
-#%% #################################################
-#### investiagte matches
-#####################################################
-
-# matches dictonary keys
-# matches[(tid_main, HEID)] : helper_tid
-
-first_item = next(iter(matches.items()))
-print("First item:", first_item)
-# first_item[0] is the key, first_item[1] is the value
-# First item: 
-# (('20200604_465b146da7c31336a60ae621318be651e9da3571_6017',   - target tid
-# '2_465b146da7c31336a60ae621318be651e9da3571'),                - sensitive cloaking geometry
-# '20200108_c0958ca33142e6ba01506af590d7c37475bbdb75_3532')     - identified helper tid
-
-# does not mention time bin
-
-#%% look at helper tid
-ht = t[t['tid_subid']=='20200108_c0958ca33142e6ba01506af590d7c37475bbdb75_3532'].copy()
-
-# at least one row must have the cloaking geometry id '2_465b146da7c31336a60ae621318be651e9da3571' in intersecting_cloaking_ids
-
-#%% locate cloaking geom in helper tid
-target_heid = '2_465b146da7c31336a60ae621318be651e9da3571'
-mask = ht['intersecting_cloaking_ids'].apply(
-    lambda x: isinstance(x, (list, set)) and target_heid in x
-)
-matching_rows = ht[mask]
-matching_rows
-
-#%% now check time bin constarint 
-#target tid 20200604_465b146da7c31336a60ae621318be651e9da3571_6017
-# and cloaking geom 2_465b146da7c31336a60ae621318be651e9da3571
-tt = t[t['tid_subid']=='20200604_465b146da7c31336a60ae621318be651e9da3571_6017'].copy()
-tt_cid = tt[tt['HeadEndCloakingAreaId']=='2_465b146da7c31336a60ae621318be651e9da3571'] 
-print(len(tt_cid))
-# here, only entering this specific cloaking geometry once
-print(tt_cid.time_bin_label.unique()) # helper trajectory must pass cloaking geom at night time
-tt_cid.time_bin.unique() # 0
-
-#%% check time bin of helper t
-print(matching_rows.time_bin_label.unique()) # ['flat peak' 'evening peak'] --> time bin is in fact not matching, this tid should have not been considered a matching candidate!
-matching_rows.time_bin.unique() # 2 
-#####################################################
-#####################################################
-
-
-
-
-
-
-#%% HEID-aware swapping - might take long
-import numpy as np
-
-t_swapped = t.copy()
-used_helpers_per_heid_point = defaultdict(set)  # track used helper points (indices)
-
-# Pre-group main trajectories for fast lookup
-t_by_tid = {tid: df for tid, df in t_swapped.groupby('tid_subid')}
-
-print("Starting HEID-aware swapping...")
-for i, ((main_tid, heid), helper_tid) in enumerate(matches.items(), 1):
-    main_df = t_by_tid[main_tid].sort_index()
-    tb_main = main_df.loc[main_df.HeadEndCloakingAreaId == heid, 'time_bin'].iloc[0]
-    uid_main = main_df.uid.iloc[0]
-
-    # 1️⃣ Find split point in main trajectory
-    head_end_idx = main_df.index[
-        (main_df.HeadEndCloakingAreaId == heid) &
-        (main_df.HeadTail == 'HeadEnd')
-    ]
-    if len(head_end_idx) == 0:
-        continue  # no split point found
-    split_idx = head_end_idx[0]
-
-    # 2️⃣ Define tail: points after split, remove synthetic at start
-    tail_indices = main_df.index[main_df.index.get_loc(split_idx)+1:]
-    if len(tail_indices) == 0:
-        continue
-    # remove synthetic points at start of tail
-    non_synthetic_start = next((i for i, idx in enumerate(tail_indices)
-                                if main_df.loc[idx, 'point_type'] != 'synthetic'), 0)
-    tail_indices = tail_indices[non_synthetic_start:]
-    if len(tail_indices) == 0:
-        continue  # nothing left after removing synthetic
-
-    # 3️⃣ Pick valid helper point
-    helper_candidates_idx = t_swapped.index[
-        (t_swapped.tid_subid == helper_tid) &
-        (t_swapped['intersecting_cloaking_ids'].apply(
-            lambda x: heid in x if isinstance(x, (list, set)) else False)) &
-        (t_swapped.time_bin == tb_main) &
-        (t_swapped.uid != uid_main)
-    ]
-    # remove already used helper points for this HEID
-    helper_candidates_idx = [idx for idx in helper_candidates_idx
-                             if idx not in used_helpers_per_heid_point[heid]]
-    if not helper_candidates_idx:
-        continue  # no valid helper left
-
-    # randomly pick one
-    chosen_helper_idx = np.random.choice(helper_candidates_idx)
-    helper_container_value = t_swapped.loc[chosen_helper_idx, 'container_id']
-    used_helpers_per_heid_point[heid].add(chosen_helper_idx)
-
-    # 4️⃣ Assign helper container_id to tail points
-    t_swapped.loc[tail_indices, 'container_id'] = helper_container_value
-
-    # 5️⃣ Optional progress printing
-    if i % 1000 == 0:
-        print(f"Processed {i} / {len(matches)} HEID matches...")
-
-print("HEID-aware swapping complete!")
-
-
-
-#%% 
-#%%
-# 1️⃣ Count of trajectories with any HEID swap applied
-swapped_per_tid = (
-    t_swapped.groupby('tid_subid')['container_id']
-    .nunique()
-)
-
-num_tids_swapped = (swapped_per_tid > 1).sum()
-num_tids_no_change = (swapped_per_tid == 1).sum()
-
-print(f"Trajectories with at least one tail swapped: {num_tids_swapped}")
-print(f"Trajectories unchanged: {num_tids_no_change}")
-
-# concerning
-#Trajectories with at least one tail swapped: 3477
-#Trajectories unchanged: 15712
-
-
-
-#%% Number of unique original container IDs in each new container_id
-unique_orig_counts = t_swapped.groupby('container_id')['container_id_orig'].nunique().reset_index()
-
-print(unique_orig_counts.container_id_orig.min()) # 1
-print(unique_orig_counts.container_id_orig.median()) # 1
-print(unique_orig_counts.container_id_orig.max())  # 35
-
-
-
-
-
-#%% by tid to look at in Q
-import os
-
-# Folder to save individual trajectory files
-output_folder = r"D:\paper3\Data\output/Cloakingswapped_trajectories"  # change path as needed
-os.makedirs(output_folder, exist_ok=True)
-
-# Identify container_ids with >1 original container
-multi_orig_cids = unique_orig_counts.loc[unique_orig_counts['container_id_orig'] > 1, 'container_id']
-
-# Export each group as a parquet GeoDataFrame
-for cid in multi_orig_cids:
-    gdf_group = t_swapped[t_swapped['container_id'] == cid]
-    
-    # Clean filename
-    safe_cid = str(cid).replace('/', '_').replace('\\', '_')
-    file_path = os.path.join(output_folder, f"{safe_cid}.parquet")
-    
-    # Export as GeoParquet
-    gdf_group.to_parquet(file_path, index=False)
-
-print(f"Exported {len(multi_orig_cids)} merged container_id files to {output_folder}")
+# Combine all candidate rows into one DataFrame
+all_candidates = pd.concat(all_candidates_list, ignore_index=True)
+print(f"Total candidate rows: {len(all_candidates)}")
+print(f"Unique main rows with candidates: {all_candidates['main_row_uid'].nunique()}")
+print(f"Unique candidate points: {all_candidates['row_uid'].nunique()}")
