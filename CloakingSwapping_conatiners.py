@@ -294,6 +294,9 @@ for m in tqdm(main_order, desc="Scarcity-aware assignment"):
     # mark helper trajectory as used at this cloaking area
     used_helpers_per_clk[clk].add(chosen_tid)
 
+#%%
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping/assigned.pkl", "wb") as f:
+    pickle.dump(assigned, f)
 
 #%% export dict
 import pickle
@@ -397,14 +400,14 @@ gap_stats = main_rows_with_helpers.groupby('row_uid').agg(
 
 print(gap_stats.describe())
 
-#       n_helpers_assigned
+#       n_helpers_assigned - number of helper trajectories assigned to cloaking gap for swapping
 #count        31272.000000
 #mean             0.375416
 #std              0.484238
 #min              0.000000
 #25%              0.000000
-#50%              0.000000
-#75%              1.000000
+#50%              0.000000 --> no helper assigned to cloaking gap --> cannot swap
+#75%              1.000000 --> we never assign more than one helper because the algorithm is scarcity-aware, we are looking for the most optimal match
 #max              1.000000
 
 main_rows_per_area = main_rows.groupby('HeadEndCloakingAreaId').size()
@@ -418,4 +421,259 @@ print(main_rows_per_area.describe())
 #75%       256.500000
 #max      1039.000000
 
-#%% start swapping based on used_helpers_per_clk
+#%% number of main_rows (cloaking gaps) with a helper assigned
+assigned_helpers_df = pd.DataFrame(assigned, columns=['main_row_uid', 'helper_tid', 'clkpassed'])
+# each row is one cloaling gap that succefully got a helper trajectory 
+n_assigned = assigned_helpers_df['main_row_uid'].nunique()
+n_total = len(main_rows)
+pct_assigned = n_assigned / n_total * 100
+
+print(f"Assigned helpers: {n_assigned} / {n_total} ({pct_assigned:.2f}%)")
+assigned_helpers_df.head()
+
+
+#%% split both main and helper trajectories into heads and tails
+# this runs in 6misns 30 but is it correct?
+import pandas as pd
+from collections import defaultdict
+from tqdm import tqdm
+import numpy as np
+
+# Make sure your assigned_helpers_df has columns: 
+# ['main_row_uid', 'helper_tid', 'clkpassed']
+
+# Add columns to track swaps
+t['tid_subid_after_swap'] = t['tid_subid']
+t['swap_pair_id'] = pd.NA
+t['head_end_flag'] = False
+t['tail_start_flag'] = False
+
+# Precompute trajectory indices to speed up slicing
+tid_index_map = t.groupby('tid_subid').groups 
+# Precompute row_uid → point_id_t mapping
+row_uid_to_pid = t.set_index('row_uid')['point_id_t'].to_dict()
+
+# Unique swap counter
+swap_counter = 0
+
+# Process swaps in order of main trajectory and point_id_t
+assigned_helpers_df = assigned_helpers_df.merge(
+    t[['row_uid', 'tid_subid', 'point_id_t']],
+    left_on='main_row_uid', right_on='row_uid', how='left'
+).sort_values(['tid_subid', 'point_id_t'])
+
+# Track which helper split rows have been used
+used_helper_rows = set()
+
+for _, swap in tqdm(assigned_helpers_df.iterrows(), total=len(assigned_helpers_df), desc="Processing swaps"):
+
+    swap_counter += 1
+    main_row_uid = swap['main_row_uid']
+    main_tid     = t.loc[t.row_uid == main_row_uid, 'tid_subid'].values[0]
+    clkpassed    = swap['clkpassed']
+    helper_tid   = swap['helper_tid']
+
+    # --- Split main trajectory ---
+    main_pid = row_uid_to_pid[main_row_uid]
+    main_idx  = tid_index_map[main_tid]
+
+    main_mask_head = main_idx[ t.loc[main_idx, 'point_id_t'] <= main_pid ]
+    main_mask_tail = main_idx[ t.loc[main_idx, 'point_id_t'] >  main_pid ]
+
+    # Head/tail flags
+    t.loc[main_mask_head, 'head_end_flag'] = t.loc[main_mask_head, 'point_id_t'] == main_pid
+    t.loc[main_mask_tail, 'tail_start_flag'] = t.loc[main_mask_tail, 'point_id_t'] == main_pid + 1
+
+    # Update tails with helper_tid
+    t.loc[main_mask_tail, 'tid_subid_after_swap'] = helper_tid
+    t.loc[main_mask_tail, 'swap_pair_id'] = swap_counter
+
+    # --- Split helper trajectory ---
+    helper_idx = tid_index_map[helper_tid]
+
+    # Eligible helper points: same cloaking area, same time_bin
+    helper_points = t.loc[helper_idx]
+    helper_points = helper_points[helper_points['intersects_cloaking'] == clkpassed]
+    if len(helper_points) == 0:
+        continue  # safety
+
+    # Exclude rows already used for other swaps
+    helper_points = helper_points[~helper_points['row_uid'].isin(used_helper_rows)]
+
+    # Randomly choose a split point
+    helper_split_row = helper_points.sample(1).iloc[0]
+    helper_split_pid = helper_split_row['point_id_t']
+    used_helper_rows.add(helper_split_row['row_uid'])
+
+    helper_mask_head = helper_idx[ t.loc[helper_idx, 'point_id_t'] <= helper_split_pid ]
+    helper_mask_tail = helper_idx[ t.loc[helper_idx, 'point_id_t'] >  helper_split_pid ]
+
+    t.loc[helper_mask_head, 'head_end_flag'] = t.loc[helper_mask_head, 'point_id_t'] == helper_split_pid
+    t.loc[helper_mask_tail, 'tail_start_flag'] = t.loc[helper_mask_tail, 'point_id_t'] == helper_split_pid + 1
+
+    # Update tails with main_tid
+    t.loc[helper_mask_tail, 'tid_subid_after_swap'] = main_tid
+    t.loc[helper_mask_tail, 'swap_pair_id'] = swap_counter
+
+print(f"Swapping completed for {swap_counter} assigned pairs.")
+
+#%% look at swapping outcome
+swap_counter
+
+#%% 
+t.head()
+
+
+#%% 
+print(t.head_end_flag.unique())
+print(t.tail_start_flag.unique())
+print(t.swap_pair_id.unique())
+
+#%% half vecorised, ensuring sequential swapping,, still 4 hours processing time
+import pandas as pd
+from tqdm import tqdm
+import numpy as np
+
+# Make sure your assigned_helpers_df has these columns:
+# ['main_row_uid', 'helper_tid', 'clkpassed']
+
+# Add new columns to track swaps
+t['tid_subid_after_swap'] = t['tid_subid']
+t['swap_pair_id'] = pd.NA
+t['head_end_flag'] = False
+t['tail_start_flag'] = False
+
+# Merge to get main trajectory info
+assigned_helpers_df = assigned_helpers_df.merge(
+    t[['row_uid', 'tid_subid', 'point_id_t']],
+    left_on='main_row_uid',
+    right_on='row_uid',
+    how='left'
+).rename(columns={'tid_subid':'main_tid','point_id_t':'main_point_id_t'})
+
+# Sort by main trajectory and point order
+assigned_helpers_df = assigned_helpers_df.sort_values(['main_tid','main_point_id_t']).reset_index(drop=True)
+assigned_helpers_df['swap_pair_id'] = range(1, len(assigned_helpers_df)+1)
+
+# --- Vectorized main trajectory split ---
+# Create a map for fast lookup
+main_split_map = assigned_helpers_df.set_index('main_row_uid')[['main_tid','main_point_id_t','swap_pair_id']]
+
+for main_row_uid, row in tqdm(main_split_map.iterrows(), total=len(main_split_map), desc="Splitting main trajectories"):
+    main_tid = row['main_tid']
+    split_pid = row['main_point_id_t']
+    swap_id = row['swap_pair_id']
+
+    mask_head = (t.tid_subid == main_tid) & (t.point_id_t <= split_pid)
+    mask_tail = (t.tid_subid == main_tid) & (t.point_id_t >  split_pid)
+
+    t.loc[mask_head, 'head_end_flag'] = (t.point_id_t == split_pid)
+    t.loc[mask_tail, 'tail_start_flag'] = (t.point_id_t == split_pid + 1)  # or next row_uid if preferred
+
+# --- Helper trajectory splits (loop only over assigned swaps) ---
+for _, swap in tqdm(assigned_helpers_df.iterrows(), total=len(assigned_helpers_df), desc="Splitting helper trajectories"):
+    helper_tid = swap['helper_tid']
+    clkpassed  = swap['clkpassed']
+    swap_id    = swap['swap_pair_id']
+    main_tid   = swap['main_tid']
+
+    # Eligible helper points inside the assigned cloaking gap
+    helper_points = t[(t.tid_subid == helper_tid) & (t.clkpassed == clkpassed)]
+    if len(helper_points) == 0:
+        continue
+
+    # Randomly choose split point
+    split_row = helper_points.sample(1).iloc[0]
+    split_pid = split_row['point_id_t']
+
+    mask_head = (t.tid_subid == helper_tid) & (t.point_id_t <= split_pid)
+    mask_tail = (t.tid_subid == helper_tid) & (t.point_id_t >  split_pid)
+
+    t.loc[mask_head, 'head_end_flag'] = (t.point_id_t == split_pid)
+    t.loc[mask_tail, 'tail_start_flag'] = (t.point_id_t == split_pid + 1)
+
+    # Update tail points after swap
+    t.loc[mask_tail, 'tid_subid_after_swap'] = main_tid
+    t.loc[mask_tail, 'swap_pair_id'] = swap_id
+
+print("All assigned swaps processed successfully.")
+
+
+
+
+
+
+
+#%% safe but slow version (8 hours run time)
+from tqdm import tqdm
+import pandas as pd
+
+# Make sure your assigned_helpers_df has these columns:
+# ['main_row_uid', 'helper_tid', 'clkpassed']
+
+# Add new columns to the main dataframe to track swaps
+t['tid_subid_after_swap'] = t['tid_subid']
+t['swap_pair_id'] = pd.NA
+t['head_end_flag'] = False   # True for the last point of a head
+t['tail_start_flag'] = False # True for the first point of a tail
+
+# Unique swap ID counter
+swap_counter = 0
+
+# Merge main_row point info and sort by trajectory + point order
+assigned_helpers_df = assigned_helpers_df.merge(
+    t[['row_uid', 'tid_subid', 'point_id_t']], 
+    left_on='main_row_uid', right_on='row_uid', how='left'
+)
+assigned_helpers_df = assigned_helpers_df.sort_values(
+    ['tid_subid', 'point_id_t']
+)
+
+# --- Loop over each assigned swap with tqdm progress bar ---
+for _, swap in tqdm(assigned_helpers_df.iterrows(), 
+                    total=len(assigned_helpers_df), 
+                    desc="Processing swaps"):
+
+    swap_counter += 1
+    main_row_uid = swap['main_row_uid']
+    main_tid     = t.loc[t.row_uid == main_row_uid, 'tid_subid'].values[0]
+    clkpassed    = swap['clkpassed']
+    helper_tid   = swap['helper_tid']
+    
+    # --- Split main trajectory ---
+    main_split_idx = t.loc[t.row_uid == main_row_uid, 'point_id_t'].values[0]
+    main_mask_head = (t.tid_subid == main_tid) & (t.point_id_t <= main_split_idx)
+    main_mask_tail = (t.tid_subid == main_tid) & (t.point_id_t >  main_split_idx)
+    
+    # Mark head_end and tail_start flags
+    t.loc[main_mask_head, 'head_end_flag'] = (t.point_id_t == main_split_idx)
+    t.loc[main_mask_tail, 'tail_start_flag'] = (t.point_id_t == main_split_idx + 1)
+    
+    # Update tid_subid_after_swap for main tail
+    t.loc[main_mask_tail, 'tid_subid_after_swap'] = helper_tid
+    t.loc[main_mask_tail, 'swap_pair_id'] = swap_counter
+    
+    # --- Split helper trajectory ---
+    helper_candidates_points = t[
+        (t.tid_subid == helper_tid) &
+        (t.intersecting_cloaking_ids == clkpassed)
+    ]
+    if len(helper_candidates_points) == 0:
+        continue  # safety check
+
+    # Pick a random point for the split among eligible points
+    helper_split_row = helper_candidates_points.sample(1).iloc[0]
+    helper_split_idx = helper_split_row['point_id_t']
+    
+    helper_mask_head = (t.tid_subid == helper_tid) & (t.point_id_t <= helper_split_idx)
+    helper_mask_tail = (t.tid_subid == helper_tid) & (t.point_id_t >  helper_split_idx)
+    
+    # Mark head_end and tail_start flags
+    t.loc[helper_mask_head, 'head_end_flag'] = (t.point_id_t == helper_split_idx)
+    t.loc[helper_mask_tail, 'tail_start_flag'] = (t.point_id_t == helper_split_idx + 1)
+    
+    # Update tid_subid_after_swap for helper tail
+    t.loc[helper_mask_tail, 'tid_subid_after_swap'] = main_tid
+    t.loc[helper_mask_tail, 'swap_pair_id'] = swap_counter
+
+print("Swapping completed for all assigned pairs")
