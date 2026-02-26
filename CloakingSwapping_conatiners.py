@@ -87,11 +87,26 @@ sensitiveC = t[t['HeadEndCloakingAreaId'].notna()]
 helper_candidates = t[t['intersecting_cloaking_ids'].notna()].copy()
 print(len(helper_candidates))                           # 7,334,941 points pass at least one cloaking area
 
+print(helper_candidates.row_uid.nunique()) # 7334941
+duplicates = helper_candidates['row_uid'].value_counts()
+duplicates = duplicates[duplicates > 1]
+print("before exploding: number of row_uid values appearing multiple times:", len(duplicates)) # 0
+print(duplicates.reset_index()['count'].median())
+print(duplicates.reset_index()['count'].max()) # nan
+
 # must explode lists so that each cloaking geom has one row per passing point
 helper_candidates = helper_candidates.explode('intersecting_cloaking_ids')
 helper_candidates.rename(columns={'intersecting_cloaking_ids': 'clkpassed'}, inplace=True)
 print(len(helper_candidates))                           # 7,377,573 points after exploding, i.e. one row per point and cloaking area passed
 print(len(helper_candidates) -len(helper_candidates))   # 42,632 rows extra
+
+
+print(helper_candidates.row_uid.nunique()) # 7334941
+duplicates = helper_candidates['row_uid'].value_counts()
+duplicates = duplicates[duplicates > 1]
+print("after exploding: number of row_uid values appearing multiple times:", len(duplicates)) # 0
+print(duplicates.reset_index()['count'].median())
+print(duplicates.reset_index()['count'].max()) # nan
 
 #%%
 print(len(t) == t.row_uid.nunique()) # true, and 7334941
@@ -162,7 +177,7 @@ print(f"Unique main rows with candidates: {all_candidates['main_row_uid'].nuniqu
 print(f"Unique candidate points: {all_candidates['row_uid'].nunique()}")
 
 #Finding candidates: 100%|██████████| 31272/31272 [6:45:30<00:00,  1.29it/s]  
-#Total candidate rows: 23909882
+#Total candidate rows: 23,909,882
 #Unique main rows with candidates: 27609
 #Unique candidate points: 245681
 #%%
@@ -184,6 +199,66 @@ len(all_candidates_list_reloead)
 #%%
 sensitiveC.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/main_rows_allcolumns.parquet")
 main_rows.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/main_rows.parquet")
+
+
+
+#%% ############################################################
+####       new approach to assigning swapping candidates    ####
+#################################################################
+
+
+
+
+#################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -529,151 +604,433 @@ print(t.head_end_flag.unique())
 print(t.tail_start_flag.unique())
 print(t.swap_pair_id.unique())
 
-#%% half vecorised, ensuring sequential swapping,, still 4 hours processing time
+#%%
+t.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_swapped_cloakinggaps.parquet")
+#%% export individal trajectories that have been swapped
+import os
+
+output_folder = r"D:\paper3\Data\output\CloakingBasedSwapping\tid_subid_after_swap_parquets2"
+os.makedirs(output_folder, exist_ok=True)
+
+# Only trajectories that were modified by swapping
+swapped_tids = t.loc[t['tid_subid_after_swap'] != t['tid_subid'], 'tid_subid_after_swap'].unique()
+
+for tid_after in swapped_tids:
+    subset = t[t['tid_subid_after_swap'] == tid_after]
+    
+    filename = f"{tid_after}.parquet"
+    filepath = os.path.join(output_folder, filename)
+    
+    subset.to_parquet(filepath, index=False)
+
+
+#%% something seemed to be of about the swapps 
+assigned_helpers_df = pd.DataFrame(assigned, columns=['main_row_uid', 'helper_tid', 'clkpassed'])
+
+
 import pandas as pd
 from tqdm import tqdm
 import numpy as np
+import os
 
-# Make sure your assigned_helpers_df has these columns:
-# ['main_row_uid', 'helper_tid', 'clkpassed']
 
-# Add new columns to track swaps
-t['tid_subid_after_swap'] = t['tid_subid']
+# --- STEP 0: Add columns to track swaps ---
+t['tid_subid_orig'] = t['tid_subid']        # original trajectory ID
+t['tid_subid_after_swap'] = t['tid_subid']  # updated trajectory after swaps
 t['swap_pair_id'] = pd.NA
 t['head_end_flag'] = False
 t['tail_start_flag'] = False
 
-# Merge to get main trajectory info
-assigned_helpers_df = assigned_helpers_df.merge(
-    t[['row_uid', 'tid_subid', 'point_id_t']],
-    left_on='main_row_uid',
-    right_on='row_uid',
-    how='left'
-).rename(columns={'tid_subid':'main_tid','point_id_t':'main_point_id_t'})
+# Precompute row_uid → point_id_t mapping
+row_uid_to_pid = t.set_index('row_uid')['point_id_t'].to_dict()
 
-# Sort by main trajectory and point order
-assigned_helpers_df = assigned_helpers_df.sort_values(['main_tid','main_point_id_t']).reset_index(drop=True)
-assigned_helpers_df['swap_pair_id'] = range(1, len(assigned_helpers_df)+1)
+# Precompute trajectory indices for faster slicing
+tid_index_map = t.groupby('tid_subid').groups
 
-# --- Vectorized main trajectory split ---
-# Create a map for fast lookup
-main_split_map = assigned_helpers_df.set_index('main_row_uid')[['main_tid','main_point_id_t','swap_pair_id']]
+# Track helper rows that have already been used for splitting
+used_helper_rows = set()
 
-for main_row_uid, row in tqdm(main_split_map.iterrows(), total=len(main_split_map), desc="Splitting main trajectories"):
-    main_tid = row['main_tid']
-    split_pid = row['main_point_id_t']
-    swap_id = row['swap_pair_id']
-
-    mask_head = (t.tid_subid == main_tid) & (t.point_id_t <= split_pid)
-    mask_tail = (t.tid_subid == main_tid) & (t.point_id_t >  split_pid)
-
-    t.loc[mask_head, 'head_end_flag'] = (t.point_id_t == split_pid)
-    t.loc[mask_tail, 'tail_start_flag'] = (t.point_id_t == split_pid + 1)  # or next row_uid if preferred
-
-# --- Helper trajectory splits (loop only over assigned swaps) ---
-for _, swap in tqdm(assigned_helpers_df.iterrows(), total=len(assigned_helpers_df), desc="Splitting helper trajectories"):
-    helper_tid = swap['helper_tid']
-    clkpassed  = swap['clkpassed']
-    swap_id    = swap['swap_pair_id']
-    main_tid   = swap['main_tid']
-
-    # Eligible helper points inside the assigned cloaking gap
-    helper_points = t[(t.tid_subid == helper_tid) & (t.clkpassed == clkpassed)]
-    if len(helper_points) == 0:
-        continue
-
-    # Randomly choose split point
-    split_row = helper_points.sample(1).iloc[0]
-    split_pid = split_row['point_id_t']
-
-    mask_head = (t.tid_subid == helper_tid) & (t.point_id_t <= split_pid)
-    mask_tail = (t.tid_subid == helper_tid) & (t.point_id_t >  split_pid)
-
-    t.loc[mask_head, 'head_end_flag'] = (t.point_id_t == split_pid)
-    t.loc[mask_tail, 'tail_start_flag'] = (t.point_id_t == split_pid + 1)
-
-    # Update tail points after swap
-    t.loc[mask_tail, 'tid_subid_after_swap'] = main_tid
-    t.loc[mask_tail, 'swap_pair_id'] = swap_id
-
-print("All assigned swaps processed successfully.")
-
-
-
-
-
-
-
-#%% safe but slow version (8 hours run time)
-from tqdm import tqdm
-import pandas as pd
-
-# Make sure your assigned_helpers_df has these columns:
-# ['main_row_uid', 'helper_tid', 'clkpassed']
-
-# Add new columns to the main dataframe to track swaps
-t['tid_subid_after_swap'] = t['tid_subid']
-t['swap_pair_id'] = pd.NA
-t['head_end_flag'] = False   # True for the last point of a head
-t['tail_start_flag'] = False # True for the first point of a tail
-
-# Unique swap ID counter
+# Initialize swap counter
 swap_counter = 0
 
-# Merge main_row point info and sort by trajectory + point order
+# Merge main_row info (point_id_t) for sorting by trajectory and order
 assigned_helpers_df = assigned_helpers_df.merge(
-    t[['row_uid', 'tid_subid', 'point_id_t']], 
+    t[['row_uid', 'tid_subid', 'point_id_t']],
     left_on='main_row_uid', right_on='row_uid', how='left'
-)
-assigned_helpers_df = assigned_helpers_df.sort_values(
-    ['tid_subid', 'point_id_t']
-)
+).sort_values(['tid_subid', 'point_id_t'])
 
-# --- Loop over each assigned swap with tqdm progress bar ---
-for _, swap in tqdm(assigned_helpers_df.iterrows(), 
-                    total=len(assigned_helpers_df), 
-                    desc="Processing swaps"):
+# --- STEP 1: Process swaps sequentially ---
+for _, swap in tqdm(assigned_helpers_df.iterrows(), total=len(assigned_helpers_df), desc="Processing swaps"):
 
     swap_counter += 1
     main_row_uid = swap['main_row_uid']
-    main_tid     = t.loc[t.row_uid == main_row_uid, 'tid_subid'].values[0]
-    clkpassed    = swap['clkpassed']
-    helper_tid   = swap['helper_tid']
-    
+    main_tid_orig = t.loc[t.row_uid == main_row_uid, 'tid_subid_orig'].values[0]
+    helper_tid = swap['helper_tid']
+    clkpassed = swap['clkpassed']
+
     # --- Split main trajectory ---
-    main_split_idx = t.loc[t.row_uid == main_row_uid, 'point_id_t'].values[0]
-    main_mask_head = (t.tid_subid == main_tid) & (t.point_id_t <= main_split_idx)
-    main_mask_tail = (t.tid_subid == main_tid) & (t.point_id_t >  main_split_idx)
-    
-    # Mark head_end and tail_start flags
-    t.loc[main_mask_head, 'head_end_flag'] = (t.point_id_t == main_split_idx)
-    t.loc[main_mask_tail, 'tail_start_flag'] = (t.point_id_t == main_split_idx + 1)
-    
-    # Update tid_subid_after_swap for main tail
+    main_pid = row_uid_to_pid[main_row_uid]
+    main_idx = tid_index_map[main_tid_orig]
+
+    main_mask_head = main_idx[t.loc[main_idx, 'point_id_t'] <= main_pid]
+    main_mask_tail = main_idx[t.loc[main_idx, 'point_id_t'] > main_pid]
+
+    # Head/tail flags
+    t.loc[main_mask_head, 'head_end_flag'] = t.loc[main_mask_head, 'point_id_t'] == main_pid
+    t.loc[main_mask_tail, 'tail_start_flag'] = t.loc[main_mask_tail, 'point_id_t'] == main_pid + 1
+
+    # Update main tail with helper trajectory
     t.loc[main_mask_tail, 'tid_subid_after_swap'] = helper_tid
     t.loc[main_mask_tail, 'swap_pair_id'] = swap_counter
-    
+
     # --- Split helper trajectory ---
-    helper_candidates_points = t[
-        (t.tid_subid == helper_tid) &
-        (t.intersecting_cloaking_ids == clkpassed)
-    ]
-    if len(helper_candidates_points) == 0:
+    helper_idx = tid_index_map[helper_tid]
+
+    # Eligible helper points: same cloaking gap (clkpassed)
+    helper_points = t.loc[helper_idx]
+    helper_points = helper_points[helper_points['intersects_cloaking'] == clkpassed]
+
+    # Exclude points already used in another swap
+    helper_points = helper_points[~helper_points['row_uid'].isin(used_helper_rows)]
+    if len(helper_points) == 0:
         continue  # safety check
 
-    # Pick a random point for the split among eligible points
-    helper_split_row = helper_candidates_points.sample(1).iloc[0]
-    helper_split_idx = helper_split_row['point_id_t']
-    
-    helper_mask_head = (t.tid_subid == helper_tid) & (t.point_id_t <= helper_split_idx)
-    helper_mask_tail = (t.tid_subid == helper_tid) & (t.point_id_t >  helper_split_idx)
-    
-    # Mark head_end and tail_start flags
-    t.loc[helper_mask_head, 'head_end_flag'] = (t.point_id_t == helper_split_idx)
-    t.loc[helper_mask_tail, 'tail_start_flag'] = (t.point_id_t == helper_split_idx + 1)
-    
-    # Update tid_subid_after_swap for helper tail
-    t.loc[helper_mask_tail, 'tid_subid_after_swap'] = main_tid
+    # Pick a random split point
+    helper_split_row = helper_points.sample(1).iloc[0]
+    helper_split_pid = helper_split_row['point_id_t']
+    used_helper_rows.add(helper_split_row['row_uid'])
+
+    helper_mask_head = helper_idx[t.loc[helper_idx, 'point_id_t'] <= helper_split_pid]
+    helper_mask_tail = helper_idx[t.loc[helper_idx, 'point_id_t'] > helper_split_pid]
+
+    # Head/tail flags
+    t.loc[helper_mask_head, 'head_end_flag'] = t.loc[helper_mask_head, 'point_id_t'] == helper_split_pid
+    t.loc[helper_mask_tail, 'tail_start_flag'] = t.loc[helper_mask_tail, 'point_id_t'] == helper_split_pid + 1
+
+    # Update helper tail with main trajectory
+    t.loc[helper_mask_tail, 'tid_subid_after_swap'] = main_tid_orig
     t.loc[helper_mask_tail, 'swap_pair_id'] = swap_counter
 
-print("Swapping completed for all assigned pairs")
+print(f"Swapping completed for {swap_counter} assigned pairs.")
+t.head()
+
+
+#%% debugging - this must all be linked 
+# inspect helper assignment
+assigned_helpers_df = pd.DataFrame(assigned, columns=['main_row_uid', 'helper_tid', 'clkpassed'])
+assigned_helpers_df.head()
+# all this tells me is the last point before a cloaking gap - essentially identifying the cloaking gap
+# and the helper trajectory and the cloking geometry 
+
+# does not provide info on time bin or points that qualify the helper tid to be a helper/ the points on which the split will be based on
+
+#%% what this does tell us: location in sensitive df and helping trajectory to swap with
+print(len(assigned_helpers_df))                 # 11,740 cloaking gaps
+print(assigned_helpers_df.clkpassed.nunique())  # caused by 177 cloaking gaps
+                                                # covered by 
+print(assigned_helpers_df.helper_tid.nunique()) # 7,069 helper trajectories
+                                                # some helper trajectories are used multiple times
+
+# would it help to know from how many tid the 11,740 cloaking gaps are coming from 
+print(main_rows[main_rows['row_uid'].isin(assigned_helpers_df.main_row_uid.unique())].tid_subid.nunique()) # 6,003
+
+#%% do main and helper trajectories overlap?
+main_tids = set(
+    main_rows.loc[
+        main_rows['row_uid'].isin(assigned_helpers_df.main_row_uid),
+        'tid_subid'
+    ]
+)
+helper_tids = set(assigned_helpers_df.helper_tid)
+overlap = main_tids.intersection(helper_tids)
+print("Number of overlapping trajectories:", len(overlap)) # 3,022
+
+#%% actually: must assigne swapping point, not simplt helper trajectory 
+print(main_rows_with_helpers.columns)
+
+# drop the rows that have not been assigned a trajectory helper
+cg_whelpers = main_rows_with_helpers[main_rows_with_helpers['helper_tid'].notna()]
+cg_whelpers = main_rows_with_helpers[main_rows_with_helpers['helper_tid'].notna()]
+print(len(cg_whelpers)) # 11740 - the ones that have been assigned a helper trajeorty
+cg_whelpers.head()
+
+#%% ensure cloking geometries are the same
+print('have cloaking geometries been assigned correctly?', (cg_whelpers['clkpassed'] == cg_whelpers['HeadEndCloakingAreaId']).any())
+
+#%% now actually assign a swpaping point in the helper trajectory
+# randomly pick one of the helper_tid points as the swapping points
+# however, must make sure that the point is within same timebin, as the identified tid might pass the matching cloaking area multiple times in different time bins
+# pre-filter the helping trajectory df to the selected tid_subid and clkpssed so that we only need to filter for matching time bins
+
+# In cg_whelpers
+cg_whelpers['matching_candidate_id'] = (
+    cg_whelpers['clkpassed'].astype(str) + '_' +
+    cg_whelpers['time_bin'].astype(str) + '_' +
+    cg_whelpers['helper_tid'].astype(str)
+)
+
+# In helper_candidates
+helper_candidates['matching_candidate_id'] = (
+    helper_candidates['clkpassed'].astype(str) + '_' +
+    helper_candidates['time_bin'].astype(str) + '_' +
+    helper_candidates['tid_subid'].astype(str)
+)
+# I think we can reduce the columns of helper_candidates as we are only interested in the point id
+helper_candidates_r = helper_candidates[['matching_candidate_id', 'row_uid']].copy()
+helper_candidates_r = helper_candidates_r.rename(columns={'row_uid': 'helper_row_uid'})
+
+# Merge the two
+print(len(cg_whelpers)) # 11740
+helper_candidates_pool = cg_whelpers.merge(helper_candidates_r, on='matching_candidate_id', how='left', suffixes=('_cg', '_t'))
+print(len(helper_candidates_pool))                          # 79,882 - number of points to choose from
+print(helper_candidates_pool.helper_row_uid.nunique())      # 78,696 - not every point is unique! some points can be used for different trajectories to swap at?
+print(helper_candidates_pool.matching_candidate_id.nunique()) 
+# are there nan?
+print(helper_candidates_pool.helper_row_uid.isna().any()) # False, good
+helper_candidates_pool.head()
+
+
+
+#%%%
+helper_candidates_pool[helper_candidates_pool.helper_row_uid.duplicated()]
+
+
+#%% why are there duplicate helper_row_uid values
+# Find which helper_row_uid values appear more than once
+duplicates = helper_candidates_pool['helper_row_uid'].value_counts()
+duplicates = duplicates[duplicates > 1]
+
+print("Number of helper_row_uid values appearing multiple times:", len(duplicates)) # 1186
+print(duplicates.reset_index()['count'].median())
+print(duplicates.reset_index()['count'].max()) # max duplicate is 2
+
+# Get the actual rows for these duplicated helper_row_uid values
+dup_rows = helper_candidates_pool[
+    helper_candidates_pool['helper_row_uid'].isin(duplicates.index)
+]
+
+dup_rows # but they are not full row duplicates
+
+
+
+
+#%% this must be an issue in the helper_candidates df already
+print(helper_candidates.row_uid.nunique()) # 7334941
+print(len(helper_candidates)) # 7377573
+duplicates = helper_candidates['row_uid'].value_counts()
+duplicates = duplicates[duplicates > 1]
+
+print("Number of row_uid values appearing multiple times:", len(duplicates)) # 33235 - even more
+print(duplicates.reset_index()['count'].median())
+print(duplicates.reset_index()['count'].max()) # max duplicate is 3
+
+#%% they should not be duplicates in t
+print(t.row_uid.nunique()) # 7334941
+print(len(t)) # 7334941
+duplicates = t['row_uid'].value_counts()
+duplicates = duplicates[duplicates > 1]
+
+print("Number of row_uid values appearing multiple times:", len(duplicates)) # 0
+print(duplicates.reset_index()['count'].median())
+print(duplicates.reset_index()['count'].max()) # nan
+
+
+
+
+#%% Decision: drop one of the duplicate assignments
+# inspect helper assignment
+assigned_helpers_df = pd.DataFrame(assigned, columns=['main_row_uid', 'helper_tid', 'clkpassed'])
+assigned_helpers_df.head()
+
+#%% issue: some tid_subid are assigned to multiple cloaking geom (fine)
+# BUT those cloaking geom overlap (spatially)
+# identify these duplicates at intersecting cloaking areas and drop one of them from being an assigned helper
+
+print('number of active clk areas assigned to a helper trajectory to actively help at')
+print('max: ', assigned_helpers_df.groupby('helper_tid')['clkpassed'].nunique().reset_index()['clkpassed'].max()) # 12
+print('median: ', assigned_helpers_df.groupby('helper_tid')['clkpassed'].nunique().reset_index()['clkpassed'].median()) # 1 - good
+print('min: ', assigned_helpers_df.groupby('helper_tid')['clkpassed'].nunique().reset_index()['clkpassed'].min()) # 1 - expected
+
+prop = (assigned_helpers_df.groupby('helper_tid')['clkpassed'].nunique() > 1).mean()
+print('% of helper_tid assigned to more than one cloaking gap:', f'{prop:.2%}')
+
+print(assigned_helpers_df.helper_tid.nunique())
+assigned_helpers_df_duplicates = assigned_helpers_df.groupby('helper_tid')['clkpassed'].nunique().loc[lambda x: x > 1].index.tolist()
+print(len(assigned_helpers_df_duplicates))# 2725
+
+
+#%% identify overlapping cloaking geom
+print(len(assigned_helpers_df))                         # 11,740 tid assigned to cloaking gaps
+print(assigned_helpers_df.main_row_uid.nunique())       # 11,740 cloaking gaps
+print(assigned_helpers_df.helper_tid.nunique())         # 7,069 tid to cover these cloaking gaps
+print(assigned_helpers_df.clkpassed.nunique())          # at 177 different cloaking geometries
+print(len(assigned_helpers_df_duplicates))
+assigned_helpers_df_multi = assigned_helpers_df[assigned_helpers_df['helper_tid'].isin(assigned_helpers_df_duplicates)]
+print(len(assigned_helpers_df_multi))                   # 7,396
+print(assigned_helpers_df_multi.helper_tid.nunique())   # 2,725 - number of helper tid assigned more than one cloaking gap
+
+#%% (0) must add geometry of clkpassed
+cloakinggeom = gpd.read_parquet(r"d:\paper3\Data\trajectories\cloakingGeom_2sigLoc_100150m.parquet")
+# only a few columns of interest here
+# cloakingArea_id and cloaking_geometry
+cloakinggeom = cloakinggeom[['cloakingArea_id', 'cloaking_geometry']]
+print(cloakinggeom.crs)
+cloakinggeom.rename(columns={'cloakingArea_id': 'clkpassed'}, inplace=True)
+# add geom to df
+assigned_helpers_df_multi = assigned_helpers_df_multi.merge(cloakinggeom, on = 'clkpassed', how='left')
+# ensure df is now a gdf
+assigned_helpers_df_multi = gpd.GeoDataFrame(
+    assigned_helpers_df_multi,
+    geometry='cloaking_geometry',  
+    crs=cloakinggeom.crs  
+)
+print(type(assigned_helpers_df_multi))
+assigned_helpers_df_multi.head()
+
+
+
+#%% (1) identify overlapping cloaking geom
+pairs = assigned_helpers_df_multi.sjoin(
+    assigned_helpers_df_multi,
+    predicate='intersects',
+    how='inner'
+) # includes different helpers intersecting with each other and self-intersection  - not of interestes here
+pairs = pairs[pairs.index != pairs.index_right]
+pairs = pairs[pairs['helper_tid_left'] == pairs['helper_tid_right']] # only interested in overlaps of cloaking geometries for the same tid
+
+# which two gaps overlap?
+pairs[['helper_tid_left', 
+        'main_row_uid_left', 'clkpassed_left',  
+        'main_row_uid_right', 'clkpassed_right']]  
+
+# helper_tid_left and _right are the same
+# ckpassed and main_tid are fidderent
+
+# one row is one (potential?) conflict
+# but I need to know wheter a helper tid is experienceing more than one conflict
+
+#%% overlaps are recorded both as left to right and right to left, drop the same overlaps
+print(len(pairs)) # 406
+pairs['pair'] = pairs.apply(
+    lambda row: tuple(sorted([row['clkpassed_left'], row['clkpassed_right']])),
+    axis=1
+)
+# look at one example helper
+print(pairs[pairs['helper_tid_left'] == pairs.helper_tid_left.unique()[3]]['pair'].nunique()) # 1
+print(pairs[pairs['helper_tid_left'] == pairs.helper_tid_left.unique()[3]]['pair'].unique())
+pairs[pairs['helper_tid_left'] == pairs.helper_tid_left.unique()[3]][['helper_tid_left', 'main_row_uid_left', 'clkpassed_left', 'main_row_uid_right', 'clkpassed_right', 'pair']]
+# the same overlap is idenfified twice
+
+#%% how many "duplicate assignments" overlap?
+# drop duplicates **per helper**
+pairs_unique = pairs.drop_duplicates(subset=['helper_tid_left', 'pair'])
+print(len(pairs_unique)) # 203 --> 1.6% out of the 11k assigned cloaking gaps
+
+
+#%% now drop one of the duplicates
+# two approaches, depending on how many overlaps the helper tid has
+pair_counts = pairs_unique['helper_tid_left'].value_counts()
+helpers_more_than_1 = pair_counts[pair_counts > 1]
+len(helpers_more_than_1) # 18 trajectories have more than 1 overlap
+proportion = len(helpers_more_than_1) / len(pair_counts)
+print(f"{proportion:.2%}")
+
+helpers_more_than_1 = helpers_more_than_1.reset_index().helper_tid_left.unique()
+pairs_unique_1 = pairs_unique[~pairs_unique['helper_tid_left'].isin(helpers_more_than_1)]
+pairs_unique_o1 = pairs_unique[pairs_unique['helper_tid_left'].isin(helpers_more_than_1)]
+print(len(pairs_unique_o1)+len(pairs_unique_1) == len(pairs_unique))
+
+# (a) one overlap only - randomly choose one to keep
+# 1 - only one overlap, we can (randomly) chose one of the two main_row_uid (left or right) to drop/keep
+# (this could be optimised by looking intot the target trajectories, have they been swapped at other cloaking locations etc)
+# helpers with one overlapping pair only: randomly chose one cloaking gap (main_row_uid) to keep
+# the cloaking gap to keep is stored in a new column
+import numpy as np
+# for each row, randomly pick either main_row_uid_left or main_row_uid_right to fill main_row_uid_noOverlap
+# apply this to tid_s with only one overlap only 
+pairs_unique_1['main_row_uid_noOverlap'] = pairs_unique_1.apply(
+    lambda row: np.random.choice([row['main_row_uid_left'], row['main_row_uid_right']]),
+    axis=1
+)
+pairs_unique_1[['main_row_uid_noOverlap', 'main_row_uid_left', 'main_row_uid_right']]
+#pairs_unique_1.main_row_uid_noOverlap.unique() # these are the ones we keep (or drop, doesn't matter)
+
+#%% (b) multiple overlaps - must pay more attention
+pairs_unique_o1 = pairs_unique_o1.sort_values(by=['helper_tid_left', 'clkpassed_left'])
+print(pairs_unique_o1.head(2)['pair'].unique())
+pairs_unique_o1[['helper_tid_left', 'clkpassed_left', 'clkpassed_right', 'pair']].head(2) # here, first 2 are same helper tid
+# and 
+
+#%%
+cloakinggeom[cloakinggeom['clkpassed'].isin(['2_488e488998d387ccd0ca374eb8c9cdd1be93ebae', '2_ba47b357de1d5aee4867b84fecce545f3d00aba0', 
+                                             '2_975144d4e4fac3c5e7a0fd00ee6bc07fafe37548', '2_d8e1b548c25df0c24d8d8d493d4e6db0ad25c792'])].to_parquet(r"D:\paper3\Data\tetsing\cloakedBasedtetsing/cloakinggeomOverlap.parquet")
+
+
+#%%
+print(pairs_unique_o1[pairs_unique_o1['helper_tid_left']=='20191126_7b7528151b18b954003452674cd3c425d97f92a1_2642'].pair.unique())
+print(pairs_unique_o1[pairs_unique_o1['helper_tid_left']=='20191126_7b7528151b18b954003452674cd3c425d97f92a1_2642'][['clkpassed_left', 'clkpassed_right']])
+
+#%%
+t[t['tid_subid']=='20191126_7b7528151b18b954003452674cd3c425d97f92a1_2642'].to_parquet(r"D:\paper3\Data\tetsing\cloakedBasedtetsing/cloakinggeomOverlap_thelper.parquet")
+
+
+#%% look at the other helpers with more than one cloaking geometry overlap
+pairs[pairs['helper_tid_left'].isin(pairs_unique_o1.helper_tid_left.unique())].to_parquet(r"D:\paper3\Data\tetsing\cloakedBasedtetsing/cloakinggeomOverlap_over1_all.parquet")
+
+
+#%% isolated vs connected overlaps
+# example of isolated overlap 20200715_800816e9960edd7e4bd41344a2f75141d99068f5_6339
+print(pairs_unique_o1[pairs_unique_o1['helper_tid_left']=='20200715_800816e9960edd7e4bd41344a2f75141d99068f5_6339'].pair.unique())
+pairs_unique_o1[pairs_unique_o1['helper_tid_left']=='20200715_800816e9960edd7e4bd41344a2f75141d99068f5_6339'][['clkpassed_left', 'clkpassed_right']]
+
+#%%
+problem_helpers = []
+
+for helper, group in pairs_unique_o1.groupby('helper_tid_left'):
+    
+    # combine both columns into one list
+    all_clk = pd.concat([
+        group['clkpassed_left'],
+        group['clkpassed_right']
+    ])
+    
+    # count occurrences
+    counts = all_clk.value_counts()
+    
+    # does any appear more than once?
+    if (counts > 1).any():
+        problem_helpers.append(helper)
+
+pairs_unique_o1_connected = pairs_unique_o1[pairs_unique_o1['helper_tid_left'].isin(problem_helpers)]
+pairs_unique_o1_isolated = pairs_unique_o1[~pairs_unique_o1['helper_tid_left'].isin(problem_helpers)]
+print(len(pairs_unique_o1_connected)+ len(pairs_unique_o1_isolated)==len(pairs_unique_o1))
+
+#%% handling isolated ones - same approach as to randomly chosing one out of two overlaps (pairs_unique_1)
+print(len(pairs_unique_1)) # this affects 8 cloaking gaps (droped 160/ kept 160)
+
+pairs_unique_o1_isolated['main_row_uid_noOverlap'] = pairs_unique_o1_isolated.apply(
+    lambda row: np.random.choice([row['main_row_uid_left'], row['main_row_uid_right']]),
+    axis=1
+)
+print(len(pairs_unique_o1_isolated)) # this affects 8 cloaking gaps (droped 8/ kept 8)
+pairs_unique_o1_isolated[['main_row_uid_noOverlap', 'main_row_uid_left', 'main_row_uid_right']]
+
+#%% handling connected ones
+
+
+
+
+#%% (3) how do I update my assigned_helpers_df so that the overlaps are removed?
+pairs_unique[pairs_unique['helper_tid_left']=='20200126_5f0d79bddb4fdacfac9de60263266c7d73317f0a_3917']
+# this shows the overlap
+# either main_row_uid_right or main_uid_left must be dropped from assigned_helpers_df (?)
+# because
+print(assigned_helpers_df.main_row_uid.nunique())   # 11,740
+print(len(assigned_helpers_df))                     # 11,740
+# i.e., each cloaking gap is only listed once
+# we can safely remove the ones we want to drop because the tid used has been assigned to overlapping cloaking geometries
+
+
+
+#%% now randomly select a "swapping point" for each helper
+
