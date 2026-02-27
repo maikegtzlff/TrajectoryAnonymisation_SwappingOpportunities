@@ -910,94 +910,136 @@ t_forSwapping.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwap
 #%% SWAPPING
 # load data
 import geopandas as gpd
-t_forSwapping = gps.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping.parquet")
-valid_assigned_helpers_df = gpd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/valid_assigned_helpers_df.parquet")
+import pandas as pd
+t_forSwapping = gpd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping.parquet")
+valid_assigned_helpers_df = pd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/valid_assigned_helpers_df.parquet")
 
 #%%
-import pandas as pd
 from tqdm import tqdm
 import numpy as np
 import os
-
-# work with copies of t and valid_assigned_helpers_df
+import pandas as pd
 
 # --- STEP 0: Add columns to track swaps ---
-t['tid_subid_orig'] = t['tid_subid']        # original trajectory ID
-t['tid_subid_after_swap'] = t['tid_subid']  # updated trajectory after swaps
-t['swap_pair_id'] = pd.NA
-t['head_end_flag'] = False
-t['tail_start_flag'] = False
+t_forSwapping['tid_subid_orig'] = t_forSwapping['tid_subid']
 
-# Precompute row_uid → point_id_t mapping
-row_uid_to_pid = t.set_index('row_uid')['point_id_t'].to_dict()
+# IMPORTANT: initialize current container as original
+t_forSwapping['tid_subid_after_swap'] = t_forSwapping['tid_subid']
 
-# Precompute trajectory indices for faster slicing
-tid_index_map = t.groupby('tid_subid').groups
+t_forSwapping['swap_pair_id'] = pd.NA
+t_forSwapping['head_end_flag'] = False
+t_forSwapping['tail_start_flag'] = False
 
-# Track helper rows that have already been used for splitting
+# Precompute row_uid → point_id_t mapping (original split reference)
+row_uid_to_pid = t_forSwapping.set_index('row_uid')['point_id_t'].to_dict()
+
+# Track helper rows already used
 used_helper_rows = set()
 
-# Initialize swap counter
 swap_counter = 0
 
-# Merge main_row info (point_id_t) for sorting by trajectory and order
-assigned_helpers_df = assigned_helpers_df.merge(
-    t[['row_uid', 'tid_subid', 'point_id_t']],
-    left_on='main_row_uid', right_on='row_uid', how='left'
-).sort_values(['tid_subid', 'point_id_t'])
-
 # --- STEP 1: Process swaps sequentially ---
-for _, swap in tqdm(assigned_helpers_df.iterrows(), total=len(assigned_helpers_df), desc="Processing swaps"):
+for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
+                    total=len(valid_assigned_helpers_df),
+                    desc="Processing swaps"):
 
-    swap_counter += 1
     main_row_uid = swap['main_row_uid']
-    main_tid_orig = t.loc[t.row_uid == main_row_uid, 'tid_subid_orig'].values[0]
-    helper_tid = swap['helper_tid']
+    helper_tid_target = swap['helper_tid']
     clkpassed = swap['clkpassed']
 
-    # --- Split main trajectory ---
-    main_pid = row_uid_to_pid[main_row_uid]
-    main_idx = tid_index_map[main_tid_orig]
+    # -------------------------------------------------
+    # 1️⃣ Get split position from ORIGINAL metadata
+    # -------------------------------------------------
+    main_split_pid = row_uid_to_pid[main_row_uid]
 
-    main_mask_head = main_idx[t.loc[main_idx, 'point_id_t'] <= main_pid]
-    main_mask_tail = main_idx[t.loc[main_idx, 'point_id_t'] > main_pid]
+    # -------------------------------------------------
+    # 2️⃣ Get CURRENT container of main row
+    # -------------------------------------------------
+    main_container = t_forSwapping.loc[
+        t_forSwapping.row_uid == main_row_uid,
+        'tid_subid_after_swap'
+    ].values[0]
 
-    # Head/tail flags
-    t.loc[main_mask_head, 'head_end_flag'] = t.loc[main_mask_head, 'point_id_t'] == main_pid
-    t.loc[main_mask_tail, 'tail_start_flag'] = t.loc[main_mask_tail, 'point_id_t'] == main_pid + 1
+    # -------------------------------------------------
+    # 3️⃣ Identify helper split row (still original logic)
+    # -------------------------------------------------
+    helper_candidates = t_forSwapping[
+        (t_forSwapping['tid_subid_after_swap'] == helper_tid_target) &
+        (t_forSwapping['intersects_cloaking'] == clkpassed) &
+        (~t_forSwapping['row_uid'].isin(used_helper_rows))
+    ]
 
-    # Update main tail with helper trajectory
-    t.loc[main_mask_tail, 'tid_subid_after_swap'] = helper_tid
-    t.loc[main_mask_tail, 'swap_pair_id'] = swap_counter
+    if len(helper_candidates) == 0:
+        continue
 
-    # --- Split helper trajectory ---
-    helper_idx = tid_index_map[helper_tid]
-
-    # Eligible helper points: same cloaking gap (clkpassed)
-    helper_points = t.loc[helper_idx]
-    helper_points = helper_points[helper_points['intersects_cloaking'] == clkpassed]
-
-    # Exclude points already used in another swap
-    helper_points = helper_points[~helper_points['row_uid'].isin(used_helper_rows)]
-    if len(helper_points) == 0:
-        continue  # safety check
-
-    # Pick a random split point
-    helper_split_row = helper_points.sample(1).iloc[0]
+    helper_split_row = helper_candidates.sample(1).iloc[0]
+    helper_row_uid = helper_split_row['row_uid']
     helper_split_pid = helper_split_row['point_id_t']
-    used_helper_rows.add(helper_split_row['row_uid'])
+    used_helper_rows.add(helper_row_uid)
 
-    helper_mask_head = helper_idx[t.loc[helper_idx, 'point_id_t'] <= helper_split_pid]
-    helper_mask_tail = helper_idx[t.loc[helper_idx, 'point_id_t'] > helper_split_pid]
+    # -------------------------------------------------
+    # 4️⃣ Get CURRENT container of helper row
+    # -------------------------------------------------
+    helper_container = t_forSwapping.loc[
+        t_forSwapping.row_uid == helper_row_uid,
+        'tid_subid_after_swap'
+    ].values[0]
 
-    # Head/tail flags
-    t.loc[helper_mask_head, 'head_end_flag'] = t.loc[helper_mask_head, 'point_id_t'] == helper_split_pid
-    t.loc[helper_mask_tail, 'tail_start_flag'] = t.loc[helper_mask_tail, 'point_id_t'] == helper_split_pid + 1
+    # -------------------------------------------------
+    # 🚨 Prevent swapping within same container
+    # -------------------------------------------------
+    if main_container == helper_container:
+        continue
 
-    # Update helper tail with main trajectory
-    t.loc[helper_mask_tail, 'tid_subid_after_swap'] = main_tid_orig
-    t.loc[helper_mask_tail, 'swap_pair_id'] = swap_counter
+    swap_counter += 1
+
+    # -------------------------------------------------
+    # 5️⃣ Extract FULL current containers
+    # -------------------------------------------------
+    main_box = t_forSwapping[
+        t_forSwapping['tid_subid_after_swap'] == main_container
+    ]
+
+    helper_box = t_forSwapping[
+        t_forSwapping['tid_subid_after_swap'] == helper_container
+    ]
+
+    # -------------------------------------------------
+    # 6️⃣ Split using ORIGINAL split position
+    # -------------------------------------------------
+    main_head = main_box[main_box['point_id_t'] <= main_split_pid]
+    main_tail = main_box[main_box['point_id_t'] >  main_split_pid]
+
+    helper_head = helper_box[helper_box['point_id_t'] <= helper_split_pid]
+    helper_tail = helper_box[helper_box['point_id_t'] >  helper_split_pid]
+
+    # -------------------------------------------------
+    # 7️⃣ Flag boundaries
+    # -------------------------------------------------
+    t_forSwapping.loc[main_head.index, 'head_end_flag'] = \
+        t_forSwapping.loc[main_head.index, 'point_id_t'] == main_split_pid
+
+    t_forSwapping.loc[main_tail.index, 'tail_start_flag'] = \
+        t_forSwapping.loc[main_tail.index, 'point_id_t'] == main_split_pid + 1
+
+    t_forSwapping.loc[helper_head.index, 'head_end_flag'] = \
+        t_forSwapping.loc[helper_head.index, 'point_id_t'] == helper_split_pid
+
+    t_forSwapping.loc[helper_tail.index, 'tail_start_flag'] = \
+        t_forSwapping.loc[helper_tail.index, 'point_id_t'] == helper_split_pid + 1
+
+    # -------------------------------------------------
+    # 8️⃣ Perform the swap (swap tails)
+    # -------------------------------------------------
+    t_forSwapping.loc[main_tail.index, 'tid_subid_after_swap'] = helper_container
+    t_forSwapping.loc[main_tail.index, 'swap_pair_id'] = swap_counter
+
+    t_forSwapping.loc[helper_tail.index, 'tid_subid_after_swap'] = main_container
+    t_forSwapping.loc[helper_tail.index, 'swap_pair_id'] = swap_counter
+
 
 print(f"Swapping completed for {swap_counter} assigned pairs.")
-t.head()
+t_forSwapping.head()
 
+#%% compare to ouput from 131 -must also update github
+t_forSwapping.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping_swapped_201.parquet")
