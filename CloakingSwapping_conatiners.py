@@ -837,6 +837,9 @@ print(duplicates.reset_index()['count'].max()) # nan
 
 
 
+
+
+
 #%% Decision: drop one of the duplicate assignments
 # inspect helper assignment
 assigned_helpers_df = pd.DataFrame(assigned, columns=['main_row_uid', 'helper_tid', 'clkpassed'])
@@ -1015,21 +1018,173 @@ pairs_unique_o1_isolated['main_row_uid_noOverlap'] = pairs_unique_o1_isolated.ap
 print(len(pairs_unique_o1_isolated)) # this affects 8 cloaking gaps (droped 8/ kept 8)
 pairs_unique_o1_isolated[['main_row_uid_noOverlap', 'main_row_uid_left', 'main_row_uid_right']]
 
+
 #%% handling connected ones
+pairs_unique_o1_connected_long = (
+    pairs_unique_o1_connected
+    .melt(
+        id_vars=['helper_tid_left'],
+        value_vars=['clkpassed_left', 'clkpassed_right'],
+        value_name='clkpassed'
+    )
+)
+
+pairs_unique_o1_connected_counts = (
+    pairs_unique_o1_connected_long
+    .groupby(['helper_tid_left', 'clkpassed'])
+    .size()
+    .reset_index(name='clkpassed_usage_count')
+)
+pairs_unique_o1_connected_counts
+
+# could add this back to the df
+#pairs_unique_o1_connected = pairs_unique_o1_connected.merge(
+#    pairs_unique_o1_connected_counts,
+#    left_on=['helper_tid_left', 'clkpassed_left'],
+#    right_on=['helper_tid_left', 'clkpassed'],
+#    how='left'
+#).rename(columns={'clkpassed_usage_count': 'clkpassed_left_count'}).drop(columns='clkpassed')
+
+#pairs_unique_o1_connected = pairs_unique_o1_connected.merge(
+#    pairs_unique_o1_connected_counts,
+#    left_on=['helper_tid_left', 'clkpassed_right'],
+#    right_on=['helper_tid_left', 'clkpassed'],
+#    how='left'
+#).rename(columns={'clkpassed_usage_count': 'clkpassed_right_count'}).drop(columns='clkpassed')
+
+#%%
+pairs_unique_o1_connected_counts[pairs_unique_o1_connected_counts['helper_tid_left']=='20191126_7b7528151b18b954003452674cd3c425d97f92a1_2642']
+
+#%%
+pairs_unique_o1_connected[pairs_unique_o1_connected['helper_tid_left']=='20191126_7b7528151b18b954003452674cd3c425d97f92a1_2642'][['main_row_uid_left', 'clkpassed_left', 'main_row_uid_right', 'clkpassed_right']]
+#%% I want to keep and 
+# both are cklpassed_right 
+# that menas for tehse rows I have to take the value of main_row_uid_right for my 'chosen' colum
+# and drop the last line where/ have na for the chosen column 
+# could also take a uid approach. I do not chose the ones that have diplicates, but the ones that are unique\
+print(len(pairs_unique_o1_connected))
+
+import numpy as np
+import pandas as pd
+
+# Step 1 — build a long version just to compute counts
+long_uid = (
+    pairs_unique_o1_connected[['helper_tid_left', 'main_row_uid_left', 'main_row_uid_right']]
+    .melt(
+        id_vars='helper_tid_left',
+        value_vars=['main_row_uid_left', 'main_row_uid_right'],
+        value_name='main_row_uid'
+    )
+)
+
+# Step 2 — compute counts per helper + uid
+uid_counts = (
+    long_uid
+    .groupby(['helper_tid_left', 'main_row_uid'])
+    .size()
+)
+
+# Step 3 — map counts back to left and right columns
+pairs_unique_o1_connected['left_count'] = list(
+    zip(pairs_unique_o1_connected['helper_tid_left'], pairs_unique_o1_connected['main_row_uid_left'])
+)
+pairs_unique_o1_connected['left_count'] = pairs_unique_o1_connected['left_count'].map(uid_counts)
+
+pairs_unique_o1_connected['right_count'] = list(
+    zip(pairs_unique_o1_connected['helper_tid_left'], pairs_unique_o1_connected['main_row_uid_right'])
+)
+pairs_unique_o1_connected['right_count'] = pairs_unique_o1_connected['right_count'].map(uid_counts)
+
+# Step 4 — create final column
+pairs_unique_o1_connected['main_row_uid_noOverlap'] = np.where(
+    pairs_unique_o1_connected['left_count'] == 1,
+    pairs_unique_o1_connected['main_row_uid_left'],
+    np.where(
+        pairs_unique_o1_connected['right_count'] == 1,
+        pairs_unique_o1_connected['main_row_uid_right'],
+        np.nan
+    )
+)
+
+print(len(pairs_unique_o1_connected)) # nothing lost
+print(pairs_unique_o1_connected.main_row_uid_noOverlap.nunique()) # 22 assigned - I think this should be integers for the final selection step
+pairs_unique_o1_connected[['helper_tid_left', 'main_row_uid_left' ,'main_row_uid_right', 'main_row_uid_noOverlap']].head()
+# multiple assigned per tid (good) but they should not be overlapping anymore. if they were overlapping they have been dropped (nan)
 
 
 
 
 #%% (3) how do I update my assigned_helpers_df so that the overlaps are removed?
-pairs_unique[pairs_unique['helper_tid_left']=='20200126_5f0d79bddb4fdacfac9de60263266c7d73317f0a_3917']
-# this shows the overlap
-# either main_row_uid_right or main_uid_left must be dropped from assigned_helpers_df (?)
 # because
-print(assigned_helpers_df.main_row_uid.nunique())   # 11,740
-print(len(assigned_helpers_df))                     # 11,740
+print(assigned_helpers_df.main_row_uid.nunique())   # 11,740 cloaking gaps
+print(len(assigned_helpers_df))                     # 11,740 
 # i.e., each cloaking gap is only listed once
 # we can safely remove the ones we want to drop because the tid used has been assigned to overlapping cloaking geometries
 
+print(assigned_helpers_df.helper_tid.nunique())         # 7,069 tid to cover these cloaking gaps
+print(assigned_helpers_df.clkpassed.nunique())          # at 177 different cloaking geometries
+print(len(assigned_helpers_df_duplicates))
+#assigned_helpers_df_multi = assigned_helpers_df[assigned_helpers_df['helper_tid'].isin(assigned_helpers_df_duplicates)]
+print(len(assigned_helpers_df_multi))                   # 7,396
+print(assigned_helpers_df_multi.helper_tid.nunique())   # 2,725 - number of helper tid assigned more than one cloaking gap
+
+# assigned_helpers_df:          11,740 cloaking gaps have been assigned initially for swapping
+# assigned_helpers_df_multi:    7,396 but assigned_helpers_df_multi of those gaps are covered by helper trajectories who help more than once
+# multi assigment is generally ok, as long as the assigned gaps do not overlap
+print(assigned_helpers_df_multi.main_row_uid.nunique()) # 7396
+# pair: we than did a spatial join to find overlaps (and removed overlaps with itself)
+# this join was set to inner, i.e., we dropped all other
+# pairs = assigned_helpers_df_multi.sjoin(assigned_helpers_df_multi, predicate='intersects', how='inner')
+
+# must find the main_row_uid of the helpers that are multi assigned, but do not overlap
+overlap_unique_ids = pd.unique(pairs[['main_row_uid_left', 'main_row_uid_right']].values.ravel())
+overlap_unique_ids = overlap_unique_ids.tolist()
+print(assigned_helpers_df_multi.main_row_uid.nunique())
+#381 out of the 7396 are problematic 
+# remove these from the list and add back in the ones to keep later
+assigned_helpers_df_mult_list = assigned_helpers_df_multi.main_row_uid.unique()
+
+assigned_helpers_df_mult_list_noOverlaps = list(
+    set(assigned_helpers_df_mult_list) - set(overlap_unique_ids)
+)
+print(len(assigned_helpers_df_mult_list_noOverlaps)) # 7015, which is exactly 7396-381
+
+#%% now add the problematic ids that we decided to keep back
+# the filtered problematic main_row_uids come from 3 dfs
+#pairs_unique_1[['main_row_uid_noOverlap', 'main_row_uid_left', 'main_row_uid_right']]
+#pairs_unique_o1_isolated[['main_row_uid_noOverlap', 'main_row_uid_left', 'main_row_uid_right']]
+#pairs_unique_o1_connected[['main_row_uid_noOverlap', 'main_row_uid_left' ,'main_row_uid_right']].head()
+
+# combined, main_row_uid_noOverlap is a list of problematic main_row_uids to keep
+main_row_uid_noOverlap_list = pd.concat([
+    pairs_unique_1['main_row_uid_noOverlap'],
+    pairs_unique_o1_isolated['main_row_uid_noOverlap'],
+    pairs_unique_o1_connected['main_row_uid_noOverlap']
+]).dropna().astype(int).tolist()
+
+print(len(main_row_uid_noOverlap_list)) # 190
+
+assigned_helpers_df_mult_list_noOverlaps.extend(main_row_uid_noOverlap_list)
+print(len(assigned_helpers_df_mult_list_noOverlaps)) # 7205 valid assigment of helpers to help multiple times
+# (previously 7396, removed the problematic ones)
+
+#%% update assigned helpers df
+# remove the problematic main_row_uids
+print(len(assigned_helpers_df_mult_list))
+print(len(assigned_helpers_df_mult_list_noOverlaps))
+
+assigned_helpers_clkg_toRemove = list(
+    set(assigned_helpers_df_mult_list)
+    - set(assigned_helpers_df_mult_list_noOverlaps)
+)
+len(assigned_helpers_clkg_toRemove) # 191 --> remove these from assigned_helpers_df
+
+
+
+
+#%% updating assigned helpers df
+valid_assigned_helpers_df = assigned_helpers_df[~assigned_helpers_df['main_row_uid'].isin(assigned_helpers_clkg_toRemove)]
+valid_assigned_helpers_df
 
 
 #%% now randomly select a "swapping point" for each helper
