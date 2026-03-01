@@ -18,6 +18,7 @@ t['intersecting_cloaking_ids'] = t['intersecting_cloaking_ids'].apply(
 
 t.head()
 #%%
+print(t.tid_subid.nunique()) # 19,189 trajectories
 t.HeadEndCloakingAreaId.value_counts().sum() #31,272
 
 #%% flag trajectory ids that have been cloaked
@@ -1043,3 +1044,190 @@ t_forSwapping.head()
 
 #%% compare to ouput from 131 -must also update github
 t_forSwapping.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping_swapped_201.parquet")
+
+#%%
+import geopandas as gpd
+t_forSwapping = gpd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping_swapped_201.parquet")
+# and from 131
+import pandas as pd
+t_forSwapping_swapped_hypridCloaked =  gpd.read_parquet(r"d:\paper3\output_hybrid_cloakedSwapping\t_forSwapping_swapped_hypridCloaked.parquet")
+t_forSwapping_swapped_hypridCloaked_swap_log_df = pd.read_parquet(r"d:\paper3\output_hybrid_cloakedSwapping\t_forSwapping_swapped_hypridCloaked_swap_log_df.parquet")
+t_forSwapping_swapped_hypridCloaked_container_summary_df = pd.read_parquet(r"d:\paper3\output_hybrid_cloakedSwapping\t_forSwapping_swapped_hypridCloaked_container_summary_df.parquet")
+
+
+
+
+
+#%% looking at results from 131
+print(t_forSwapping_swapped_hypridCloaked_swap_log_df.swap_id.max()) 
+# 11,549 swaps total between main an helper trajectory 
+#- this is dictated by the number of valid swaps assigned to cloaking gaps 
+t_forSwapping_swapped_hypridCloaked_swap_log_df.head()
+# records how many points are in head and tail
+
+#%%
+print(len(t_forSwapping_swapped_hypridCloaked_container_summary_df)) # 19,189 - same as original number of tid_subid
+t_forSwapping_swapped_hypridCloaked_container_summary_df.head() 
+# number of points per container_id
+# how many head and tail segments are in container (good), 
+# as well as median and max swap count
+# and the number of original tid per container! - n_unique_orig_tid
+
+#%%
+print(t_forSwapping_swapped_hypridCloaked.tid_subid.nunique()) # 19,189
+print(t_forSwapping_swapped_hypridCloaked.tid_subid_after_swap.nunique()) # 19,189
+print(t_forSwapping_swapped_hypridCloaked.tid_subid_after_swap.isna().any()) # because I intialised t_forSwapping['tid_subid_after_swap'] = t_forSwapping['tid_subid']  
+# rows that never swapped kept the original tid_subid
+
+print(t_forSwapping_swapped_hypridCloaked.swap_pair_id.unique())
+print(t_forSwapping_swapped_hypridCloaked.swap_pair_id.value_counts()) # some 1, some up to 4k --> one swap affected 4k rows
+
+print(t_forSwapping_swapped_hypridCloaked.head_end_flag.unique()) # [False  True]
+print(t_forSwapping_swapped_hypridCloaked.tail_start_flag.unique()) # [False  True] - question, are they at the correct rows
+
+print(t_forSwapping_swapped_hypridCloaked.swap_count.min()) # 0 
+print(t_forSwapping_swapped_hypridCloaked.swap_count.median()) # 0 --> half of my points were never swapped
+print(t_forSwapping_swapped_hypridCloaked.swap_count.max()) # 66
+
+print(t_forSwapping_swapped_hypridCloaked['visited_containers'].str.len().eq(0).value_counts())
+#visited_containers
+#True     3,707,369 --> empty list --> points never swapped
+#False    3,624,209 --> non-empty list
+
+t_forSwapping_swapped_hypridCloaked.head()
+
+#%% did any container loose all points? No because False
+original_sizes = t_forSwapping.groupby('tid_subid').size()
+new_sizes = t_forSwapping_swapped_hypridCloaked.groupby('tid_subid_after_swap').size()
+
+print((original_sizes == 0).any())
+print((new_sizes == 0).any())
+
+#%% growth of containers (i.e., points associtaed with new_tid_subid compared to oirg tid_subid)
+container_growth = (
+    new_sizes - original_sizes.reindex(new_sizes.index).fillna(0)
+).sort_values(ascending=False)
+
+container_growth.head(10)
+
+#%% did points revisit the same container - should be 0, one of the constraints is to not swap back
+t_forSwapping_swapped_hypridCloaked[
+    t_forSwapping_swapped_hypridCloaked.visited_containers
+        .apply(lambda x: len(x) != len(set(x)))
+]
+
+
+#%% is tehre a container that never swapped
+# Per container: did anything swap?
+container_swap_stats = (
+    t_forSwapping_swapped_hypridCloaked
+    .groupby('tid_subid_after_swap')
+    .agg(
+        max_swap_count=('swap_count', 'max'),
+        any_head=('head_end_flag', 'any'),
+        any_tail=('tail_start_flag', 'any')
+    )
+)
+
+# Containers that never swapped
+never_swapped_containers = container_swap_stats[
+    (container_swap_stats.max_swap_count == 0) &
+    (~container_swap_stats.any_head) &
+    (~container_swap_stats.any_tail)
+]
+
+print(len(never_swapped_containers)) # 9,585 - just under 50%
+#%%
+pct_never_swapped = (
+    len(never_swapped_containers) /
+    container_swap_stats.shape[0]
+) * 100
+
+print(f"{pct_never_swapped:.2f}%") # 49.95%
+
+#%% look at head and tail flags
+df = t_forSwapping_swapped_hypridCloaked.sort_values(
+    ['tid_subid_after_swap', 'row_uid']
+
+)
+
+# Get previous row within same container
+df['prev_tid'] = df['tid_subid_after_swap'].shift()
+df['prev_pid'] = df['row_uid'].shift()
+
+head_errors = df[
+    (df.head_end_flag) &
+    (df.tid_subid_after_swap == df.prev_tid) &
+    (df.row_uid != df.prev_pid + 1)
+]
+
+print("Head alignment errors:", len(head_errors)) # 53
+# %%
+df['prev_head'] = df['head_end_flag'].shift()
+
+tail_errors = df[
+    (df.tail_start_flag) &
+    (~df.prev_head)
+]
+
+print("Tail alignment errors:", len(tail_errors))
+
+#%%
+total_heads = df.head_end_flag.sum()
+total_tails = df.tail_start_flag.sum()
+
+print(total_heads, total_tails) #12768 8422 - not good
+
+# %%
+double_heads = df[df.head_end_flag].duplicated(
+    subset=['tid_subid_after_swap', 'row_uid']
+).sum()
+
+print("Duplicate head locations:", double_heads) # 0
+
+#%%
+#Head alignment errors: 53
+#Tail alignment errors: (nonzero)
+#total_heads = 12768
+#total_tails = 8422 
+# --> 4,346 heads have no corresponding tail
+#Duplicate head locations: 0
+
+# flagging heads and tails too early
+
+#%% entropy change
+# exact 1 original traj = entropy -
+# mix trajectories in container= entropy 0
+# higher entrpy = stronger anoymity mixing
+import numpy as np
+
+def shannon_entropy(counts):
+    probs = counts / counts.sum()
+    return -(probs * np.log2(probs)).sum()
+
+container_entropy = (
+    t_forSwapping_swapped_hypridCloaked
+    .groupby('tid_subid_after_swap')['tid_subid_orig']
+    .value_counts()
+    .groupby(level=0)
+    .apply(lambda x: shannon_entropy(x.values))
+)
+
+print(container_entropy.describe())
+#count    19189.000000
+#mean         0.440910 --> moderate mixing
+#std          0.614636
+#min         -0.000000
+#25%          0.000000
+#50%          0.000000 --> half of the containers remain unswapped
+#75%          0.890492 --> log2(1.85) --> top 25% of containers mix about two trajectories --> overall, 25% of trajectories are lighly mixed
+# log because Shannon entropy is H=E-pilog2(pi) and a container with k trajectories evenly mixed is pi = 1/k
+# H = log2(k)
+# max entropy is 4.7 --> k = 2^4.7 = 2^4 (16) * 2^0.7 (0.16) = 26 --> most mixed container behaves like ~26 evenly mixed trajectories combined (strong anonymisation)
+#max          4.705298 --> a few very high-anonymity hotspots?
+# light mixing for many, heavy mixing for few
+
+# high-anonymity hotpsots (expected)
+# swapping concentrated at cloaking lcoations - only 177 cloaking locations, ~30k gaps but only ~12k gaps have valid swapping partners
+# swaps are spatially clustered
+# only intersecting trajectories within the cloaking area participate
