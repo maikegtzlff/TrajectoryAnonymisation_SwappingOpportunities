@@ -247,70 +247,119 @@ selected_mahelpers = (
       .reset_index(name='selected_helper_row_uid')
 )
 selected_mahelpers
+
 #%% now pick a random point for the unproblematic helpers
 # remove problematic helpers from sample
+print(t_helper.main_row_uid.nunique())
+#mah_id_df = t_helper[t_helper['main_row_uid'].isin(mah_id)] # helpers which are also mains, or as the name suggests mains as helpers
+print(mah_id_df.main_row_uid.nunique())
+random_t_helper_pool = t_helper[~t_helper['main_row_uid'].isin(mah_id)] # helpers which are unproblematic (aka not a main themselves)
+print(random_t_helper_pool.main_row_uid.nunique())
+print((random_t_helper_pool.main_row_uid.nunique()+mah_id_df.main_row_uid.nunique()) == t_helper.main_row_uid.nunique())
 
-# pick unproblematic helpers
-
-# reunite helper selection
-
-
-#%% choose a random point to split helper trajectory at (double check that no point is chosen twice)
-# must chose one random point per assigned_swap_id to be the swapping partner to main_row_uid from valid_assigned_helpers_df
-# assigned_swap_id = main_row_uid because there is only one main_row_uid per assigned_swap_id
-print(len(t_helper) == t_helper.helper_row_uid.nunique())
-t_helper_random = t_helper.groupby('main_row_uid', group_keys=False).sample(n=1)
-print(len(t_helper_random)) # 11549 same as number of cloaking gaps good
-print(t_helper_random.main_row_uid.nunique()) # must allso be 11549
-print(t_helper_random.helper_row_uid.nunique()) # must allso be 11549
-
-t_helper_random[['main_row_uid', 'helper_row_uid', 'helper_clkpassed', 'time_bin', 'helper_tid_subid']].head()
-
-
-
-#%% control cloaking gaps are the same
-t_helper_random = t_helper_random.rename(columns={'helper_tid':'helper_tid_subid' ,'time_bin': 'helper_time_bin', 'clkpassed':'helper_clkpassed'})
-t_helper_random_r = t_helper_random[['assigned_swap_id', 'helper_row_uid', 'helper_tid_subid', 'helper_clkpassed', 'helper_time_bin']].copy()
-
-print(len(t_main))
-print(len(t_helper_random_r))
-swap_pairs = t_main.merge(t_helper_random_r, on='assigned_swap_id', how='inner')
-print(len(swap_pairs)) # 11549, merge worked
-
-# time bin and clkpassed should be the same for each row
-print((swap_pairs['main_clkpassed'] == swap_pairs['helper_clkpassed']).any())
-print((swap_pairs['main_time_bin'] == swap_pairs['helper_time_bin']).any())
-
-swap_pairs
-
-#%% prep swap pairs more - multiple cloaking gaps in the same trajectory are problematic
-# row_uid comes from the same tid_subid
-# want to know the number of times a tid_subid is used for swapping, regardless whether it acts as main or helper
-# will never be swapped with itself, so can create one list of "swapping" row_uids, ignoring helper or main function
-# get list of uids involved in swapping
-swap_uid_list = swap_pairs.main_row_uid.unique() + swap_pairs.helper_row_uid.unique()
-len(swap_uid_list) # 11549  - would've expected double?
-# is it a problem that every helper uid is the same as a main uid? yes!
-# did something get overwritten somehwere
+# randomly pick unproblematic helpers
+t_helper_random = random_t_helper_pool.groupby('main_row_uid', group_keys=False).sample(n=1)
+# only want a record of main_row_uid and helper_row_uid
+t_helper_random = t_helper_random[['main_row_uid', 'helper_row_uid']]
+print(len(t_helper_random))
+t_helper_random
+#%%  reunite helper selection
+selected_mahelpers = selected_mahelpers.rename(columns={'selected_helper_row_uid': 'helper_row_uid'})
+# append  these to t_helper_random because I want them to be swapped last, incase it is a main that is acting as a helper
+t_helper_random_assigned = pd.concat([t_helper_random, selected_mahelpers]).reset_index()
+t_helper_random_assigned # len 11549 
+#%% export swapping pairs
+t_helper_random_assigned.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/CloakingGaps_swappingPairs_PointLevel.parquet")
 
 
 
+#%% SWAPPING
+import geopandas as gpd
+import pandas as pd
+t_forSwapping = gpd.read_parquet(r"d:\paper3\Data\output\CloakingBasedSwapping\t_forSwapping.parquet")
+t_helper_random_assigned = pd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/CloakingGaps_swappingPairs_PointLevel.parquet")
 
 #%% run swapping
 # prep data
+import numpy as np
+# reduce df to prevent memory issues (can get attributes back at a later stage)
+t_forSwapping_r = t_forSwapping[['row_uid', 'tid_subid']].copy()
+t_forSwapping_r['orig_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['new_tid_subid'] = False
+t_forSwapping_r['SwappingHeadTail'] = False
+t_forSwapping_r['swap_n'] = np.nan
 
-# (1) isolate the swapping pair from main df
 
-# (2) split main and helper into heads and tail
+print(t_forSwapping_r.head())
 
-# (3) swap by updating tid
+swapping_pairs = dict(zip(t_helper_random_assigned['main_row_uid'],
+                   t_helper_random_assigned['helper_row_uid'])) # dictonaires are unoarded
 
-# (4) update point_id (actually move points to new container, i.e., order by new point id)
-# (4a) hierarchy for ordering:
-# new tid_subid after swap
-# head, then tail (h is before t in the alphabet)
-# row_uid
+point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
+                   t_forSwapping_r['tid_subid']))
+point_to_tid_dict
 
-# (5) return to main df
+#%% run swapping
 
-# (6) run swapping on the next pair
+#for main_sid, helper_sid in swapping_pairs.items():
+# run for 5 to test logic
+from itertools import islice
+for main_sid, helper_sid in islice(swapping_pairs.items(), 2): 
+    print('')
+    print(main_sid, helper_sid) # but looping is slow, mapping might be better...
+
+    # (1) isolate the swapping pair from main df
+    # get tid_subid for both main and helper
+    main_tid = point_to_tid_dict[main_sid]
+    print('tid of main', main_tid)
+    helper_tid = point_to_tid_dict[helper_sid] # BUT TID OF POINT WILL CHANGE - build dict at the beginning of each loop?
+    print('tid of main', helper_tid)
+    # subset by tid and reset index
+    main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
+    print('len of main', len(main))
+    helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+    print('len of main', len(helper))
+
+    # (2) split main and helper into heads and tail
+    m_cut_index = main.index[main["row_uid"] == main_sid][0]
+    h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]
+
+    main["SwappingHeadTail"] = np.where(
+        main.index <= m_cut_index,
+        f"head_main_{main_sid}",
+        f"tail_main_{main_sid}"
+    )
+
+    helper["SwappingHeadTail"] = np.where(
+        helper.index <= h_cut_index,
+        f"head_helper_{helper_sid}",
+        f"tail_helper_{helper_sid}"
+    ) 
+
+    # (3) swap by updating tid 
+    # update tail of main
+    main['new_tid_subid'] = np.where(
+        SwappingHeadTail = f"tail_main_{helper_sid}",
+        helper_tid,
+        main_tid # but this overwites previous values, we want it to be the ORIG HEAD TID
+    )
+
+    # update tail of helper
+
+
+    # (3b) MUST UPDATE DICTONAIRY
+    #point_to_tid_dict.update({
+    #    main_sid: NEW TID,
+    #    helper_sid: NEW TID
+    #})
+
+
+    # (4) update point_id (actually move points to new container, i.e., order by new point id)
+    # (4a) hierarchy for ordering:
+    # new tid_subid after swap
+    # head, then tail (h is before t in the alphabet)
+    # row_uid
+
+    # (5) return to main df
+
+    # (6) run swapping on the next pair
