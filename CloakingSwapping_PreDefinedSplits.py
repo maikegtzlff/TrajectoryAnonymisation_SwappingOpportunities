@@ -320,7 +320,6 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
 # run for 5 to test logic
 #from itertools import islice
 #for main_sid, helper_sid in islice(swapping_pairs.items(), 2): 
-    #print('')
     #print('main <--> helper', main_sid, helper_sid) # but looping is slow, mapping might be better...
 
     # (1) isolate the swapping pair from main df
@@ -459,7 +458,14 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
 
 
     # (3d) MUST UPDATE TID IN RECORDS
-    # i.e., DICTONAIRY and gdf - assigning the new tid to split points
+    # i.e., DICTONAIRY and gdf - assigning the new tid to split points    # must update t_forSwapping_r[t_forSwapping_r['new_tid_subid']
+    # find row_uids to update
+    # swapped_df.row_uid.unique()
+    # drop these from the master df
+    t_forSwapping_r = t_forSwapping_r[~t_forSwapping_r['row_uid'].isin(swapped_df['row_uid'])]
+    # concat updated attributes of these points
+    t_forSwapping_r = pd.concat([t_forSwapping_r, swapped_df], ignore_index=True)
+
     # currently only to the used split points
     # point_to_tid_dict.update({
         # the used main and helper - but they stay the same, they are at the end of their respective heads
@@ -474,13 +480,7 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
                    t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping!
     #print('updated all point to tid entries in dict')
 
-    # must update t_forSwapping_r[t_forSwapping_r['new_tid_subid']
-    # find row_uids to update
-    # swapped_df.row_uid.unique()
-    # drop these from the master df
-    t_forSwapping_r = t_forSwapping_r[~t_forSwapping_r['row_uid'].isin(swapped_df['row_uid'])]
-    # concat updated attributes of these points
-    t_forSwapping_r = pd.concat([t_forSwapping_r, swapped_df], ignore_index=True)
+
 
     # (6) run swapping on the next pair
 
