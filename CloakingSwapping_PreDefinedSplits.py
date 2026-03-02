@@ -291,6 +291,8 @@ t_forSwapping_r['SwappingHeadTail'] = False
 t_forSwapping_r['swap_n'] = np.nan
 t_forSwapping_r['swap_origin'] = pd.Series(dtype='string')
 t_forSwapping_r['swap_destination'] = pd.Series(dtype='string')
+t_forSwapping_r['swap_point_id_t'] = np.nan
+
                                                 
 t_forSwapping_r.head()
 
@@ -299,9 +301,14 @@ swapping_pairs = dict(zip(t_helper_random_assigned['main_row_uid'],
                    t_helper_random_assigned['helper_row_uid'])) # dictonaires are unoarded
 
 point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
-                   t_forSwapping_r['tid_subid']))
-point_to_tid_dict # tid_subid assignments change after swapping!
+                   t_forSwapping_r['tid_subid'])) # tid_subid assignments change after swapping!
 
+#od_dict = dict(zip(t_helper_random_assigned['main_row_uid'], [[] for _ in range(len(t_helper_random_assigned))])) # must chain odd later, i.e, look at values, are there to values? then its a odd chain
+from collections import defaultdict
+od_dict = defaultdict(list)
+for key in t_helper_random_assigned['main_row_uid']:
+    od_dict[key]  
+od_dict
 #%%
 
 #%% run swapping
@@ -381,10 +388,20 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
     print('point ids of origin and destinations')  
     print('main origin', main_origin_id, 'to destination (helper): ', main_destintaion_id)
     print('helper origin', helper_origin_id, 'to destination (helper): ', helper_destination_id)
+    # update origin destination dict
+    #od_dict.update({
+    #    main_origin_id: main_destintaion_id, # key already exists in dict and value will  be overwritten
+        # helper_origin_id: helper_destination_id # key should not exist in dict unless helper origin pt is also a main, is added to the dict (unless a main hase the same id, then main gets overwritten)
+        # save way to handle helpers potentially being a main: add _h, can remove this later
+    #    helper_origin_id.astype(str)+"_h": helper_destination_id
+        # could also store values as list to not overwrite key-value pair
+    #})
+    od_dict[main_origin_id].append(main_destintaion_id)
+    od_dict[helper_origin_id].append(helper_destination_id)
 
-    
     # can chain O-D when D is also an O: O-D-D or decide to drop intermediate D and have OD2 instead?
     # can record O-D-D for now and later decide to drop D
+
 
 
 
@@ -396,9 +413,9 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
         helper_tid,                                     # new_tid_subid is updated to helper_tid
         main_tid                                        # otherwise, i.e., not tail and therefore must be head, take tid of main
     )
-    # update tail tid of helper
+    # update head tid of helper
     helper['new_tid_subid'] = np.where(
-        helper['swap_SwappingHeadTail'] == "tail_helper",   
+        helper['swap_SwappingHeadTail'] == "head_helper",   
         helper_tid,                                     # helper_tid and main_tid have been retrived from new_tid_subid at the beginning of the loop 
         main_tid                                        # based on the split point to tid dictonary                            
     )
@@ -407,18 +424,34 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
     # both should consist of two different orig_tid - that is if they were concated and split 
     # currently we have two sepereate df
     print('main updated tid', main.new_tid_subid.nunique())
-    print('helper updated tid', main.new_tid_subid.nunique())
+    print('helper updated tid', helper.new_tid_subid.nunique())
 
     # (3b) update point_id (actually move points to new container, i.e., order by new point id)
     # hierarchy for ordering:
-    # new tid_subid after swap
+    # new_tid_subid after swap
     # head, then tail (h is before t in the alphabet)
     # row_uid
     
     # not ideal in terms of processing time, but only way I can help myself
     # concat helper and main to updated point id 
+    swapped_df = pd.concat([main, helper])
+    # is that sorting the same after the first swap?
+    # yes because new_tid_subid applies to the full head and tail
+    # this headtail column is the generic one - applies to full group of new_tid_subid
+    # point number... row_uid is correct if not swapped before
+    # if swapped before this should be based on the new point_id
+    swapped_df = swapped_df.sort_values(
+        by=['new_tid_subid', 'swap_SwappingHeadTail', 'row_uid'],
+        ascending=[True, True, True]  
+    ).reset_index(drop=True)
+    # now that points are sorted we can add point ids
+    swapped_df['swap_point_id_t'] = swapped_df.groupby('new_tid_subid').cumcount() + 1
 
 
+    # must tack swap 
+
+#%%
+swapped_df.to_csv(r"\\tsclient\R\paper3\fromVM_201\debugging/swapped_df_sorted3.csv")
     #%%
     # (3c) MUST UPDATE TID IN RECORDS
     # i.e., DICTONAIRY and gdf - assigning the new tid to split points
