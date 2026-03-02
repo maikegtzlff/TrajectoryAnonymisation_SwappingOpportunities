@@ -288,20 +288,18 @@ t_forSwapping_r['orig_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
 t_forSwapping_r['new_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
 t_forSwapping_r['swap_SwappingHeadTail'] = False
 t_forSwapping_r['SwappingHeadTail'] = False
-t_forSwapping_r['swap_n'] = np.nan
+t_forSwapping_r['swap_n'] = 0
 t_forSwapping_r['swap_origin'] = pd.Series(dtype='string')
 t_forSwapping_r['swap_destination'] = pd.Series(dtype='string')
 t_forSwapping_r['swap_point_id_t'] = np.nan
 
                                                 
-t_forSwapping_r.head()
-
-#%% prep data lookup
+# prep data lookup
 swapping_pairs = dict(zip(t_helper_random_assigned['main_row_uid'],
                    t_helper_random_assigned['helper_row_uid'])) # dictonaires are unoarded
 
 point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
-                   t_forSwapping_r['tid_subid'])) # tid_subid assignments change after swapping!
+                   t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping!
 
 #od_dict = dict(zip(t_helper_random_assigned['main_row_uid'], [[] for _ in range(len(t_helper_random_assigned))])) # must chain odd later, i.e, look at values, are there to values? then its a odd chain
 from collections import defaultdict
@@ -309,39 +307,45 @@ od_dict = defaultdict(list)
 for key in t_helper_random_assigned['main_row_uid']:
     od_dict[key]  
 od_dict
-#%%
 
-#%% run swapping
+
+# run swapping
 
 #for main_sid, helper_sid in swapping_pairs.items():
+
+# add a progess bar
+from tqdm.auto import tqdm
+for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"):
+
 # run for 5 to test logic
-from itertools import islice
-for main_sid, helper_sid in islice(swapping_pairs.items(), 2): 
-    print('')
-    print('main <--> helper', main_sid, helper_sid) # but looping is slow, mapping might be better...
+#from itertools import islice
+#for main_sid, helper_sid in islice(swapping_pairs.items(), 2): 
+    #print('')
+    #print('main <--> helper', main_sid, helper_sid) # but looping is slow, mapping might be better...
 
     # (1) isolate the swapping pair from main df
     # get tid_subid for both main and helper
     main_tid = point_to_tid_dict[main_sid]
-    print('tid of main', main_tid)
+    #print('tid of main', main_tid)
     helper_tid = point_to_tid_dict[helper_sid] # BUT TID OF POINT WILL CHANGE - build dict at the beginning of each loop?
-    print('tid of helper', helper_tid)
+    #print('tid of helper', helper_tid)
 
     # subset by tid and reset index
     main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
-    print('len of main', len(main))
-    print('max index of main', main.index.max())
+    #print('len of main', len(main))
+    #print('max index of main', main.index.max())
     helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
-    print('len of helper', len(helper))
-    print('max index of helper ', helper.index.max())
+    #print('len of helper', len(helper))
+    #print('max index of helper ', helper.index.max())
     # must ensure that new_tid_subid is updated after every swap for this to work
+    # --> t_forSwapping_r must be updated at the end of each loop
 
 
     # (2) split main and helper into heads and tail
     m_cut_index = main.index[main["row_uid"] == main_sid][0]
-    print('m_cut_index', m_cut_index)
+    #print('m_cut_index', m_cut_index)
     h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]
-    print('h_cut_index', h_cut_index)
+    #print('h_cut_index', h_cut_index)
 
     # general split
     main["swap_SwappingHeadTail"] = np.where(
@@ -385,9 +389,9 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
     main_destintaion_id = helper.at[(h_cut_index+1), "row_uid"] 
     helper_origin_id = helper.at[h_cut_index, "row_uid"]
     helper_destination_id = main.at[(m_cut_index+1), "row_uid"]  
-    print('point ids of origin and destinations')  
-    print('main origin', main_origin_id, 'to destination (helper): ', main_destintaion_id)
-    print('helper origin', helper_origin_id, 'to destination (helper): ', helper_destination_id)
+    #print('point ids of origin and destinations')  
+    #print('main origin', main_origin_id, 'to destination (helper): ', main_destintaion_id)
+    #print('helper origin', helper_origin_id, 'to destination (helper): ', helper_destination_id)
     # update origin destination dict
     #od_dict.update({
     #    main_origin_id: main_destintaion_id, # key already exists in dict and value will  be overwritten
@@ -398,7 +402,6 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
     #})
     od_dict[main_origin_id].append(main_destintaion_id)
     od_dict[helper_origin_id].append(helper_destination_id)
-
     # can chain O-D when D is also an O: O-D-D or decide to drop intermediate D and have OD2 instead?
     # can record O-D-D for now and later decide to drop D
 
@@ -423,8 +426,8 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
     # now I have an updated main and helper df
     # both should consist of two different orig_tid - that is if they were concated and split 
     # currently we have two sepereate df
-    print('main updated tid', main.new_tid_subid.nunique())
-    print('helper updated tid', helper.new_tid_subid.nunique())
+    #print('main updated tid', main.new_tid_subid.nunique())
+    #print('helper updated tid', helper.new_tid_subid.nunique())
 
     # (3b) update point_id (actually move points to new container, i.e., order by new point id)
     # hierarchy for ordering:
@@ -447,31 +450,41 @@ for main_sid, helper_sid in islice(swapping_pairs.items(), 2):
     # now that points are sorted we can add point ids
     swapped_df['swap_point_id_t'] = swapped_df.groupby('new_tid_subid').cumcount() + 1
 
+    # add swap count
+    swapped_df['swap_n'] = swapped_df['swap_n'] +1
 
-    # must tack swap 
+    # (3c) ideally add synthetic points now? how fill further swaps impact the synthetic points?
+    # can I keep track of swaps and tid changes without adding the syn points here, and instead assigning them this tid once they have been created
+    
 
-#%%
-swapped_df.to_csv(r"\\tsclient\R\paper3\fromVM_201\debugging/swapped_df_sorted3.csv")
-    #%%
-    # (3c) MUST UPDATE TID IN RECORDS
+
+    # (3d) MUST UPDATE TID IN RECORDS
     # i.e., DICTONAIRY and gdf - assigning the new tid to split points
     # currently only to the used split points
-    # BUT changing tids affects ALL SPLIT POINTS on the orig, not just the two active on
-    # it takes some away and adds others
-    point_to_tid_dict.update({
+    # point_to_tid_dict.update({
         # the used main and helper - but they stay the same, they are at the end of their respective heads
         # all points on the updated tid that act as a helper OR main have a new tid
-        main_sid: NEW TID,
-        helper_sid: NEW TID
-    })
+    #    main_sid: NEW TID,
+    #    helper_sid: NEW TID
+    #})
+    # BUT changing tids affects ALL SPLIT POINTS on the orig, not just the two active on
+    # it takes some away and adds others
+    # MUST UPDATE ALL KEY-VALUES in DICTONARY --> overwrite dictonary
+    point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
+                   t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping!
+    #print('updated all point to tid entries in dict')
 
     # must update t_forSwapping_r[t_forSwapping_r['new_tid_subid']
-
-
-
-    # (4) ideally add synthetic points now? how fill further swaps impact the synthetic points?
-    # can I keep track of swaps and tid changes without adding the syn points here, and instead assigning them this tid once they have been created
-    # 
-    # (5) return to main df
+    # find row_uids to update
+    # swapped_df.row_uid.unique()
+    # drop these from the master df
+    t_forSwapping_r = t_forSwapping_r[~t_forSwapping_r['row_uid'].isin(swapped_df['row_uid'])]
+    # concat updated attributes of these points
+    t_forSwapping_r = pd.concat([t_forSwapping_r, swapped_df], ignore_index=True)
 
     # (6) run swapping on the next pair
+
+
+
+#%%
+swapped_df.to_csv(r"\\tsclient\R\paper3\fromVM_201\debugging/swapped_df_sorted4.csv")
