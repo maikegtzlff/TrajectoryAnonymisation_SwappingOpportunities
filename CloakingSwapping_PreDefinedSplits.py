@@ -279,25 +279,30 @@ import pandas as pd
 t_forSwapping = gpd.read_parquet(r"d:\paper3\Data\output\CloakingBasedSwapping\t_forSwapping.parquet")
 t_helper_random_assigned = pd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/CloakingGaps_swappingPairs_PointLevel.parquet")
 
-#%% run swapping
-# prep data
+
+#%% prep data gdf
 import numpy as np
 # reduce df to prevent memory issues (can get attributes back at a later stage)
 t_forSwapping_r = t_forSwapping[['row_uid', 'tid_subid']].copy()
 t_forSwapping_r['orig_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
-t_forSwapping_r['new_tid_subid'] = False
+t_forSwapping_r['new_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['swap_SwappingHeadTail'] = False
 t_forSwapping_r['SwappingHeadTail'] = False
 t_forSwapping_r['swap_n'] = np.nan
+t_forSwapping_r['swap_origin'] = pd.Series(dtype='string')
+t_forSwapping_r['swap_destination'] = pd.Series(dtype='string')
+                                                
+t_forSwapping_r.head()
 
-
-print(t_forSwapping_r.head())
-
+#%% prep data lookup
 swapping_pairs = dict(zip(t_helper_random_assigned['main_row_uid'],
                    t_helper_random_assigned['helper_row_uid'])) # dictonaires are unoarded
 
 point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
                    t_forSwapping_r['tid_subid']))
-point_to_tid_dict
+point_to_tid_dict # tid_subid assignments change after swapping!
+
+#%%
 
 #%% run swapping
 
@@ -306,60 +311,134 @@ point_to_tid_dict
 from itertools import islice
 for main_sid, helper_sid in islice(swapping_pairs.items(), 2): 
     print('')
-    print(main_sid, helper_sid) # but looping is slow, mapping might be better...
+    print('main <--> helper', main_sid, helper_sid) # but looping is slow, mapping might be better...
 
     # (1) isolate the swapping pair from main df
     # get tid_subid for both main and helper
     main_tid = point_to_tid_dict[main_sid]
     print('tid of main', main_tid)
     helper_tid = point_to_tid_dict[helper_sid] # BUT TID OF POINT WILL CHANGE - build dict at the beginning of each loop?
-    print('tid of main', helper_tid)
+    print('tid of helper', helper_tid)
+
     # subset by tid and reset index
     main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
     print('len of main', len(main))
+    print('max index of main', main.index.max())
     helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
-    print('len of main', len(helper))
+    print('len of helper', len(helper))
+    print('max index of helper ', helper.index.max())
+    # must ensure that new_tid_subid is updated after every swap for this to work
+
 
     # (2) split main and helper into heads and tail
     m_cut_index = main.index[main["row_uid"] == main_sid][0]
+    print('m_cut_index', m_cut_index)
     h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]
+    print('h_cut_index', h_cut_index)
 
+    # general split
+    main["swap_SwappingHeadTail"] = np.where(
+        main.index <= m_cut_index,
+        "head_main",
+        "tail_main"
+    )
+    helper["swap_SwappingHeadTail"] = np.where(
+        helper.index <= h_cut_index,
+        "head_helper",
+        "tail_helper"
+    ) 
+    
+    # split to track swapps
     main["SwappingHeadTail"] = np.where(
         main.index <= m_cut_index,
         f"head_main_{main_sid}",
         f"tail_main_{main_sid}"
     )
-
     helper["SwappingHeadTail"] = np.where(
         helper.index <= h_cut_index,
         f"head_helper_{helper_sid}",
         f"tail_helper_{helper_sid}"
     ) 
 
+    # record origin destination for these swaps!
+    main_origin_i = m_cut_index
+    main_destintaion_i = h_cut_index+1
+    helper_origin_i = h_cut_index
+    helper_destination_i = m_cut_index+1
+    # but this is the index, the index will change
+    # so update df now when index is still correct
+    main.loc[main_origin_i, "swap_origin"] = f'main_{main_sid}_origin'
+    main.loc[helper_destination_i, "swap_destination"] = f'helper_{helper_sid}_destination'
+    helper.loc[helper_origin_i, "swap_origin"] = f'helper_{helper_sid}_origin'
+    helper.loc[main_destintaion_i, "swap_destination"] = f'main_{main_sid}_destination'
+
+    # need to record row_uid of these instead 
+    # - only if I wanted to store these pairs as a dictonary rather than flags in the df
+    main_origin_id =  main.at[m_cut_index, "row_uid"] 
+    main_destintaion_id = helper.at[(h_cut_index+1), "row_uid"] 
+    helper_origin_id = helper.at[h_cut_index, "row_uid"]
+    helper_destination_id = main.at[(m_cut_index+1), "row_uid"]  
+    print('point ids of origin and destinations')  
+    print('main origin', main_origin_id, 'to destination (helper): ', main_destintaion_id)
+    print('helper origin', helper_origin_id, 'to destination (helper): ', helper_destination_id)
+
+    
+    # can chain O-D when D is also an O: O-D-D or decide to drop intermediate D and have OD2 instead?
+    # can record O-D-D for now and later decide to drop D
+
+
+
     # (3) swap by updating tid 
-    # update tail of main
+    # (3a) update tail tid of main
+    # overwrites the full column
     main['new_tid_subid'] = np.where(
-        SwappingHeadTail = f"tail_main_{helper_sid}",
-        helper_tid,
-        main_tid # but this overwites previous values, we want it to be the ORIG HEAD TID
+        main['swap_SwappingHeadTail'] == "tail_main",   # for rows that are the tail of the main
+        helper_tid,                                     # new_tid_subid is updated to helper_tid
+        main_tid                                        # otherwise, i.e., not tail and therefore must be head, take tid of main
+    )
+    # update tail tid of helper
+    helper['new_tid_subid'] = np.where(
+        helper['swap_SwappingHeadTail'] == "tail_helper",   
+        helper_tid,                                     # helper_tid and main_tid have been retrived from new_tid_subid at the beginning of the loop 
+        main_tid                                        # based on the split point to tid dictonary                            
     )
 
-    # update tail of helper
+    # now I have an updated main and helper df
+    # both should consist of two different orig_tid - that is if they were concated and split 
+    # currently we have two sepereate df
+    print('main updated tid', main.new_tid_subid.nunique())
+    print('helper updated tid', main.new_tid_subid.nunique())
 
-
-    # (3b) MUST UPDATE DICTONAIRY
-    #point_to_tid_dict.update({
-    #    main_sid: NEW TID,
-    #    helper_sid: NEW TID
-    #})
-
-
-    # (4) update point_id (actually move points to new container, i.e., order by new point id)
-    # (4a) hierarchy for ordering:
+    # (3b) update point_id (actually move points to new container, i.e., order by new point id)
+    # hierarchy for ordering:
     # new tid_subid after swap
     # head, then tail (h is before t in the alphabet)
     # row_uid
+    
+    # not ideal in terms of processing time, but only way I can help myself
+    # concat helper and main to updated point id 
 
+
+    #%%
+    # (3c) MUST UPDATE TID IN RECORDS
+    # i.e., DICTONAIRY and gdf - assigning the new tid to split points
+    # currently only to the used split points
+    # BUT changing tids affects ALL SPLIT POINTS on the orig, not just the two active on
+    # it takes some away and adds others
+    point_to_tid_dict.update({
+        # the used main and helper - but they stay the same, they are at the end of their respective heads
+        # all points on the updated tid that act as a helper OR main have a new tid
+        main_sid: NEW TID,
+        helper_sid: NEW TID
+    })
+
+    # must update t_forSwapping_r[t_forSwapping_r['new_tid_subid']
+
+
+
+    # (4) ideally add synthetic points now? how fill further swaps impact the synthetic points?
+    # can I keep track of swaps and tid changes without adding the syn points here, and instead assigning them this tid once they have been created
+    # 
     # (5) return to main df
 
     # (6) run swapping on the next pair
