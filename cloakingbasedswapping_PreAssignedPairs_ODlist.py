@@ -141,38 +141,57 @@ od_dict
 
 
 # run swapping
-
-#for main_sid, helper_sid in swapping_pairs.items():
-
-# add a progess bar
 from tqdm.auto import tqdm
-for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"):
-    # (1) isolate the swapping pair from main df
-    # get tid_subid for both main and helper
-    main_tid = point_to_tid_dict[main_sid]
-    helper_tid = point_to_tid_dict[helper_sid] 
+from collections import deque
 
-    # subset by tid and reset index
-    main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
-    helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+swap_queue = deque(swapping_pairs.items())
+waiting = {}
+
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
+
+while swap_queue:
+    # (0) get splitting points
+    main_sid, helper_sid = swap_queue.popleft()
+
+    # (1) isolate the swapping pair from main df
+    # (1a) get tid_subid for both main and helper
+    main_tid = point_to_tid_dict[main_sid]
+    helper_tid = point_to_tid_dict[helper_sid]
+
+    # --- early validation 1 ---
+    # swapping points are from different tid
+    # otherwise move swapping pair to waiting room until tid changes
+    if main_tid == helper_tid:
+        waiting.setdefault(main_tid, []).append((main_sid, helper_sid))
+        print(f"added {main_sid, helper_sid} to waiting room because they are assigned the same tid")
+        continue
     
+    # (1b) subset by tid and reset index
+    main = t_forSwapping_r[
+        t_forSwapping_r['new_tid_subid'] == main_tid
+    ].reset_index(drop=True)
+
+    helper = t_forSwapping_r[
+        t_forSwapping_r['new_tid_subid'] == helper_tid
+    ].reset_index(drop=True)
+
     # (2) split main and helper into heads and tail
     m_cut_index = main.index[main["row_uid"] == main_sid][0]
     h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]
 
-    #################################################################
-    # ATTENTION
-    #################################################################
-    # swapping_pairs can become invalid due to previous swap
-    # (a) for example when main_tid and helper_tid have the same new_tid_subid
-    # (b) tail has no points based on split assignment
-    # if a swapping_pair is invalid: try and swap it again later or skip
-    # if ultimately skipped: take note of swapping pair so that the cloaking gap can be fileld synthetically
-    # though the original cloaking gap destination would have been assigned a differnt pair
+    # --- early validation 2 ---
+    # tail must have points (aka index after cut must exist)
+    if (m_cut_index + 1 > main.index.max()):
+        waiting.setdefault(main_tid, []).append((main_sid, helper_sid))
+        print(f'added {main_sid, helper_sid} to waiting room because main tail has no points')
+        continue
+    if (h_cut_index + 1 > helper.index.max()):
+        waiting.setdefault(helper_tid, []).append((main_sid, helper_sid))
+        print(f'added {main_sid, helper_sid} to waiting room because  helper tail has no points')
+        continue
 
-
-
-    # general split
+    # --- swap is valid, proceed ---
+    # (2a) general split
     main["swap_SwappingHeadTail"] = np.where(
         main.index <= m_cut_index,
         "head_main",
@@ -184,7 +203,7 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
         "tail_helper"
     ) 
     
-    # split to track swapps
+    # (2b) split to track swapps
     main["SwappingHeadTail"] = np.where(
         main.index <= m_cut_index,
         f"head_main_{main_sid}",
@@ -196,7 +215,7 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
         f"tail_helper_{helper_sid}"
     ) 
 
-    # record origin destination for these swaps!
+    # (2c) record origin destination for these swaps!
     main_origin_i = m_cut_index
     main_destination_i = h_cut_index+1
     helper_origin_i = h_cut_index
@@ -243,7 +262,7 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
     # add swap count
     swapped_df['swap_n'] = swapped_df['swap_n'] +1
 
-    # (3d) MUST UPDATE TID IN RECORDS
+    # (4) MUST UPDATE TID IN RECORDS
     # drop these from the master df
     t_forSwapping_r = t_forSwapping_r[~t_forSwapping_r['row_uid'].isin(swapped_df['row_uid'])]
     # concat updated attributes of these points
@@ -254,4 +273,8 @@ for main_sid, helper_sid in tqdm(swapping_pairs.items(), desc="Processing swaps"
                    t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping!
 
 
+    # (5) update progress bar
+    pbar.update(1)
+
+pbar.close()
 
