@@ -14,7 +14,6 @@ t_helper_random_assigned = pd.read_parquet(r"d:\paper3\CloakingGaps_swappingPair
 # not in index
 
 #%% debug
-
 #%% last succesfull loop should've produced ouput
 print(t_forSwapping_r.swap_n.max()) # 5 so swap count works
 print(t_forSwapping_r.SwappingHeadTail.unique()) # ['False' 'head_main_131' 'tail_helper_773962' ... 'tail_helper_2734588' 'head_helper_2734588' 'tail_main_342441']
@@ -35,81 +34,6 @@ with open(r"D:\paper3\cloakingbasedswapping_PreassignedPairs_ODlist_debugging/od
 t_forSwapping_r["swap_SwappingHeadTail"] = t_forSwapping_r["swap_SwappingHeadTail"].astype(str)
 t_forSwapping_r["SwappingHeadTail"] = t_forSwapping_r["SwappingHeadTail"].astype(str)
 t_forSwapping_r.to_parquet(r"D:\paper3\cloakingbasedswapping_PreassignedPairs_ODlist_debugging/t_forSwapping_r_Swapped_brokenLoop.parquet")
-
-
-#%% look at the problematic one that is causing the index error
-#KeyError: np.int64(1030)
-#helper.loc[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
-#           main_destination_i 1030
-#                               swap_destination is  the column
-#                                                  the value I would add to the list of 
-#                                                   swap destinations for this point
-#                                                   f'main_{main_sid}_destination'
-#                                                     main_sid is 7315343
-
-#   main_origin_i = m_cut_index
-#    main_destination_i = h_cut_index+1
-#    helper_origin_i = h_cut_index
-#    helper_destination_i = m_cut_index+1
-    
-#    main.loc[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
-#    main.loc[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid}_destination')
-
-# main origin and destination should've worked
-# helper_HelperSID_origin cannot be in column yet - but column has a value
-# I'd have said from previous swap, but swap_n is 0
-
-# PROBLEM HERE
-#     helper.loc[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid}_origin')
-#    helper.loc[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
-
-
-
-# this is the problem
-# helper.loc[main_destination_i]
-# print(len(helper)) # 1030 rows 
-# print(helper.index.max()) # 1029 - point is classed as swap_origin, helper_1270511_origin
-
-#h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]    
-# h_cut_index is 1029
-# helper_sid is 5243076
-# but when i look at the helper df row_uid of index 1029 is 1270511
-
-# WORKAROUND
-# if index of any tail is outside of range, move split by one?
-
-
-# BUT 
-# main_sid 7315343
-# helper_sid 5243076
-
-
-#main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
-#helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
-
-#m_cut_index = main.index[main["row_uid"] == main_sid][0]
-#h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]    
-
-#main_origin_i = m_cut_index
-#main_destination_i = h_cut_index+1
-#helper_origin_i = h_cut_index
-#helper_destination_i = m_cut_index+1
-    
-#main.loc[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
-#main.loc[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid}_destination')
-#helper.loc[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid}_origin')
-#helper.loc[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
-
-
-
-
-
-
-
-
-
-
-
 
 
 #%% prep data gdf
@@ -137,7 +61,11 @@ from collections import defaultdict
 od_dict = defaultdict(list)
 for key in t_helper_random_assigned['main_row_uid']:
     od_dict[key]  
-od_dict
+
+# paramater settings for waiting room
+max_retries = 15
+retry_counts = defaultdict(int)
+
 
 
 # run swapping
@@ -272,8 +200,18 @@ while swap_queue:
     point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
                    t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping!
 
+    # (5) track which new_tid_subid has changed - so that release from waiting room can be triggered
+    affected_tids = {main_tid, helper_tid}
 
-    # (5) update progress bar
+    for tid in affected_tids:
+        if tid in waiting:
+            for pair in waiting[tid]:
+                if retry_counts[pair] < max_retries:
+                    swap_queue.append(pair)   # re-add to the queue
+                    retry_counts[pair] += 1
+            del waiting[tid]              # remove from waiting
+
+    # (6) update progress bar
     pbar.update(1)
 
 pbar.close()
