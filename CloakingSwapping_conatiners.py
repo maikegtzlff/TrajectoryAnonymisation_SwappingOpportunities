@@ -838,8 +838,23 @@ len(assigned_helpers_clkg_toRemove) # 191 --> remove these from assigned_helpers
 valid_assigned_helpers_df = assigned_helpers_df[~assigned_helpers_df['main_row_uid'].isin(assigned_helpers_clkg_toRemove)]
 valid_assigned_helpers_df
 
+# SHOULD'VE ALSO LOOKED INTO OVERLAPS BETWEEN MAIN POINTS and INTERSECTING CLOAKING AREAS
+
 #%% export these!
 valid_assigned_helpers_df.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/valid_assigned_helpers_df.parquet")
+
+
+
+# THOSE ARE TIDS ASSIGNED TO CLOAKING GAPS
+# What we actually need? specific split points. Two consecutive ones from the same tid per mix-zone
+# also: hanlding of helper tid being a main (sensitive) tid with a cloaking gap
+
+
+
+
+
+
+
 #%% can now run the swapping based on valid_assigned_helpers_df but must ensure that the "new_tid" column gets handeled correctly
 # i.e., can't start out as the orig tid because than unhandled tid segments are assigned to "the new final tid" 
 # when these are actually heads and tails that have been swapped
