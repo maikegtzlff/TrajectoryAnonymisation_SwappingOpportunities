@@ -338,7 +338,7 @@ with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefin
 #%% RUN SWAPPING - we must pick from have a pre-defined helper tail start
 # clk gaps are sorted in order of priority (less swapping options (by tid) will be processed first)
 
-#%% prep data gdf
+# prep data gdf
 import numpy as np
 import pandas as pd
 import random
@@ -365,20 +365,23 @@ od_dict = defaultdict(list)
 for key in helper_pool_dict_ordered.keys():
     od_dict[key]  # only storing clk gap, aka origin, and intialising an empty list
 
+# add a swapping history dict
+swap_history = defaultdict(list) # <-- container membership over time
+
 # paramater settings for waiting room
 max_retries = 15
 retry_counts = defaultdict(int)
 
-#%% waiting room swapping code
+# waiting room swapping code
 from tqdm.auto import tqdm
 from collections import deque
 
 # look at 5 clk gaps to see if code works
 #from itertools import islice
-swap_queue = deque(islice(helper_pool_dict_ordered.items(), 5)) 
+#swap_queue = deque(islice(helper_pool_dict_ordered.items(), 5)) 
 
 # run for all
-#swap_queue = deque(helper_pool_dict_ordered.items())
+swap_queue = deque(helper_pool_dict_ordered.items())
 
 waiting = {}
 
@@ -488,6 +491,10 @@ while swap_queue:
 
     # add swap count
     swapped_df['swap_n'] = swapped_df['swap_n'] +1
+    # record swapping history
+    for row_uid, new_tid in zip(swapped_df["row_uid"], swapped_df["new_tid_subid"]):
+        if not swap_history[row_uid] or swap_history[row_uid][-1] != new_tid:
+            swap_history[row_uid].append(new_tid)
 
     # (4) MUST UPDATE TID IN RECORDS
     # drop these from the master df
@@ -515,6 +522,13 @@ while swap_queue:
 
 pbar.close()
 
+#%% swapping historys as a df
+#swap_hist_df = (
+#    pd.DataFrame(
+#        [(k, v) for k, vals in swap_history.items() for v in vals],
+#        columns=["row_uid", "tid_history"]
+#    )
+#)
 ############################
 # AFTER: have all gaps been swapped? if not, add syn points back in
 
