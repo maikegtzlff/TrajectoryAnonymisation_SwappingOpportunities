@@ -419,18 +419,20 @@ while swap_queue:
 
     # (2) split main and helper into heads and tail
     m_cut_index = main.index[main["row_uid"] == main_sid][0]
-    h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]
+    h_cut_index_headEnd = helper.index[helper["row_uid"] == h_head_end][0]
+    h_cut_index_tailStart = helper.index[helper["row_uid"] == h_tail_start][0]
 
     # --- early validation 2 ---
     # tail must have points (aka index after cut must exist)
-    if (m_cut_index + 1 > main.index.max()):
-        waiting.setdefault(main_tid, []).append((main_sid, helper_sid))
-        print(f'added {main_sid, helper_sid} to waiting room because main tail has no points')
-        continue
-    if (h_cut_index + 1 > helper.index.max()):
-        waiting.setdefault(helper_tid, []).append((main_sid, helper_sid))
-        print(f'added {main_sid, helper_sid} to waiting room because  helper tail has no points')
-        continue
+    # original helper tail did have points after this clk gap so commenting this out for now
+    #if (m_cut_index + 1 > main.index.max()):
+    #    waiting.setdefault(main_tid, []).append((main_sid, helper_sid))
+    #    print(f'added {main_sid, helper_sid} to waiting room because main tail has no points')
+    #    continue
+    #if (h_cut_index + 1 > helper.index.max()):
+    #    waiting.setdefault(helper_tid, []).append((main_sid, helper_sid))
+    #    print(f'added {main_sid, helper_sid} to waiting room because  helper tail has no points')
+    #    continue
 
     # --- swap is valid, proceed ---
     # (2a) general split
@@ -440,7 +442,7 @@ while swap_queue:
         "tail_main"
     )
     helper["swap_SwappingHeadTail"] = np.where(
-        helper.index <= h_cut_index,
+        helper.index <= h_cut_index_headEnd,
         "head_helper",
         "tail_helper"
     ) 
@@ -452,26 +454,26 @@ while swap_queue:
         f"tail_main_{main_sid}"
     )
     helper["SwappingHeadTail"] = np.where(
-        helper.index <= h_cut_index,
+        helper.index <= h_cut_index_headEnd,
         f"head_helper_{helper_sid}",
         f"tail_helper_{helper_sid}"
     ) 
 
     # (2c) record origin destination for these swaps!
     main_origin_i = m_cut_index
-    main_destination_i = h_cut_index+1
-    helper_origin_i = h_cut_index
+    main_destination_i = h_cut_index_tailStart
+    helper_origin_i = h_cut_index_headEnd
     helper_destination_i = m_cut_index+1
     
-    main.loc[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
-    main.loc[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid}_destination')
-    helper.loc[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid}_origin')
-    helper.loc[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
+    main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
+    main.at[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid}_destination')
+    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid}_origin')
+    helper.at[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
 
     # need to record row_uid of these instead 
     main_origin_id =  main.at[m_cut_index, "row_uid"] 
-    main_destination_id = helper.at[(h_cut_index+1), "row_uid"] 
-    helper_origin_id = helper.at[h_cut_index, "row_uid"]
+    main_destination_id = helper.at[(h_cut_index_tailStart), "row_uid"] 
+    helper_origin_id = helper.at[h_cut_index_headEnd, "row_uid"]
     helper_destination_id = main.at[(m_cut_index+1), "row_uid"]  
 
     od_dict[main_origin_id].append(main_destination_id)
