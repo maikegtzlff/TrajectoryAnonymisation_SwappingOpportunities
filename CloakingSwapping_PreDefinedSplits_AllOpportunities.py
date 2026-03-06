@@ -201,12 +201,131 @@ with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefin
 with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefinedSwappingPairs_all/helper_pool_dict_ordered.pkl", "wb") as f:
     pickle.dump(helper_pool_dict_ordered, f)
 
+# again, dont need this, exporting just in case
+all_candidates_consecutive_NotEndingInMixZone.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefinedSwappingPairs_all/all_candidates_consecutive_NotEndingInMixZone.parquet")
+
+
+
 
 #%% fill clk gaps without swapping partner
+clk_gaps_forSwapping = all_candidates_consecutive_NotEndingInMixZone.main_row_uid.unique()# these are the ones we have a sappwing partner for
+print(len(clk_gaps_forSwapping)) #26,723
+
+
+#%%but t has more clk gaps (30k ishh)
+# must ensure only synthetic points from ckl gaps eligible for swapping are removed
+t = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet")
+# columns for cloaking based swapping
+# intersecting_cloaking_ids - cloaking areas passing only
+# HeadEndCloakingAreaId - upcoming cloaking area
+# HeadTail - point to split tid before cloaking area
+# then delete all syntithic points until first raw point
+# this is the first point of the tail
+
+# it's actually better to have empty list rather than nan
+import numpy as np
+t['intersecting_cloaking_ids'] = t['intersecting_cloaking_ids'].apply(
+    lambda x: list(x) if isinstance(x, (list, np.ndarray)) else []
+)
+
+t.head()
+#%%
+print(t.tid_subid.nunique()) # 19,189 trajectories
+t.HeadEndCloakingAreaId.value_counts().sum() #31,272
+
+#%% flag trajectory ids that have been cloaked
+tids_to_swap = t.loc[t['HeadEndCloakingAreaId'].notna(), 'tid_subid'].unique()
+print(f"mumber of tid_subid requiring swapping: {len(tids_to_swap)}")       # 11,791
+print(f"number of tid_subids in sample (total): {t.tid_subid.nunique()}")   # 19,189
+
+#%% remove synthetic points for cloaking gaps that will experience a gap (to make code below less complex)
+t['CloakingGapSwap'] = np.where(t['row_uid'].isin(all_candidates_consecutive_NotEndingInMixZone.main_row_uid.unique()), True, False)
+t['CloakingGapSwap'].value_counts()
+#CloakingGapSwap
+#False    7308218
+#True       26723 - same number as main_rows identified, good!
+
+#%% identify cloaking gaps aka mark synthetic points in cloaking gaps
+t['gap_number'] = t['gap_label_pair_final_syn_fixed'].str.extract(r'(?:last_|first_)(\d+)')[0]
+start_mask = t['gap_label_pair_final_syn_fixed'].str.startswith('last_', na=False) & t['CloakingGapSwap']
+stop_mask = t['gap_label_pair_final_syn_fixed'].str.startswith('first_', na=False)
+t['CloakingGapSwap_filled'] = False
+
+# forward fill for each gap_number
+for gap_num in t.loc[start_mask, 'gap_number'].unique():
+    # get indices for last_ and first_ with this gap number
+    last_idx = t[(start_mask) & (t['gap_number'] == gap_num)].index
+    first_idx = t[(stop_mask) & (t['gap_number'] == gap_num)].index
+    
+    for l_idx, f_idx in zip(last_idx, first_idx):
+        # fill True from last_ to first_ (inclusive or exclusive depending on your needs)
+        t.loc[l_idx:f_idx, 'CloakingGapSwap_filled'] = True
+
+#t.drop(columns='gap_number', inplace=True)
+
+print(t[t['CloakingGapSwap_filled'] == True]['point_type'].unique()) # raw but they should mainly be synthetic
+t[t['CloakingGapSwap_filled'] == True][['point_type', 'gap_label_pair_final_syn_fixed', 'CloakingGapSwap', 'CloakingGapSwap_filled']]
+t.head()
+#%%
+t['CloakingGapSwap_filled'].value_counts()
+#CloakingGapSwap_filled
+#False    7325551
+#True        9390 - number of points affected, not number of gaps (but it's less points than gaps...)
+
+#%% drop CloakingGapSwap True from df as these gaps should not be filled
+# but 'last' and 'first' are raw points and must remain, can only remove points where
+# t['CloakingGapSwap_filled'] is True AND t['point_type'] is 'synthetic' 
+# Create a new DataFrame without the filled synthetic rows
+t_forSwapping2 = t[~((t['CloakingGapSwap_filled']) & (t['point_type'] == 'synthetic'))].copy()
+
+# Optional: check counts
+print(t_forSwapping.row_uid.nunique())
+print(t_forSwapping2.row_uid.nunique())
+print("Original rows:", len(t))
+print("Rows after dropping selected synthetic filled:", len(t_forSwapping2))
+print(t_forSwapping2['point_type'].value_counts())
+#Original rows: 7334941
+#Rows after dropping selected synthetic filled: 7331578
+#point_type
+#raw          6811202
+#synthetic     520376
+
+# updated results
+#7331578
+#7326733
+#Original rows: 7334941
+#Rows after dropping selected synthetic filled: 7326733
+#point_type
+#raw          6811202
+#synthetic     515531
+
+t_forSwapping2['CloakingGapSwap'].value_counts()
+#CloakingGapSwap
+#False    7300010
+#True       26723 - looking good
+
+#%%
+t_forSwapping2.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping_26723gaps.parquet")
+
+
+
+
+
+
+
+
 
 #%% run swapping
+import geopandas as gpd
 import pickle
 
 # load data back in
+t_forSwapping = gpd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping_26723gaps.parquet")
+
 with open("pair_dict.pkl", "rb") as f:
     pair_dict_loaded = pickle.load(f)
+
+
+#%% update swapping logic - helper has bot split points defined already
+# pick a random swapping point from the key - if its invalid try the next one
+# then waiting room approach
