@@ -373,91 +373,74 @@ retry_counts = defaultdict(int)
 from tqdm.auto import tqdm
 from collections import deque
 
-swap_queue = deque(helper_pool_dict_ordered.items())
+# look at 5 clk gaps to see if code works
+#from itertools import islice
+swap_queue = deque(islice(helper_pool_dict_ordered.items(), 5)) 
+
+# run for all
+#swap_queue = deque(helper_pool_dict_ordered.items())
+
 waiting = {}
 
 pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
 
 while swap_queue:
     # (0) get splitting points
-    main_sid, helper_sid = swap_queue.popleft()
-    # main_sid is the point id, 
+    main_sid, helper_sid_list = swap_queue.popleft()
+    # main_sid is the point id, get tid of main
+    main_tid = point_to_tid_dict[main_sid]
+    # initiate tracking of valid tid swapping pairs
+    success_tid = False
+
+    # find helper tid with a different tid
+    # (point_to_tid_dict always represents the current tid state, 
+    # compability of original tid has been validated during pre-processing)
     # helper_sid is stored as a pair (tuple) in a list
     # pick a random swapping pair
-    helper_sid_r = random.choice(helper_sid)
+    h_tid_attempts = helper_sid_list.copy()
+    while h_tid_attempts:
+        helper_sid_r = random.choice(h_tid_attempts)
+        h_head_end = helper_sid_r[0]
+        helper_tid = point_to_tid_dict[h_head_end]
+        
+        if helper_tid != main_tid:
+            success_tid = True
+            break # exit the while loop
+        else:
+            # remove this option and try another
+            print('looking for another helper')
+            h_tid_attempts.remove(helper_sid_r)
+    
+    if not success_tid:
+        # fallback to waiting room
+        waiting.setdefault(main_tid, []).append((main_sid, random.choice(helper_sid_list)))
+        print(f"added {main_sid} to waiting room because all helpers currently have the same tid")
+        continue
+
     # stores the helper head end point and the helper tail start point as a tuple
     h_head_end = helper_sid_r[0] # helper head end point
     h_tail_start = helper_sid_r[1] # helper tail start point
-    # both have the same tid
-
 
     # (1) isolate the swapping pair from main df
-    # (1a) get tid_subid for both main and helper
-    main_tid = point_to_tid_dict[main_sid]
+    # (1a) get tid_subid for helper
     helper_tid = point_to_tid_dict[h_head_end] ## TID OF POINT WILL CHANGE, we are updating dict at the end of the loop
 
-    # --- early validation 1 ---
-    # swapping points are from different tid
-    # otherwise move swapping pair to waiting room until tid changes
-    # (a) try another random swapping pair
-
-    
-    # (b) move clkg gap to waiting room
-    if main_tid == helper_tid:
-        waiting.setdefault(main_tid, []).append((main_sid, helper_sid_r))
-        print(f"added {main_sid, helper_sid} to waiting room because they are assigned the same tid")
-        continue
-    
     # (1b) subset by tid and reset index
-    main = t_forSwapping_r[
-        t_forSwapping_r['new_tid_subid'] == main_tid
-    ].reset_index(drop=True)
-
-    helper = t_forSwapping_r[
-        t_forSwapping_r['new_tid_subid'] == helper_tid
-    ].reset_index(drop=True)
+    main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
+    helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
 
     # (2) split main and helper into heads and tail
     m_cut_index = main.index[main["row_uid"] == main_sid][0]
     h_cut_index_headEnd = helper.index[helper["row_uid"] == h_head_end][0]
     h_cut_index_tailStart = helper.index[helper["row_uid"] == h_tail_start][0]
 
-    # --- early validation 2 ---
-    # tail must have points (aka index after cut must exist)
-    # original helper tail did have points after this clk gap so commenting this out for now
-    #if (m_cut_index + 1 > main.index.max()):
-    #    waiting.setdefault(main_tid, []).append((main_sid, helper_sid))
-    #    print(f'added {main_sid, helper_sid} to waiting room because main tail has no points')
-    #    continue
-    #if (h_cut_index + 1 > helper.index.max()):
-    #    waiting.setdefault(helper_tid, []).append((main_sid, helper_sid))
-    #    print(f'added {main_sid, helper_sid} to waiting room because  helper tail has no points')
-    #    continue
-
-    # --- swap is valid, proceed ---
     # (2a) general split
-    main["swap_SwappingHeadTail"] = np.where(
-        main.index <= m_cut_index,
-        "head_main",
-        "tail_main"
-    )
-    helper["swap_SwappingHeadTail"] = np.where(
-        helper.index <= h_cut_index_headEnd,
-        "head_helper",
-        "tail_helper"
-    ) 
+    main["swap_SwappingHeadTail"] = np.where(main.index <= m_cut_index, "head_main", "tail_main")
+    helper["swap_SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, "head_helper", "tail_helper") 
     
     # (2b) split to track swapps
-    main["SwappingHeadTail"] = np.where(
-        main.index <= m_cut_index,
-        f"head_main_{main_sid}",
-        f"tail_main_{main_sid}"
-    )
-    helper["SwappingHeadTail"] = np.where(
-        helper.index <= h_cut_index_headEnd,
-        f"head_helper_{helper_sid}",
-        f"tail_helper_{helper_sid}"
-    ) 
+    main["SwappingHeadTail"] = np.where(main.index <= m_cut_index, f"head_main_{main_sid}", f"tail_main_{main_sid}")
+    helper["SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, f"head_helper_{helper_sid_r}", f"tail_helper_{helper_sid_r}") 
 
     # (2c) record origin destination for these swaps!
     main_origin_i = m_cut_index
@@ -466,8 +449,8 @@ while swap_queue:
     helper_destination_i = m_cut_index+1
     
     main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
-    main.at[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid}_destination')
-    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid}_origin')
+    main.at[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid_r}_destination')
+    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid_r}_origin')
     helper.at[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
 
     # need to record row_uid of these instead 
