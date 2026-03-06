@@ -212,6 +212,11 @@ clk_gaps_forSwapping = all_candidates_consecutive_NotEndingInMixZone.main_row_ui
 print(len(clk_gaps_forSwapping)) #26,723
 
 
+
+
+
+
+
 #%%but t has more clk gaps (30k ishh)
 # must ensure only synthetic points from ckl gaps eligible for swapping are removed
 t = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet")
@@ -322,10 +327,214 @@ import pickle
 # load data back in
 t_forSwapping = gpd.read_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_forSwapping_26723gaps.parquet")
 
-with open("pair_dict.pkl", "rb") as f:
-    pair_dict_loaded = pickle.load(f)
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefinedSwappingPairs_all/helper_pool_dict_ordered.pkl", "rb") as f:
+    helper_pool_dict_ordered = pickle.load(f)
 
 
 #%% update swapping logic - helper has bot split points defined already
 # pick a random swapping point from the key - if its invalid try the next one
 # then waiting room approach
+
+#%% RUN SWAPPING - we must pick from have a pre-defined helper tail start
+# clk gaps are sorted in order of priority (less swapping options (by tid) will be processed first)
+
+#%% prep data gdf
+import numpy as np
+import pandas as pd
+import random
+
+# reduce df to prevent memory issues (can get attributes back at a later stage)
+t_forSwapping_r = t_forSwapping[['row_uid', 'tid_subid']].copy()
+t_forSwapping_r['orig_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['new_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['swap_SwappingHeadTail'] = False
+t_forSwapping_r['SwappingHeadTail'] = False
+t_forSwapping_r['swap_n'] = 0
+t_forSwapping_r['swap_origin'] = [[] for _ in range(len(t_forSwapping_r))]
+t_forSwapping_r['swap_destination'] = [[] for _ in range(len(t_forSwapping_r))]
+t_forSwapping_r['swap_point_id_t'] = np.nan
+
+                                                
+# prep data lookup
+point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
+                   t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping! must be updated within for loop
+
+#od_dict = dict(zip(t_helper_random_assigned['main_row_uid'], [[] for _ in range(len(t_helper_random_assigned))])) # must chain odd later, i.e, look at values, are there to values? then its a odd chain
+from collections import defaultdict
+od_dict = defaultdict(list)
+for key in helper_pool_dict_ordered.keys():
+    od_dict[key]  # only storing clk gap, aka origin, and intialising an empty list
+
+# paramater settings for waiting room
+max_retries = 15
+retry_counts = defaultdict(int)
+
+#%% waiting room swapping code
+from tqdm.auto import tqdm
+from collections import deque
+
+swap_queue = deque(helper_pool_dict_ordered.items())
+waiting = {}
+
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
+
+while swap_queue:
+    # (0) get splitting points
+    main_sid, helper_sid = swap_queue.popleft()
+    # main_sid is the point id, 
+    # helper_sid is stored as a pair (tuple) in a list
+    # pick a random swapping pair
+    helper_sid_r = random.choice(helper_sid)
+    # stores the helper head end point and the helper tail start point as a tuple
+    h_head_end = helper_sid_r[0] # helper head end point
+    h_tail_start = helper_sid_r[1] # helper tail start point
+    # both have the same tid
+
+
+    # (1) isolate the swapping pair from main df
+    # (1a) get tid_subid for both main and helper
+    main_tid = point_to_tid_dict[main_sid]
+    helper_tid = point_to_tid_dict[h_head_end] ## TID OF POINT WILL CHANGE, we are updating dict at the end of the loop
+
+    # --- early validation 1 ---
+    # swapping points are from different tid
+    # otherwise move swapping pair to waiting room until tid changes
+    # (a) try another random swapping pair
+
+    
+    # (b) move clkg gap to waiting room
+    if main_tid == helper_tid:
+        waiting.setdefault(main_tid, []).append((main_sid, helper_sid_r))
+        print(f"added {main_sid, helper_sid} to waiting room because they are assigned the same tid")
+        continue
+    
+    # (1b) subset by tid and reset index
+    main = t_forSwapping_r[
+        t_forSwapping_r['new_tid_subid'] == main_tid
+    ].reset_index(drop=True)
+
+    helper = t_forSwapping_r[
+        t_forSwapping_r['new_tid_subid'] == helper_tid
+    ].reset_index(drop=True)
+
+    # (2) split main and helper into heads and tail
+    m_cut_index = main.index[main["row_uid"] == main_sid][0]
+    h_cut_index = helper.index[helper["row_uid"] == helper_sid][0]
+
+    # --- early validation 2 ---
+    # tail must have points (aka index after cut must exist)
+    if (m_cut_index + 1 > main.index.max()):
+        waiting.setdefault(main_tid, []).append((main_sid, helper_sid))
+        print(f'added {main_sid, helper_sid} to waiting room because main tail has no points')
+        continue
+    if (h_cut_index + 1 > helper.index.max()):
+        waiting.setdefault(helper_tid, []).append((main_sid, helper_sid))
+        print(f'added {main_sid, helper_sid} to waiting room because  helper tail has no points')
+        continue
+
+    # --- swap is valid, proceed ---
+    # (2a) general split
+    main["swap_SwappingHeadTail"] = np.where(
+        main.index <= m_cut_index,
+        "head_main",
+        "tail_main"
+    )
+    helper["swap_SwappingHeadTail"] = np.where(
+        helper.index <= h_cut_index,
+        "head_helper",
+        "tail_helper"
+    ) 
+    
+    # (2b) split to track swapps
+    main["SwappingHeadTail"] = np.where(
+        main.index <= m_cut_index,
+        f"head_main_{main_sid}",
+        f"tail_main_{main_sid}"
+    )
+    helper["SwappingHeadTail"] = np.where(
+        helper.index <= h_cut_index,
+        f"head_helper_{helper_sid}",
+        f"tail_helper_{helper_sid}"
+    ) 
+
+    # (2c) record origin destination for these swaps!
+    main_origin_i = m_cut_index
+    main_destination_i = h_cut_index+1
+    helper_origin_i = h_cut_index
+    helper_destination_i = m_cut_index+1
+    
+    main.loc[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
+    main.loc[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid}_destination')
+    helper.loc[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid}_origin')
+    helper.loc[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
+
+    # need to record row_uid of these instead 
+    main_origin_id =  main.at[m_cut_index, "row_uid"] 
+    main_destination_id = helper.at[(h_cut_index+1), "row_uid"] 
+    helper_origin_id = helper.at[h_cut_index, "row_uid"]
+    helper_destination_id = main.at[(m_cut_index+1), "row_uid"]  
+
+    od_dict[main_origin_id].append(main_destination_id)
+    od_dict[helper_origin_id].append(helper_destination_id)
+
+    # (3) swap by updating tid 
+    # (3a) update tail tid of main
+    # overwrites the full column
+    main['new_tid_subid'] = np.where(
+        main['swap_SwappingHeadTail'] == "tail_main",   # for rows that are the tail of the main
+        helper_tid,                                     # new_tid_subid is updated to helper_tid
+        main_tid                                        # otherwise, i.e., not tail and therefore must be head, take tid of main
+    )
+    # update head tid of helper
+    helper['new_tid_subid'] = np.where(
+        helper['swap_SwappingHeadTail'] == "head_helper",   
+        helper_tid,                                     # helper_tid and main_tid have been retrived from new_tid_subid at the beginning of the loop 
+        main_tid                                        # based on the split point to tid dictonary                            
+    )
+
+    # (3b) update point_id (actually move points to new container, i.e., order by new point id)
+    swapped_df = pd.concat([main, helper])
+    swapped_df = swapped_df.sort_values(
+        by=['new_tid_subid', 'swap_SwappingHeadTail', 'row_uid'],
+        ascending=[True, True, True]  
+    ).reset_index(drop=True)
+    # now that points are sorted we can add point ids
+    swapped_df['swap_point_id_t'] = swapped_df.groupby('new_tid_subid').cumcount() + 1
+
+    # add swap count
+    swapped_df['swap_n'] = swapped_df['swap_n'] +1
+
+    # (4) MUST UPDATE TID IN RECORDS
+    # drop these from the master df
+    t_forSwapping_r = t_forSwapping_r[~t_forSwapping_r['row_uid'].isin(swapped_df['row_uid'])]
+    # concat updated attributes of these points
+    t_forSwapping_r = pd.concat([t_forSwapping_r, swapped_df], ignore_index=True)
+
+    # MUST UPDATE ALL KEY-VALUES in DICTONARY --> overwrite dictonary
+    point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'],
+                   t_forSwapping_r['new_tid_subid'])) # tid_subid assignments change after swapping!
+
+    # (5) track which new_tid_subid has changed - so that release from waiting room can be triggered
+    affected_tids = {main_tid, helper_tid}
+
+    for tid in affected_tids:
+        if tid in waiting:
+            for pair in waiting[tid]:
+                if retry_counts[pair] < max_retries:
+                    swap_queue.append(pair)   # re-add to the queue
+                    retry_counts[pair] += 1
+            del waiting[tid]              # remove from waiting
+
+    # (6) update progress bar
+    pbar.update(1)
+
+pbar.close()
+
+############################
+# AFTER: have all gaps been swapped? if not, add syn points back in
+
+# (d) connect the swapped trajectories (ie main and tail via synthetic points)
+# (d.1) calculate shortest path (clauclate desc statistics)
+# (d.2) interpolate syn points based on speed lookup and downsample
+
+# (e) evaluate cloaking based swapping
