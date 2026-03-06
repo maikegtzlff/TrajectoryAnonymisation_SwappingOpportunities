@@ -125,52 +125,88 @@ all_candidates_consecutive_NotEndingInMixZone.groupby('main_row_uid')['row_uid']
 #median       96.0
 #max       20587.0
 
+#%%
+group_stats = (
+    all_candidates_consecutive_NotEndingInMixZone
+    .groupby('main_row_uid')
+    .agg(
+        n_row_uid=('row_uid', 'nunique'),
+        n_tid_subid=('tid_subid', 'nunique')
+    )
+)
+
+print(group_stats.agg(['min', 'median', 'max']))
+#        n_row_uid  n_tid_subid
+#min           2.0          1.0
+#median       96.0         17.0 # on average 96 points to swap with, from 17 tid. i.e., 17 chances that the tid is not the same as the current tid 
+# if tid is the same - try other point, then move main to waiting room
+#max       20587.0        608.0
+
+group_stats
+#%%
 
 #%% (2) count options per main_row
 main_supply = (
-    main_to_helpers
-    .groupby('main_row_uid')['tid_subid']
+    all_candidates_consecutive_NotEndingInMixZone
+    .groupby('main_row_uid')['tid_subid'] # by tid or point pair?
+    # tid is dynamic (nature of swapping)
+    # therefore the prioritiy of working through swaps should be based on number of points
+    # one tid can be used as a helper for many sensitive trajectories
+    # BUT we do want a balanced used of helper trajectories
     .nunique()
     .rename('n_helper_traj')
 )
+main_supply
 
-#%% (3) sort mains by scarcity (hardest first) <-- this idea still applies
+#%% (3) sort mains by scarcity (hardest first) <-- this idea still applies because I want tid use to be balanced
+# i.e., do not keep reusing one helper tid if there is other options that have not participated in swapping yet
+# increased variability? like a gene mix
 main_order = (
     main_supply
     .sort_values()          # fewest options first
     .index
 )
-#main_order[0] = main with only ONE possible helper trajectory - 5365117
+print(len(main_order)) #26723, same as before, good
+main_order[0] # 4374923 = main with only ONE possible helper trajectory 
 
-#%% (4) track usage constraint: a helper trajectory can only be used ONCE per cloaking area
-from collections import defaultdict
-used_helpers_per_clk = defaultdict(set)
+#%% swapping approach
+# main_order (list): optimised-order in which we try and swap cloaking gaps
+# (dictionary): swapping opportunities at cloaking gap
+helper_pool = all_candidates_consecutive_NotEndingInMixZone[['main_row_uid','row_uid']].sort_values(['main_row_uid','row_uid'])
+helper_pool_dict = {}
+
+for main_id, g in helper_pool.groupby("main_row_uid"):
+    rows = g["row_uid"].values
+    pairs = [(rows[i], rows[i+1]) for i in range(len(rows)-1) if rows[i+1] - rows[i] == 1]
+    if pairs:
+        helper_pool_dict[main_id] = pairs
+# how many pairs does each cloaking gap have:
+print({k: len(v) for k,v in helper_pool_dict.items()})
+
+# can I order these by main_order? - don't need main_order anymore
+helper_pool_dict_ordered = {k: helper_pool_dict[k] for k in main_order if k in helper_pool_dict}
+helper_pool_dict_ordered
+
+# then pick a random pair during swapping
+#import random
+#random_pair = random.choice(pair_dict[131])
+
+# export these all
+import pickle
+# don't actually needed anymore
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefinedSwappingPairs_all/main_order.pkl", "wb") as f:
+    pickle.dump(main_order, f)
+
+# the swapping partner lookup! - will pikc one of the paints randomly per clk gap
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\preDefinedSwappingPairs_all/helper_pool_dict_ordered.pkl", "wb") as f:
+    pickle.dump(helper_pool_dict_ordered, f)
 
 
-# (5) scarcity-aware assignment loop
-assigned = []
+#%% fill clk gaps without swapping partner
 
-for m in tqdm(main_order, desc="Scarcity-aware assignment"):
+#%% run swapping
+import pickle
 
-    # get cloaking area of this main_row
-    clk = main_rows.loc[
-        main_rows.row_uid == m,
-        'HeadEndCloakingAreaId'
-    ].values[0]
-
-    # all candidate helper trajectories for this main
-    cands = main_to_helpers[
-        (main_to_helpers.main_row_uid == m) &
-        (~main_to_helpers.tid_subid.isin(used_helpers_per_clk[clk]))
-    ]
-
-    if len(cands) == 0:
-        continue
-
-    # choose helper trajectory
-    chosen_tid = cands.tid_subid.sample(1).iloc[0]
-
-    assigned.append((m, chosen_tid, clk))
-
-    # mark helper trajectory as used at this cloaking area
-    used_helpers_per_clk[clk].add(chosen_tid)
+# load data back in
+with open("pair_dict.pkl", "rb") as f:
+    pair_dict_loaded = pickle.load(f)
