@@ -386,7 +386,8 @@ swap_queue = deque(helper_pool_dict_ordered.items())
 waiting = {}
 
 pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
-
+#%% restart the while loop after crash!
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps (resume)") # 11719 left in swap_quw
 while swap_queue:
     # (0) get splitting points
     main_sid, helper_sid_list = swap_queue.popleft()
@@ -401,34 +402,13 @@ while swap_queue:
     # helper_sid is stored as a pair (tuple) in a list
     # pick a random swapping pair
     h_tid_attempts = helper_sid_list.copy()
-    #while h_tid_attempts:
-    #    helper_sid_r = random.choice(h_tid_attempts)
-        # stores the helper head end point and the helper tail start point as a tuple
-    #    h_head_end, h_tail_start = helper_sid_r 
-
-        # IMPORTANT: (1st) the helper pair itself must still be valid after participating in previous swaps
-    #    if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]:
-    #        h_tid_attempts.remove(helper_sid_r)
-    #        print('helper pair does not have the same tid anymore')
-    #        continue
-
-    #    # (2nd) the tid of the helper must be different to the tid of the main
-    #    helper_tid = point_to_tid_dict[h_head_end] # we know now that tid of heand and tail are the same
-    #    if helper_tid != main_tid:
-    #        success_tid = True
-    #        print('helper and main have the same tid')
-    #        break # exit the while loop
-    #    else:
-            # remove this option and try another
-    #        print('looking for another helper')
-    #        h_tid_attempts.remove(helper_sid_r)
-    
-    # alternative helper picking approach: reducing sampling bias by shuffling the list
+    # reducing sampling bias by shuffling the list of helper pairs first
     random.shuffle(h_tid_attempts)
+
     for h_head_end, h_tail_start in h_tid_attempts:
 
         # (1) helper pair must still belong to the same trajectory
-        if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]: # pair invalid → skip
+        if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]: # pair invalid because tid of both points is not the same --> skip
             continue
 
         # (2) helper must be different trajectory from main
@@ -442,7 +422,6 @@ while swap_queue:
     if not success_tid:
         # fallback to waiting room
         waiting.setdefault(main_tid, []).append((main_sid, random.choice(helper_sid_list)))
-        print(f"added {main_sid} to waiting room because all helpers currently have the same tid")
         continue
 
     
@@ -464,9 +443,14 @@ while swap_queue:
     main["swap_SwappingHeadTail"] = np.where(main.index <= m_cut_index, "head_main", "tail_main")
     helper["swap_SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, "head_helper", "tail_helper") 
     
-    # (2b) split to track swapps
+    # (2b) split to track swaps
+    # this follows the old logid:one split point for head and tail
+    # when we have two
+    # therefore, helper_sid_r is currently not assigned
+    # what this labelling does
+    # is it helpful?
     main["SwappingHeadTail"] = np.where(main.index <= m_cut_index, f"head_main_{main_sid}", f"tail_main_{main_sid}")
-    helper["SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, f"head_helper_{helper_sid_r}", f"tail_helper_{helper_sid_r}") 
+    helper["SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, f"head_helper_{h_head_end}", f"tail_helper_{h_head_end}") # using the point id of the helper head end to be consistent with labeling of main
 
     # (2c) record origin destination for these swaps!
     main_origin_i = m_cut_index
@@ -474,19 +458,24 @@ while swap_queue:
     helper_origin_i = h_cut_index_headEnd
     helper_destination_i = m_cut_index+1
     
+    # this follows the old logic, too
     main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
-    main.at[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid_r}_destination')
-    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid_r}_origin')
+    if helper_destination_i < len(main): # only attach main tail to helper head if main has a tail
+        main.at[helper_destination_i, "swap_destination"].append(f'helper_{h_head_end}_destination')
+    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{h_head_end}_origin')
     helper.at[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
 
     # need to record row_uid of these instead 
+    # dict should be finde because it is based on point ids!
     main_origin_id =  main.at[m_cut_index, "row_uid"] 
     main_destination_id = helper.at[(h_cut_index_tailStart), "row_uid"] 
     helper_origin_id = helper.at[h_cut_index_headEnd, "row_uid"]
-    helper_destination_id = main.at[(m_cut_index+1), "row_uid"]  
+    # only attach a helper destination id if main has a tail, it is ok for helper to end in clk area
+    if helper_destination_i < len(main):
+        helper_destination_id = main.at[helper_destination_i, "row_uid"]
+        od_dict[helper_origin_id].append(helper_destination_id)
 
     od_dict[main_origin_id].append(main_destination_id)
-    od_dict[helper_origin_id].append(helper_destination_id)
 
     # (3) swap by updating tid 
     # (3a) update tail tid of main
@@ -545,6 +534,106 @@ while swap_queue:
 
 pbar.close()
 
+#%% broke at 32%
+#8482/26723 [14:29:36<32:50:31,  6.48s/it]
+
+#--------------------------------------------------------------------------
+#ValueError                                Traceback (most recent call last)
+#File c:\Users\Maike\miniconda3\envs\trajectories\Lib\site-packages\pandas\core\indexes\range.py:413, in RangeIndex.get_loc(self, key)
+#    412 try:
+#--> 413     return self._range.index(new_key)
+#    414 except ValueError as err:
+
+#ValueError: 58 is not in range
+
+#The above exception was the direct cause of the following exception:
+
+#KeyError                                  Traceback (most recent call last)
+#Cell In[47], line 140
+#    137 helper_destination_i = m_cut_index+1
+#    139 main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
+#--> 140 main.at[helper_destination_i, "swap_destination"].append(f'helper_{helper_sid_r}_destination')
+#    141 helper.at[helper_origin_i, "swap_origin"].append(f'helper_{helper_sid_r}_origin')
+#    142 helper.at[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
+
+#File c:\Users\Maike\miniconda3\envs\trajectories\Lib\site-packages\pandas\core\indexing.py:2575, in _AtIndexer.__getitem__(self, key)
+#   2572         raise ValueError("Invalid call for scalar access (getting)!")
+#   2573     return self.obj.loc[key]
+#-> 2575 return super().__getitem__(key)
+
+#File c:\Users\Maike\miniconda3\envs\trajectories\Lib\site-packages\pandas\core\indexing.py:2527, in _ScalarAccessIndexer.__getitem__(self, key)
+#...
+#--> 415         raise KeyError(key) from err
+#    416 if isinstance(key, Hashable):
+#    417     raise KeyError(key)
+
+# KeyError: 58
+
+#%% can I still use the 32% that were processed or is this error fundamental?
+#these are the updated versions of my dfs and dict after the KeyError 58
+# dfs
+t_forSwapping_r["swap_SwappingHeadTail"] = t_forSwapping_r["swap_SwappingHeadTail"].astype("string")
+t_forSwapping_r["SwappingHeadTail"] = t_forSwapping_r["SwappingHeadTail"].astype("string")
+t_forSwapping_r.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/ClkGpsSwappedT.parquet")
+
+#%% dictionaries
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/waiting.pkl", "wb") as f:
+    pickle.dump(waiting, f)
+#<-- do I know which ones have been processed?
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/swap_queue.pkl", "wb") as f:
+    pickle.dump(swap_queue, f)
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/point_to_tid_dict.pkl", "wb") as f:
+    pickle.dump(point_to_tid_dict, f)
+# od dict should be finde because it is based on point ids!
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/od_dict.pkl", "wb") as f:
+    pickle.dump(od_dict, f)
+
+#%%
+print(len(swap_queue)+8482) # 20201 and not 26723 
+print(len(swap_queue)+8482+len(waiting)) # 24076 - also I thouight waiting was aded back to swap queque
+#   if retry_counts[pair] < max_retries:
+#                    swap_queue.append(pair)   # re-add to the queue
+#%% find the missing ~2647
+queued_sids = {sid for sid, _ in swap_queue}
+waiting_sids = {sid for pairs in waiting.values() for sid, _ in pairs}
+processed_sids = set(od_dict.keys())   # main origins that already swapped
+
+all_sids = set(helper_pool_dict_ordered.keys())
+missing_sids = all_sids - queued_sids - waiting_sids - processed_sids
+print(len(missing_sids))   
+
+#%% the problematic swap
+main
+helper
+swapped_df
+
+main_origin_id
+main_destination_id
+helper_origin_id
+helper_destination_id
+
+success_tid
+
+main_sid # 3996491 the last point before the main clk gap which does not not have another point in that tid (after swapping?)
+main_tid #'20200511_42b6a40c0c9fa6f4eb636e84f13447946c2f4943_5793'
+
+helper_tid
+helper_sid_list
+
+#%% second bug
+#helper_sid_r - does not seem to be defined, but I am assigning it to a column and id didn't throw and error message?
+# (3958746, 3958747) - have they all been assigned the same one? then this is not useful for tracking
+print(t_forSwapping_r.SwappingHeadTail.unique())
+# yes, all helper (tail or head) are  'tail_helper_(3958746, 3958747)', 'head_helper_(3958746, 3958747)',
+# invalid
+mask = t_forSwapping_r["SwappingHeadTail"].astype(str).str.contains("helper_\\(")
+t_forSwapping_r.loc[mask, "SwappingHeadTail"] = "invalid label"
+print(t_forSwapping_r.SwappingHeadTail.unique())
+
+t_forSwapping_r.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/ClkGpsSwappedT.parquet")
+
+
+
 #%% swapping historys as a df
 #swap_hist_df = (
 #    pd.DataFrame(
@@ -554,6 +643,10 @@ pbar.close()
 #)
 ############################
 # AFTER: have all gaps been swapped? if not, add syn points back in
+# I don't think they have, but because of swaps adding the previous syn points back in might not be possible either
+# adding syn points back only works if first and last point before sensitive location remained within the same tid
+# what i would do first: run swapping again on the 'missed' cloaking gaps 
+
 
 # (d) connect the swapped trajectories (ie main and tail via synthetic points)
 # (d.1) calculate shortest path (clauclate desc statistics)
