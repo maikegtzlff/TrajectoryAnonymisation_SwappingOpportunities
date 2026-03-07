@@ -401,32 +401,55 @@ while swap_queue:
     # helper_sid is stored as a pair (tuple) in a list
     # pick a random swapping pair
     h_tid_attempts = helper_sid_list.copy()
-    while h_tid_attempts:
-        helper_sid_r = random.choice(h_tid_attempts)
-        h_head_end = helper_sid_r[0]
-        helper_tid = point_to_tid_dict[h_head_end]
-        
-        if helper_tid != main_tid:
-            success_tid = True
-            break # exit the while loop
-        else:
+    #while h_tid_attempts:
+    #    helper_sid_r = random.choice(h_tid_attempts)
+        # stores the helper head end point and the helper tail start point as a tuple
+    #    h_head_end, h_tail_start = helper_sid_r 
+
+        # IMPORTANT: (1st) the helper pair itself must still be valid after participating in previous swaps
+    #    if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]:
+    #        h_tid_attempts.remove(helper_sid_r)
+    #        print('helper pair does not have the same tid anymore')
+    #        continue
+
+    #    # (2nd) the tid of the helper must be different to the tid of the main
+    #    helper_tid = point_to_tid_dict[h_head_end] # we know now that tid of heand and tail are the same
+    #    if helper_tid != main_tid:
+    #        success_tid = True
+    #        print('helper and main have the same tid')
+    #        break # exit the while loop
+    #    else:
             # remove this option and try another
-            print('looking for another helper')
-            h_tid_attempts.remove(helper_sid_r)
+    #        print('looking for another helper')
+    #        h_tid_attempts.remove(helper_sid_r)
     
+    # alternative helper picking approach: reducing sampling bias by shuffling the list
+    random.shuffle(h_tid_attempts)
+    for h_head_end, h_tail_start in h_tid_attempts:
+
+        # (1) helper pair must still belong to the same trajectory
+        if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]: # pair invalid → skip
+            continue
+
+        # (2) helper must be different trajectory from main
+        helper_tid = point_to_tid_dict[h_head_end]
+        if helper_tid != main_tid: # valid helper found
+            success_tid = True
+            break   # exit the loop
+        else:
+            continue
+
     if not success_tid:
         # fallback to waiting room
         waiting.setdefault(main_tid, []).append((main_sid, random.choice(helper_sid_list)))
         print(f"added {main_sid} to waiting room because all helpers currently have the same tid")
         continue
 
-    # stores the helper head end point and the helper tail start point as a tuple
-    h_head_end = helper_sid_r[0] # helper head end point
-    h_tail_start = helper_sid_r[1] # helper tail start point
+    
 
     # (1) isolate the swapping pair from main df
     # (1a) get tid_subid for helper
-    helper_tid = point_to_tid_dict[h_head_end] ## TID OF POINT WILL CHANGE, we are updating dict at the end of the loop
+    helper_tid = point_to_tid_dict[h_head_end] # TID OF POINT WILL CHANGE, we are updating dict at the end of the loop
 
     # (1b) subset by tid and reset index
     main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
