@@ -387,10 +387,14 @@ waiting = {}
 
 pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
 #%% restart the while loop after crash!
-pbar = tqdm(total=len(swap_queue), desc="Processing swaps (resume)") # 11719 left in swap_quw
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps (resume)") # 11719 left in swap_que, 5458 left in 3rd run
 while swap_queue:
     # (0) get splitting points
     main_sid, helper_sid_list = swap_queue.popleft()
+    # normalise to list first (incase waiting room strutcure is meesed up)
+    if isinstance(helper_sid_list, tuple):
+        helper_sid_list = [helper_sid_list]
+
     # main_sid is the point id, get tid of main
     main_tid = point_to_tid_dict[main_sid]
     # initiate tracking of valid tid swapping pairs
@@ -421,7 +425,9 @@ while swap_queue:
 
     if not success_tid:
         # fallback to waiting room
-        waiting.setdefault(main_tid, []).append((main_sid, random.choice(helper_sid_list)))
+        #waiting.setdefault(main_tid, []).append((main_sid, random.choice(helper_sid_list)))
+        # must be a list!
+        waiting.setdefault(main_tid, []).append((main_sid, [random.choice(helper_sid_list)]))
         continue
 
     
@@ -600,7 +606,7 @@ processed_sids = set(od_dict.keys())   # main origins that already swapped
 
 all_sids = set(helper_pool_dict_ordered.keys())
 missing_sids = all_sids - queued_sids - waiting_sids - processed_sids
-print(len(missing_sids))   
+print(len(missing_sids))   # always 0, shouldn't be 0
 
 #%% the problematic swap
 main
@@ -616,7 +622,8 @@ success_tid
 
 main_sid # 3996491 the last point before the main clk gap which does not not have another point in that tid (after swapping?)
 main_tid #'20200511_42b6a40c0c9fa6f4eb636e84f13447946c2f4943_5793'
-
+# 3051681
+# '20200314_19a6a0f68c2542f7f1bc44a7db86d0d4da93ddb9_5116' for the second crash
 helper_tid
 helper_sid_list
 
@@ -631,6 +638,52 @@ t_forSwapping_r.loc[mask, "SwappingHeadTail"] = "invalid label"
 print(t_forSwapping_r.SwappingHeadTail.unique())
 
 t_forSwapping_r.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/ClkGpsSwappedT.parquet")
+
+#%% 2nd error message  7804/11719 [15:08:36<7:27:11,  6.85s/it]
+
+#---------------------------------------------------------------------------
+#AttributeError                            Traceback (most recent call last)
+#Cell In[77], line 16
+#      9 success_tid = False
+#     11 # find helper tid with a different tid
+#     12 # (point_to_tid_dict always represents the current tid state, 
+#     13 # compability of original tid has been validated during pre-processing)
+#     14 # helper_sid is stored as a pair (tuple) in a list
+#     15 # pick a random swapping pair
+#---> 16 h_tid_attempts = helper_sid_list.copy()
+#     17 # reducing sampling bias by shuffling the list of helper pairs first
+#     18 random.shuffle(h_tid_attempts)
+
+#AttributeError: 'tuple' object has no attribute 'copy'
+
+
+
+# helper_sid_list is not a list, it's a tuple (2537673, 2537674)
+# this is the case when only one pair is a suitable swapping candidate rather than having multiple options
+# assigning (main_sid, helper_pair) rather than (main_sid, helper_sid_list) back to swap que
+# or the waiting room fall back cuasing (main_sid, (h_head, h_tail))
+
+#%%
+print(len(swap_queue)) #5458
+
+#%%
+#t_forSwapping_r["swap_SwappingHeadTail"] = t_forSwapping_r["swap_SwappingHeadTail"].astype("string")
+#t_forSwapping_r["SwappingHeadTail"] = t_forSwapping_r["SwappingHeadTail"].astype("string")
+t_forSwapping_r.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/ClkGpsSwappedT_2ndCrash.parquet")
+
+#%% dictionaries
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/waiting_2ndCrash.pkl", "wb") as f:
+    pickle.dump(waiting, f)
+#<-- do I know which ones have been processed?
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/swap_queue_2ndCrash.pkl", "wb") as f:
+    pickle.dump(swap_queue, f)
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/point_to_tid_dict_2ndCrash.pkl", "wb") as f:
+    pickle.dump(point_to_tid_dict, f)
+# od dict should be finde because it is based on point ids!
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_PredefinedSwaps\PredefinedSplitsAllOpportunities\8482OutOf26723ClkGpsProcessed/od_dict_2ndCrash.pkl", "wb") as f:
+    pickle.dump(od_dict, f)
+
+
 
 
 
