@@ -154,8 +154,328 @@ max_retries = 15
 
 
 protected_splits = set()
+#%% sarwt swapping - new approach track swap_id
+# initialise swap_id tracking
+# -------------------------------
+# Prepare swap tracking
+# -------------------------------
+swap_id_map = {}  # point_id -> swap_id for all points that moved
+swap_counter = 0  # incremental counter for generating unique swap ids
 
-#%% start swapping
+# -------------------------------
+# Start swapping (modified)
+# -------------------------------
+from tqdm import tqdm
+from collections import deque
+
+swap_queue = deque(helper_pool_dict_ordered_updated.keys())
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
+
+while swap_queue:
+    main_clkgp = swap_queue.popleft()
+    
+    if main_clkgp in locked_main_splits:
+        continue
+
+    main_head_end, main_tail_start = main_clkgp
+
+    if pd.isna(main_head_end) or pd.isna(main_tail_start):
+        continue
+    if tuple(sorted((main_head_end, main_tail_start))) in protected_splits:
+        continue
+
+    main_tid_head = pid_to_tid.get(main_head_end)
+    main_tid_tail = pid_to_tid.get(main_tail_start)
+    if main_tid_head is None or main_tid_tail is None or main_tid_head != main_tid_tail:
+        continue
+    main_tid = main_tid_head
+
+    main_traj = trajectory_index[main_tid]
+    m_h_i = main_traj.index(main_head_end)
+    m_t_i = main_traj.index(main_tail_start)
+    if m_t_i != m_h_i + 1:
+        continue
+
+    head_main = main_traj[:m_t_i]
+    tail_main = main_traj[m_t_i:]
+
+    helper_candidates = helper_pool_dict_ordered_updated.get(main_clkgp, [])
+    random.shuffle(helper_candidates)
+    swap_success = False
+
+    for h_head_end, h_tail_start in helper_candidates:
+        if pd.isna(h_head_end) or pd.isna(h_tail_start):
+            continue
+        if tuple(sorted((h_head_end, h_tail_start))) in protected_splits:
+            continue
+
+        helper_tid = pid_to_tid.get(h_head_end)
+        if helper_tid is None or helper_tid == main_tid:
+            continue
+
+        helper_traj = trajectory_index[helper_tid]
+        if h_head_end not in helper_traj or h_tail_start not in helper_traj:
+            continue
+
+        h_h_i = helper_traj.index(h_head_end)
+        h_t_i = helper_traj.index(h_tail_start)
+        if h_t_i != h_h_i + 1:
+            continue
+        head_helper = helper_traj[:h_t_i]
+        tail_helper = helper_traj[h_t_i:]
+
+        # --- prevent points returning to a trajectory they were already part of
+        invalid = any(main_tid in swap_history[pid] for pid in tail_helper) or \
+                  any(helper_tid in swap_history[pid] for pid in tail_main)
+        if invalid:
+            continue
+
+        # --- perform swap
+        new_main_traj = head_main + tail_helper
+        new_helper_traj = head_helper + tail_main
+
+        # --- protect joins (bidirectional)
+        if tail_helper:
+            protected_splits.add(tuple(sorted((main_head_end, tail_helper[0]))))
+        if tail_main:
+            protected_splits.add(tuple(sorted((h_head_end, tail_main[0]))))
+
+        # --- update trajectory_index
+        trajectory_index[main_tid] = new_main_traj
+        trajectory_index[helper_tid] = new_helper_traj
+
+        # --- update pid -> tid mapping and swap history
+        for pid in new_main_traj:
+            pid_to_tid[pid] = main_tid
+            swap_history[pid].append(main_tid)
+        for pid in new_helper_traj:
+            pid_to_tid[pid] = helper_tid
+            swap_history[pid].append(helper_tid)
+
+        # --- assign swap_id to all points that moved
+        swap_counter += 1
+        swap_id = f"swap_{swap_counter}"
+        for pid in tail_helper + tail_main:
+            swap_id_map[pid] = swap_id
+
+        # --- track origin/destination
+        if tail_helper:
+            od_dict[main_head_end].append(tail_helper[0])
+        if tail_main:
+            od_dict[h_head_end].append(tail_main[0])
+
+        locked_main_splits.add(main_clkgp)
+        swap_success = True
+        break
+
+    if not swap_success:
+        waiting[main_tid].append(main_clkgp)
+        retry_counts[main_clkgp] += 1
+        if retry_counts[main_clkgp] < max_retries:
+            swap_queue.append(main_clkgp)
+
+    pbar.update(1)
+
+pbar.close()
+#Processing swaps: 173314it [04:27, 647.71it/s]     
+# 
+#                       
+#%%
+# -------------------------------
+# Rebuild df_points from trajectory_index
+# -------------------------------
+rows = []
+for tid, traj in trajectory_index.items():
+    for order, pid in enumerate(traj):
+        rows.append({
+            'final_tid': tid,
+            'point_id': pid,
+            'order_in_traj': order,
+            'swap_id': swap_id_map.get(pid, None)
+        })
+
+trajectory_index_df = pd.DataFrame(rows)
+
+# add original tid_subid for reference
+original_pid_to_tid = dict(zip(t_forSwapping['point_id_unique'], t_forSwapping['tid_subid']))
+trajectory_index_df['original_tid'] = trajectory_index_df['point_id'].map(original_pid_to_tid)
+
+
+trajectory_index_df.head()
+#%%
+trajectory_index_df_origtid_n = trajectory_index_df.groupby('final_tid')['original_tid'].nunique().reset_index()
+print(trajectory_index_df_origtid_n.original_tid.min()) # 1
+print(trajectory_index_df_origtid_n.original_tid.max()) #26
+print(trajectory_index_df_origtid_n.original_tid.median()) # 2
+print(trajectory_index_df.swap_id.unique())
+
+#%% validate swaps
+t_swapped_sample = trajectory_index_df[trajectory_index_df['final_tid']=='20201201_9af1aaa9ad4d076028a31102ef23fd16eeee2e32_7412']
+t_swapped_sample.rename(columns={'point_id': 'point_id_unique'}, inplace=True)
+print(len(t_swapped_sample)) # 541
+t_swapped_sample = t_forSwapping[['point_id_unique', 'main_clkgp_wHelper_id', 'main_headEND_pointid', 'main_tailStart_pointid', 'match_geometry']].merge(t_swapped_sample, on= 'point_id_unique', how='right')
+print(len(t_swapped_sample)) # 541
+type(t_swapped_sample) #geopandas.geodataframe.GeoDataFrame
+
+#%% add labels for helper split points
+# add tuple for clkgp
+t_swapped_sample['main_clkgp_id_tuple'] = list(zip(t_swapped_sample['main_headEND_pointid'], t_swapped_sample['main_tailStart_pointid']))
+t_swapped_sample['main_clkgp_id_tuple'] = t_swapped_sample['main_clkgp_id_tuple'].apply(
+    lambda x: None if (isinstance(x, tuple) and pd.isna(x[0]) and pd.isna(x[1])) else x
+)
+# look up the valid helpers!
+t_swapped_sample['valid_helpers'] = t_swapped_sample['main_clkgp_id_tuple'].map(helper_pool_dict_ordered_updated)
+t_swapped_sample[t_swapped_sample['main_clkgp_id_tuple'].notna()]
+
+# these are all main to helper combinitions
+#helper_pool_dict_ordered_updated
+
+
+#%%
+valid_helpers_for_main_head_end_7333189_7333190 = t_swapped_sample.loc[45, 'valid_helpers']
+print(len(valid_helpers_for_main_head_end_7333189_7333190)) # 372 potentail swapping pair helpers
+
+print('point_id of split point, this is a main head end', t_swapped_sample.loc[45, 'point_id_unique'])
+print('main head end - will attach a tail start, i.e., must look at next row')
+print('point_id of next row', t_swapped_sample.loc[45+1, 'point_id_unique'])
+
+#%% is the point from the row above in this list?
+# looking at helper head ends
+print(5970075 in [tup[0] for tup in valid_helpers_for_main_head_end_7333189_7333190]) # False, i.e., point 5970075 is not a valid main_head_end_7333189_7333190 helper!
+# looking at helper start tail: because the main was a head end we know we must look at the helper tail start, not the helper head end
+print(5970075 in [tup[1] for tup in valid_helpers_for_main_head_end_7333189_7333190]) # TRUE
+
+#%% lets look at the other two swaps manually
+t_swapped_sample[t_swapped_sample['main_clkgp_id_tuple'].notna()]
+# point 5970535 at index 506 main_head_end_5970535_5970536
+# point 5970536 at index 507 main_tail_start_5970535_5970536
+# these are the same mains! i.e., this main has not been split into heads and tails
+# which means we can fill with the original syn points
+# valid swap is correctly identified as flase, but also, this is not a swap...
+# it is also not a swap/ split poit because original_tid is the same. no swap took place
+# 
+t_swapped_sample.original_tid.nunique() # 2, i.e., only 1 swap happened (and we have verified it is valid)
+
+
+#%% vectorised validation approach
+# 1️⃣ Define a function to check if the next point is a valid helper tail start
+def is_valid_helper_tail(row):
+    # skip if no valid helpers
+    if not isinstance(row['valid_helpers'], list) or len(row['valid_helpers']) == 0:
+        return False
+    # get next point in trajectory (tail start)
+    try:
+        next_pid = row['next_point_id']  # you'll need to create this column
+    except KeyError:
+        return False
+    # check if next_pid is any helper tail_start
+    return any(next_pid == tup[1] for tup in row['valid_helpers'])
+
+# 2️⃣ Add a column for next point_id in the trajectory
+t_swapped_sample['next_point_id'] = t_swapped_sample['point_id_unique'].shift(-1)
+
+# 3️⃣ Apply the validation function to every row
+t_swapped_sample['valid_swap'] = t_swapped_sample.apply(is_valid_helper_tail, axis=1)
+
+# ✅ Now you have a column 'valid_swap' that is True if the main_head_end correctly matches a helper_tail_start
+print(t_swapped_sample[['point_id_unique', 'next_point_id', 'valid_swap']].head(20))
+
+# t_swapped_sample[t_swapped_sample['valid_swap']==True]
+# only the one I manually validated is True --> that is the only split aka swap
+
+
+
+#%% plot in Q
+t_swapped_sample['valid_helpers_str'] = t_swapped_sample['valid_helpers'].apply(
+    lambda x: f"{x[0]},{x[1]}" if isinstance(x, tuple) else None
+)
+t_swapped_sample.to_parquet(r"\\tsclient\R\paper3\fromVM100/cloakingBasedSwapingListApproach_sampleT_swapid_validated.parquet")
+
+
+# looks amazing (but also, only one swap not repeated swaps)
+
+
+
+
+#%% look at a final tid that has more than 2 orig tid
+#trajectory_index_df_origtid_n # 4 orig_tid for this final_tid
+swppedTidSample = trajectory_index_df_origtid_n.loc[19184, 'final_tid'] # 20201201_cd3cfafd8c20d5edc2510b25a1e0b86b574cfd93_7412
+# look at this tid
+swppedTidSample_df = trajectory_index_df[trajectory_index_df['final_tid']== swppedTidSample]
+swppedTidSample_df.rename(columns={'point_id': 'point_id_unique'}, inplace=True)
+print(len(swppedTidSample_df)) # 541
+swppedTidSample_df = t_forSwapping[['point_id_unique', 'main_clkgp_wHelper_id', 'main_headEND_pointid', 'main_tailStart_pointid', 'match_geometry']].merge(swppedTidSample_df, on= 'point_id_unique', how='right')
+print(len(swppedTidSample_df)) # 541
+
+# add labels for helper split points
+# add tuple for clkgp
+swppedTidSample_df['main_clkgp_id_tuple'] = list(zip(swppedTidSample_df['main_headEND_pointid'], swppedTidSample_df['main_tailStart_pointid']))
+swppedTidSample_df['main_clkgp_id_tuple'] = swppedTidSample_df['main_clkgp_id_tuple'].apply(
+    lambda x: None if (isinstance(x, tuple) and pd.isna(x[0]) and pd.isna(x[1])) else x
+)
+# look up the valid helpers!
+swppedTidSample_df['valid_helpers'] = swppedTidSample_df['main_clkgp_id_tuple'].map(helper_pool_dict_ordered_updated)
+swppedTidSample_df[swppedTidSample_df['main_clkgp_id_tuple'].notna()] # more than 4, so not all will acually be swaps
+# basically looking at clkg gaps, but know that not all ckkl gaps have been processed succesully
+
+#%% validate these automatically
+swppedTidSample_df['next_point_id'] = swppedTidSample_df['point_id_unique'].shift(-1)
+swppedTidSample_df['valid_swap'] = swppedTidSample_df.apply(is_valid_helper_tail, axis=1)
+print(swppedTidSample_df['valid_swap'].value_counts())
+#False    560
+#True       1
+swppedTidSample_df[['point_id_unique', 'next_point_id', 'valid_swap']]
+#%% then validate by hand
+# look at these 
+print(len(swppedTidSample_df[swppedTidSample_df['main_clkgp_id_tuple'].notna()])) #5
+swppedTidSample_df[swppedTidSample_df['main_clkgp_id_tuple'].notna()][['point_id_unique', 'order_in_traj','main_clkgp_wHelper_id', 'original_tid', 'valid_swap']]
+#%% two of them are the same main pair --> validation False is correct, they did not swap
+# main_head_end_7333945_7333946 and main_tail_start_7333945_7333946
+# there is no point in between them, they have the same orig tid. this needs to be filled with syn points, id did not participate in cloaking
+
+# the other three are different
+# main_tail_start_3375477_3375478 
+# main_head_end_3375582_3375583
+# but main_tail_start_3375477_3375478 and main_head_end_3375582_3375583 have the same orig tid, so no swap happened
+# there is 420 -  316 points inbetween them, would need to know if thei have the same orig tid 
+
+# main_tail_start_3375477_3375478 --> start of a main tail
+# --> the point ABOVE should be from a different tid if the clk gap participated in swappipng
+# if the point above has the same orig tid and is only one consecutive point less no swapp happend --> i.e., False falg is correct
+# index 316
+valid_helpers_for_main_tail_start_3375477_3375478 = swppedTidSample_df.loc[316, 'valid_helpers']
+print(len(valid_helpers_for_main_tail_start_3375477_3375478)) # 
+print('point_id of previous row', swppedTidSample_df.loc[316-1, 'point_id_unique']) # 7333954
+print(swppedTidSample_df.loc[316-1, 'point_id_unique'] in [tup[0] for tup in valid_helpers_for_main_tail_start_3375477_3375478]) # TRUE!!!
+print(swppedTidSample_df.loc[316-1, 'point_id_unique'] in [tup[1] for tup in valid_helpers_for_main_tail_start_3375477_3375478]) 
+# both false
+# even though it definitley is a swap, 5970344 is not the same segment as 7333954
+# or it would be a very long segment, look at point id
+print(swppedTidSample_df.loc[316, 'original_tid']) 
+print(swppedTidSample_df.loc[316-1, 'original_tid']) 
+# THEY ARE THE SAME ORIGINAL TID
+# HOW CAN THEY HAVE SUCH A BIG GAP IN point_id_unique
+swppedTidSample_df[swppedTidSample_df['point_id_unique'].isin([7333954, 3375478])]
+
+
+
+# main_head_end_3375582_3375583 is marked as valid swap
+# --> the end of a head
+# --> the next point should be a helper tail start
+# index 420
+
+# main_tail_start_3813681_3813682
+# --> start of a main tail, look at point before: same orig tid? consecutive point_id_uniqu?
+# index 422
+
+
+# would be helpful to distinguish between False and NA in the automated classification
+# does the function take head vs tail into account?
+
+
+
+
+#%% start swapping - 1st approach
 from tqdm import tqdm
 
 swap_queue = deque(helper_pool_dict_ordered_updated.keys())
@@ -333,6 +653,7 @@ df_points['original_tid'] = df_points['point_id'].map(original_pid_to_tid)
 
 # 3️⃣ Sort by trajectory and point order
 df_points = df_points.sort_values(['final_tid', 'point_id']).reset_index(drop=True)
+# maybe I shouldhave not sorted by poin
 
 # 4️⃣ Identify swapped points
 # swapped if point's final_tid != original_tid
@@ -374,6 +695,35 @@ traj_stats
 print(traj_stats.final_tid.nunique()) # 19189
 print(traj_stats[traj_stats['swapped_points'] >=5].final_tid.unique())
 
+#%% ACTUALLY, SORTING B Y POINT ID WAS A MISTAKE, BUILD DF FROM traj dict instead, points houdl be in order
+import pandas as pd
+import pickle
+import os
+os.chdir(r"D:\paper3\SwappingBasedCloaking_10March26_listApproach") 
+print(os.getcwd())
+
+with open('trajectory_index.pkl', 'wb') as f:
+    pickle.dump(trajectory_index, f)
+
+# Build df_points from trajectory_index
+rows = []
+for tid, traj in trajectory_index.items():
+    for order, pid in enumerate(traj):  # preserve swap order
+        rows.append({
+            'final_tid': tid,
+            'point_id': pid,
+            'order_in_traj': order
+        })
+
+df_points = pd.DataFrame(rows)
+
+# Add original trajectory if you have it
+original_pid_to_tid = dict(zip(t_forSwapping['point_id_unique'], t_forSwapping['tid_subid']))
+df_points['original_tid'] = df_points['point_id'].map(original_pid_to_tid)
+
+# Now df_points is in the swapped order automatically
+df_points.head()
+
 #%%
 t_forSwapping[t_forSwapping['main_clkgp_wHelper'] != 'nan'][['point_id_unique', 'main_clkgp_wHelper', 'main_headEND_pointid',
        'main_tailStart_pointid', 'main_clkgp_id', 'main_clkgp_wHelper_id']].head()
@@ -385,7 +735,14 @@ t_forSwapping[t_forSwapping['main_clkgp_wHelper'] != 'nan'][['point_id_unique', 
 
 #%% look at one trajectory with swaps
 t_swapped_sample = df_points[df_points['final_tid']=='20201201_9af1aaa9ad4d076028a31102ef23fd16eeee2e32_7412']
-# add geometry
+print(t_swapped_sample.original_tid.nunique()) # only one, when before it had multiple (when building df based on points dift)
+t_swapped_sample
+
+#%%
+df_points_origtid_count = df_points.groupby('final_tid')['original_tid'].nunique().reset_index()
+df_points_origtid_count.original_tid.max() # 1, aka no swaps!
+
+#%% add geometry
 t_swapped_sample.rename(columns={'point_id': 'point_id_unique'}, inplace=True)
 print(len(t_swapped_sample)) # 954
 t_swapped_sample = t_forSwapping[['point_id_unique', 'main_clkgp_wHelper_id', 'main_headEND_pointid', 'main_tailStart_pointid', 'match_geometry']].merge(t_swapped_sample, on= 'point_id_unique', how='right')
