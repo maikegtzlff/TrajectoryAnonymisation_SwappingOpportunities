@@ -377,16 +377,51 @@ print(traj_stats[traj_stats['swapped_points'] >=5].final_tid.unique())
 #%%
 t_forSwapping[t_forSwapping['main_clkgp_wHelper'] != 'nan'][['point_id_unique', 'main_clkgp_wHelper', 'main_headEND_pointid',
        'main_tailStart_pointid', 'main_clkgp_id', 'main_clkgp_wHelper_id']].head()
+
+
+
+
+
+
 #%% look at one trajectory with swaps
 t_swapped_sample = df_points[df_points['final_tid']=='20201201_9af1aaa9ad4d076028a31102ef23fd16eeee2e32_7412']
 # add geometry
 t_swapped_sample.rename(columns={'point_id': 'point_id_unique'}, inplace=True)
 print(len(t_swapped_sample)) # 954
-t_swapped_sample = t_forSwapping[['point_id_unique', 'main_clkgp_wHelper_id' ,'match_geometry']].merge(t_swapped_sample, on= 'point_id_unique', how='right')
+t_swapped_sample = t_forSwapping[['point_id_unique', 'main_clkgp_wHelper_id', 'main_headEND_pointid', 'main_tailStart_pointid', 'match_geometry']].merge(t_swapped_sample, on= 'point_id_unique', how='right')
 print(len(t_swapped_sample)) # 954
 type(t_swapped_sample) #geopandas.geodataframe.GeoDataFrame
 
+#%% add labels for helper split points
+# add tuple for clkgp
+t_swapped_sample['main_clkgp_id_tuple'] = list(zip(t_swapped_sample['main_headEND_pointid'], t_swapped_sample['main_tailStart_pointid']))
+# look up the valid helpers!
+t_swapped_sample['valid_helpers'] = t_swapped_sample['main_clkgp_id_tuple'].map(helper_pool_dict_ordered_updated)
+t_swapped_sample.head()
+#t_swapped_sample.main_clkgp_wHelper_id.unique()
+
+# these are all main to helper combinitions
+#helper_pool_dict_ordered_updated
+
+#%%
+t_swapped_sample['main_clkgp_id_tuple'] = t_swapped_sample['main_clkgp_id_tuple'].apply(
+    lambda x: None if (isinstance(x, tuple) and pd.isna(x[0]) and pd.isna(x[1])) else x
+)
+t_swapped_sample.head()
+
+#%%
+valid_helpers_for_main_tail_start_1460887_146088 = t_swapped_sample.loc[1, 'valid_helpers']
+print(len(valid_helpers_for_main_tail_start_1460887_146088)) # 609 swapping pairs
+# is the point from the row above in this list?
+print(180907 in [tup[0] for tup in valid_helpers_for_main_tail_start_1460887_146088]) # False, i.e., point is not a valid 180907 helper_head_end for this swap!
+print(180907 in [tup[1] for tup in valid_helpers_for_main_tail_start_1460887_146088]) # False, i.e., point is not a valid 180907 helper_tail_start for this swap!
+print('180907' in [tup[0] for tup in valid_helpers_for_main_tail_start_1460887_146088]) # still both False
+print('180907' in [tup[1] for tup in valid_helpers_for_main_tail_start_1460887_146088])
+
 #%% plot in Q
+t_swapped_sample['valid_helpers_str'] = t_swapped_sample['valid_helpers'].apply(
+    lambda x: f"{x[0]},{x[1]}" if isinstance(x, tuple) else None
+)
 t_swapped_sample.to_parquet(r"\\tsclient\R\paper3\fromVM100/cloakingBasedSwapingListApproach_sampleT.parquet")
 # gaps are too far
 # differentces in tid segments are not consistent with main_head helper_tail / helper_head main_tail
