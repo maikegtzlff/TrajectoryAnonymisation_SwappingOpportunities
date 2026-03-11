@@ -671,10 +671,61 @@ t_cswappingl_origsynf.loc[mask, 'final_tid_origsynfilled_valid'] = t_cswappingl_
 print(t_cswappingl_origsynf.final_tid_origsynfilled_valid.unique()) # [True nan]
 
 
+#%% export
+import geopandas as gpd
+t_cswappingl_origsynf = gpd.read_parquet(r"D:\paper3\FinalCloakedBasedSwapping/Swapped_CloakingAreaBased_Validated_ListBasedSwappingApproach_origsynfilledIfneeded.parquet")
+
+t_cswappingl_origsynf = t_cswappingl_origsynf.sort_values(
+    by=['final_tid_origsynfilled', 'order_in_traj_filled'],
+    ascending=[True, True]  
+).reset_index(drop=True)  
+t_cswappingl_origsynf.head()
+
+#%%
+t_cswappingl_origsynf.to_parquet(r"D:\paper3\FinalCloakedBasedSwapping/Swapped_CloakingAreaBased_Validated_ListBasedSwappingApproach_origsynfilledIfneeded.parquet")
 
 #%% add synthethic trajectories to swaps
+# must get clk_gp id and the start and end point
+# origin and destination
+# head to tail
+
+# valid_swap should be Ture (or active_swap)
+t_cswappingl_origsynf[t_cswappingl_origsynf['active_swap'] == True] # 59683 both the same length
+# thse are the active swaps but no "gap identifier"
+
+#%% first: identify pairs of active swaps
+# simple approach first, "pairs" can be more than origin destination, inlcuding "intermediate" swaps
+# import pandas as pd
+import numpy as np
+
+# Initialize the column
+t_cswappingl_origsynf['true_pair_id'] = np.nan
+
+pair_counter_global = 0
+
+def assign_true_blocks(group):
+    global pair_counter_global
+    is_true = group['active_swap'] == True
+    # contiguous blocks
+    block_id = (is_true != is_true.shift()).cumsum()
+    
+    # Only blocks where True exists
+    true_blocks = block_id[is_true].unique()
+    
+    for blk in true_blocks:
+        idxs = group.index[block_id == blk]
+        pair_counter_global += 1
+        group.loc[idxs, 'true_pair_id'] = pair_counter_global
+    
+    return group
+
+# Apply per group
+t_cswappingl_origsynf = t_cswappingl_origsynf.groupby('final_tid_origsynfilled', group_keys=False)\
+                                             .apply(assign_true_blocks)
+#%%
+t_cswappingl_origsynf[t_cswappingl_origsynf['active_swap'] == True] # 59683 both the same length
 
 
-#%% evaluate swaps
+#%% evaluate cloaking based swaps 
 
 
