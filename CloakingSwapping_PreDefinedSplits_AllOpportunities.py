@@ -467,6 +467,7 @@ while swap_queue:
     
     # this follows the old logic, too
     main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
+    # is len(main) correct?
     if helper_destination_i < len(main): # only attach main tail to helper head if main has a tail
         main.at[helper_destination_i, "swap_destination"].append(f'helper_{h_head_end}_destination')
     helper.at[helper_origin_i, "swap_origin"].append(f'helper_{h_head_end}_origin')
@@ -1332,13 +1333,485 @@ t_forSwapping_r[t_forSwapping_r['new_tid_subid']=='20201117_42b6a40c0c9fa6f4eb63
 
 
 
-#%% (b) then add synthetic trajectory points between helper and main head/tail
+
 
 
 #%%
+with pd.option_context('display.max_rows', None):
+    print(swapped_df[swapped_df['new_tid_subid']=='20200328_a0ac0ba30aa04f38f0dfa6bc8f289fa924f6f543_5432'][['row_uid', 'tid_subid', 'new_tid_subid', 'new_tid_subid', 'swap_origin', 'swap_destination','swap_point_id_t']].head(150))
+
+#%%
+with pd.option_context('display.max_rows', None):
+    print(swapped_df[swapped_df['new_tid_subid']=='20200328_a0ac0ba30aa04f38f0dfa6bc8f289fa924f6f543_5432'][['row_uid', 'tid_subid', 'new_tid_subid', 'new_tid_subid', 'swap_origin', 'swap_destination','swap_point_id_t']].iloc[150:300])
+#%%
+with pd.option_context('display.max_rows', None):
+    print(swapped_df[swapped_df['new_tid_subid']=='20201117_42b6a40c0c9fa6f4eb636e84f13447946c2f4943_7294'][['row_uid', 'tid_subid', 'new_tid_subid', 'new_tid_subid', 'swap_origin', 'swap_destination','swap_point_id_t']])
 
 
 
+#%% tracking swaps of last swapped_df
+h_tid_attempts = helper_sid_list.copy()
+    # reducing sampling bias by shuffling the list of helper pairs first
+    random.shuffle(h_tid_attempts)
+
+    # get uid of main
+    main_uid = point_to_uid_dict_orig[main_sid]
+
+    for h_head_end, h_tail_start in h_tid_attempts:
+
+        # (0) the uid of the new_tid must be different to the original uid
+        if main_uid == point_to_uid_dict_swapped[h_head_end]: # pair invalid because uid of both points is the same --> skip 
+            continue
+
+        # (1) helper pair must still belong to the same trajectory
+        if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]: # pair invalid because tid of both points is not the same --> skip
+            continue
+
+        # (2) helper must be different trajectory from main
+        helper_tid = point_to_tid_dict[h_head_end]
+        if helper_tid != main_tid: # valid helper found
+            success_tid = True
+            break   # exit the loop
+        else:
+            continue
+
+    if not success_tid:
+        # fallback to waiting room
+        #waiting.setdefault(main_tid, []).append((main_sid, random.choice(helper_sid_list)))
+        #waiting.setdefault(main_tid, []).append((main_sid, [random.choice(helper_sid_list)]))
+        # not random but all 
+        waiting.setdefault(main_tid, []).append((main_sid, tuple(helper_sid_list)))
+        continue
+
+    
+
+    # (1) isolate the swapping pair from main df
+    # (1a) get tid_subid for helper
+    helper_tid = point_to_tid_dict[h_head_end] # TID OF POINT WILL CHANGE, we are updating dict at the end of the loop
+    helper_uid = point_to_uid_dict_swapped[h_head_end]
+
+    # (1b) subset by tid and reset index
+    main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
+    helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+
+    # (2) split main and helper into heads and tail
+    m_cut_index = main.index[main["row_uid"] == main_sid][0]
+    h_cut_index_headEnd = helper.index[helper["row_uid"] == h_head_end][0]
+    h_cut_index_tailStart = helper.index[helper["row_uid"] == h_tail_start][0]
+    # ensure that helper pair is still consecutive and not corrupted by previous swaps
+    # assert h_cut_index_tailStart == h_cut_index_headEnd + 1, "Helper pair not consecutive"
+    if h_cut_index_tailStart != h_cut_index_headEnd + 1:
+        print('helper head and tail are corrupt')
+        # skip this helper pair, pick a new one
+        waiting.setdefault(main_tid, []).append((main_sid, tuple(helper_sid_list)))
+        continue 
+
+#
+#%% try swapping again
+# reduce df to prevent memory issues
+t_forSwapping_r = t_forSwapping[['row_uid', 'tid_subid', 'uid']].copy()
+t_forSwapping_r['orig_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['new_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['new_uid'] = t_forSwapping_r['uid'].copy()
+t_forSwapping_r['swap_SwappingHeadTail'] = False
+t_forSwapping_r['SwappingHeadTail'] = False
+t_forSwapping_r['swap_n'] = 0
+t_forSwapping_r['swap_n_containerChange'] = 0
+t_forSwapping_r['swap_origin'] = [[] for _ in range(len(t_forSwapping_r))]
+t_forSwapping_r['swap_destination'] = [[] for _ in range(len(t_forSwapping_r))]
+t_forSwapping_r['swap_point_id_t'] = np.nan
+
+# --- define lookup dicts ---
+point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_tid_subid']))
+point_to_uid_dict_swapped = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_uid']))
+point_to_uid_dict_orig = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['uid']))
+
+import random
+from collections import defaultdict, deque
+from tqdm.auto import tqdm
+import numpy as np
+import pandas as pd
+
+# ---- Helper function to pick a valid helper ----
+def pick_valid_helper(main_sid, main_tid, helper_sid_list, t_forSwapping_r,
+                      point_to_tid_dict, point_to_uid_dict_swapped):
+    """
+    Pick a valid helper pair for main_sid from helper_sid_list.
+    Returns: (h_head_end, h_tail_start) or None if no valid helper.
+    """
+    h_tid_attempts = helper_sid_list.copy()
+    random.shuffle(h_tid_attempts)  # reduce sampling bias
+    main_uid = point_to_uid_dict_swapped[main_sid]
+
+    for h_head_end, h_tail_start in h_tid_attempts:
+        # 0. UID must differ from main
+        if main_uid in (point_to_uid_dict_swapped[h_head_end], point_to_uid_dict_swapped[h_tail_start]):
+            continue
+        # 1. Helper head/tail must be same trajectory
+        if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]:
+            continue
+        # 2. Helper must be different trajectory from main
+        helper_tid = point_to_tid_dict[h_head_end]
+        if helper_tid == main_tid:
+            continue
+        # 3. Helper head/tail must be consecutive
+        helper_df = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+        try:
+            h_cut_index_headEnd = helper_df.index[helper_df["row_uid"] == h_head_end][0]
+            h_cut_index_tailStart = helper_df.index[helper_df["row_uid"] == h_tail_start][0]
+        except IndexError:
+            continue
+        if h_cut_index_tailStart != h_cut_index_headEnd + 1:
+            continue
+        # Valid helper found
+        return (h_head_end, h_tail_start)
+    return None
+
+# ---- Initialize waiting room and retry tracking ----
+waiting = {}
+retry_counts = defaultdict(int)
+max_retries = 15
+
+# ---- Main swap loop ----
+swap_queue = deque(helper_pool_dict_ordered.items())
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
+
+while swap_queue:
+    main_sid, helper_sid_list = swap_queue.popleft()
+    main_tid = point_to_tid_dict[main_sid]
+
+    # Pick a valid helper pair
+    valid_helper = pick_valid_helper(main_sid, main_tid, helper_sid_list, t_forSwapping_r,
+                                     point_to_tid_dict, point_to_uid_dict_swapped)
+    if valid_helper is None:
+        # No valid helper → add to waiting room
+        waiting.setdefault(main_tid, []).append((main_sid, tuple(helper_sid_list)))
+        continue
+
+    h_head_end, h_tail_start = valid_helper
+    helper_tid = point_to_tid_dict[h_head_end]
+    helper_uid = point_to_uid_dict_swapped[h_head_end]
+
+    # ---- Subset main and helper ----
+    main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
+    helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+    m_cut_index = main.index[main["row_uid"] == main_sid][0]
+    h_cut_index_headEnd = helper.index[helper["row_uid"] == h_head_end][0]
+    h_cut_index_tailStart = helper.index[helper["row_uid"] == h_tail_start][0]
+
+    # ---- Split and label ----
+    main["swap_SwappingHeadTail"] = np.where(main.index <= m_cut_index, "head_main", "tail_main")
+    helper["swap_SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, "head_helper", "tail_helper")
+    main["SwappingHeadTail"] = np.where(main.index <= m_cut_index, f"head_main_{main_sid}", f"tail_main_{main_sid}")
+    helper["SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, f"head_helper_{h_head_end}", f"tail_helper_{h_head_end}")
+
+    # ---- Record origin/destination ----
+    main_origin_i = m_cut_index
+    main_destination_i = h_cut_index_tailStart
+    helper_origin_i = h_cut_index_headEnd
+    helper_destination_i = m_cut_index+1
+
+    main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
+    if helper_destination_i < len(main):
+        main.at[helper_destination_i, "swap_destination"].append(f'helper_{h_head_end}_destination')
+    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{h_head_end}_origin')
+    helper.at[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
+
+    main_origin_id = main.at[m_cut_index, "row_uid"]
+    main_destination_id = helper.at[h_cut_index_tailStart, "row_uid"]
+    helper_origin_id = helper.at[h_cut_index_headEnd, "row_uid"]
+    if helper_destination_i < len(main):
+        helper_destination_id = main.at[helper_destination_i, "row_uid"]
+        od_dict[helper_origin_id].append(helper_destination_id)
+    od_dict[main_origin_id].append(main_destination_id)
+
+    # ---- Perform swap ----
+    main['new_tid_subid'] = np.where(main['swap_SwappingHeadTail'] == "tail_main", helper_tid, main_tid)
+    helper['new_tid_subid'] = np.where(helper['swap_SwappingHeadTail'] == "head_helper", helper_tid, main_tid)
+    main['new_uid'] = np.where(main['swap_SwappingHeadTail'] == "tail_main", helper_uid, point_to_uid_dict_swapped[main_sid])
+    helper['new_uid'] = np.where(helper['swap_SwappingHeadTail'] == "head_helper", helper_uid, point_to_uid_dict_swapped[main_sid])
+
+    # ---- Update swap_point_id_t and swap counts ----
+    swapped_df = pd.concat([main, helper])
+    swapped_df = swapped_df.sort_values(by=['new_tid_subid','swap_SwappingHeadTail','row_uid']).reset_index(drop=True)
+    swapped_df['swap_point_id_t'] = swapped_df.groupby('new_tid_subid').cumcount() + 1
+    swapped_df['swap_n'] += 1
+    mask = swapped_df['swap_SwappingHeadTail'].isin(['tail_main','head_helper'])
+    swapped_df.loc[mask, 'swap_n_containerChange'] += 1
+
+    # ---- Update master df in place ----
+    rows = swapped_df['row_uid']
+    cols = ['new_tid_subid','new_uid','swap_SwappingHeadTail','SwappingHeadTail','swap_point_id_t','swap_n','swap_origin','swap_destination']
+    t_forSwapping_r.loc[t_forSwapping_r['row_uid'].isin(rows), cols] = swapped_df[cols].values
+
+    # ---- Update dicts ----
+    point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_tid_subid']))
+    point_to_uid_dict_swapped = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_uid']))
+
+    # ---- Handle waiting room ----
+    affected_tids = {main_tid, helper_tid}
+    for tid in affected_tids:
+        if tid in waiting:
+            for pair in waiting[tid]:
+                if retry_counts[pair] < max_retries:
+                    swap_queue.append(pair)
+                    retry_counts[pair] += 1
+            del waiting[tid]
+
+    pbar.update(1)
+
+pbar.close()
+
+#%% copy of what ran for
+#  22954/26723 [42:47:00<8:18:53,  7.94s/it]
+# reduce df to prevent memory issues
+t_forSwapping_r = t_forSwapping[['row_uid', 'tid_subid', 'uid']].copy()
+t_forSwapping_r['orig_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['new_tid_subid'] = t_forSwapping_r['tid_subid'].copy()
+t_forSwapping_r['new_uid'] = t_forSwapping_r['uid'].copy()
+t_forSwapping_r['swap_SwappingHeadTail'] = False
+t_forSwapping_r['SwappingHeadTail'] = False
+t_forSwapping_r['swap_n'] = 0
+t_forSwapping_r['swap_n_containerChange'] = 0
+t_forSwapping_r['swap_origin'] = [[] for _ in range(len(t_forSwapping_r))]
+t_forSwapping_r['swap_destination'] = [[] for _ in range(len(t_forSwapping_r))]
+t_forSwapping_r['swap_point_id_t'] = np.nan
+
+# --- define lookup dicts ---
+point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_tid_subid']))
+point_to_uid_dict_swapped = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_uid']))
+point_to_uid_dict_orig = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['uid']))
+import random
+from collections import defaultdict, deque
+from tqdm.auto import tqdm
+import numpy as np
+import pandas as pd
+
+# ---- Helper function to pick a valid helper ----
+def pick_valid_helper(main_sid, main_tid, helper_sid_list, t_forSwapping_r,
+                      point_to_tid_dict, point_to_uid_dict_swapped):
+    """
+    Pick a valid helper pair for main_sid from helper_sid_list.
+    Returns: (h_head_end, h_tail_start) or None if no valid helper.
+    """
+    #h_tid_attempts = helper_sid_list.copy()
+    h_tid_attempts = list(helper_sid_list)
+    random.shuffle(h_tid_attempts)  # reduce sampling bias
+    main_uid = point_to_uid_dict_swapped[main_sid]
+
+    for h_head_end, h_tail_start in h_tid_attempts:
+        # 0. UID must differ from main
+        if main_uid in (point_to_uid_dict_swapped[h_head_end], point_to_uid_dict_swapped[h_tail_start]):
+            continue
+        # 1. Helper head/tail must be same trajectory
+        if point_to_tid_dict[h_head_end] != point_to_tid_dict[h_tail_start]:
+            continue
+        # 2. Helper must be different trajectory from main
+        helper_tid = point_to_tid_dict[h_head_end]
+        if helper_tid == main_tid:
+            continue
+        # 3. Helper head/tail must be consecutive
+        helper_df = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+        try:
+            h_cut_index_headEnd = helper_df.index[helper_df["row_uid"] == h_head_end][0]
+            h_cut_index_tailStart = helper_df.index[helper_df["row_uid"] == h_tail_start][0]
+        except IndexError:
+            continue
+        if h_cut_index_tailStart != h_cut_index_headEnd + 1:
+            continue
+        # Valid helper found
+        return (h_head_end, h_tail_start)
+    return None
+
+# ---- Initialize waiting room and retry tracking ----
+waiting = {}
+retry_counts = defaultdict(int)
+max_retries = 15
+
+# ---- Main swap loop ----
+swap_queue = deque(helper_pool_dict_ordered.items())
+
+#%% resume run
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
+
+while swap_queue:
+    main_sid, helper_sid_list = swap_queue.popleft()
+    main_tid = point_to_tid_dict[main_sid]
+
+    # Pick a valid helper pair
+    valid_helper = pick_valid_helper(main_sid, main_tid, helper_sid_list, t_forSwapping_r,
+                                     point_to_tid_dict, point_to_uid_dict_swapped)
+    if valid_helper is None:
+        # No valid helper → add to waiting room
+        waiting.setdefault(main_tid, []).append((main_sid, tuple(helper_sid_list)))
+        continue
+
+    h_head_end, h_tail_start = valid_helper
+    helper_tid = point_to_tid_dict[h_head_end]
+    helper_uid = point_to_uid_dict_swapped[h_head_end]
+
+    # ---- Subset main and helper ----
+    main = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == main_tid].reset_index(drop=True)
+    helper = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == helper_tid].reset_index(drop=True)
+    m_cut_index = main.index[main["row_uid"] == main_sid][0]
+    h_cut_index_headEnd = helper.index[helper["row_uid"] == h_head_end][0]
+    h_cut_index_tailStart = helper.index[helper["row_uid"] == h_tail_start][0]
+
+    # ---- Split and label ----
+    main["swap_SwappingHeadTail"] = np.where(main.index <= m_cut_index, "head_main", "tail_main")
+    helper["swap_SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, "head_helper", "tail_helper")
+    main["SwappingHeadTail"] = np.where(main.index <= m_cut_index, f"head_main_{main_sid}", f"tail_main_{main_sid}")
+    helper["SwappingHeadTail"] = np.where(helper.index <= h_cut_index_headEnd, f"head_helper_{h_head_end}", f"tail_helper_{h_head_end}")
+
+    # ---- Record origin/destination ----
+    main_origin_i = m_cut_index
+    main_destination_i = h_cut_index_tailStart
+    helper_origin_i = h_cut_index_headEnd
+    helper_destination_i = m_cut_index+1
+
+    main.at[main_origin_i, "swap_origin"].append(f'main_{main_sid}_origin')
+    if helper_destination_i < len(main):
+        main.at[helper_destination_i, "swap_destination"].append(f'helper_{h_head_end}_destination')
+    helper.at[helper_origin_i, "swap_origin"].append(f'helper_{h_head_end}_origin')
+    helper.at[main_destination_i, "swap_destination"].append(f'main_{main_sid}_destination')
+
+    main_origin_id = main.at[m_cut_index, "row_uid"]
+    main_destination_id = helper.at[h_cut_index_tailStart, "row_uid"]
+    helper_origin_id = helper.at[h_cut_index_headEnd, "row_uid"]
+    if helper_destination_i < len(main):
+        helper_destination_id = main.at[helper_destination_i, "row_uid"]
+        od_dict[helper_origin_id].append(helper_destination_id)
+    od_dict[main_origin_id].append(main_destination_id)
+
+    # ---- Perform swap ----
+    main['new_tid_subid'] = np.where(main['swap_SwappingHeadTail'] == "tail_main", helper_tid, main_tid)
+    helper['new_tid_subid'] = np.where(helper['swap_SwappingHeadTail'] == "head_helper", helper_tid, main_tid)
+    main['new_uid'] = np.where(main['swap_SwappingHeadTail'] == "tail_main", helper_uid, point_to_uid_dict_swapped[main_sid])
+    helper['new_uid'] = np.where(helper['swap_SwappingHeadTail'] == "head_helper", helper_uid, point_to_uid_dict_swapped[main_sid])
+
+    # ---- Update swap_point_id_t and swap counts ----
+    swapped_df = pd.concat([main, helper])
+    swapped_df = swapped_df.sort_values(by=['new_tid_subid','swap_SwappingHeadTail','row_uid']).reset_index(drop=True)
+    swapped_df['swap_point_id_t'] = swapped_df.groupby('new_tid_subid').cumcount() + 1
+    swapped_df['swap_n'] += 1
+    mask = swapped_df['swap_SwappingHeadTail'].isin(['tail_main','head_helper'])
+    swapped_df.loc[mask, 'swap_n_containerChange'] += 1
+
+    # ---- Update master df in place ----
+    rows = swapped_df['row_uid']
+    cols = ['new_tid_subid','new_uid','swap_SwappingHeadTail','SwappingHeadTail','swap_point_id_t','swap_n','swap_origin','swap_destination']
+    t_forSwapping_r.loc[t_forSwapping_r['row_uid'].isin(rows), cols] = swapped_df[cols].values
+
+    # ---- Update dicts ----
+    point_to_tid_dict = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_tid_subid']))
+    point_to_uid_dict_swapped = dict(zip(t_forSwapping_r['row_uid'], t_forSwapping_r['new_uid']))
+
+    # ---- Handle waiting room ----
+    affected_tids = {main_tid, helper_tid}
+    for tid in affected_tids:
+        if tid in waiting:
+            for pair in waiting[tid]:
+                if retry_counts[pair] < max_retries:
+                    swap_queue.append(pair)
+                    retry_counts[pair] += 1
+            del waiting[tid]
+
+    pbar.update(1)
+
+pbar.close()
+
+# 2102 clk gaps remaining for rerun
+# 1787/2102 
+
+
+#%% now lookf for inconsistencies
+# -----------------------------
+# Audit: check head/tail inconsistencies
+# -----------------------------
+# -----------------------------
+# Audit: check head/tail inconsistencies (including unlabeled points)
+# -----------------------------
+audit_records = []
+
+for tid_subid in t_forSwapping_r['new_tid_subid'].unique():
+    subset = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == tid_subid].sort_values('swap_point_id_t')
+    
+    if len(subset) < 2:
+        continue
+
+    swap_labels = subset['swap_SwappingHeadTail'].values
+    row_uids = subset['row_uid'].values
+
+    for i in range(len(swap_labels)-1):
+        current_label = swap_labels[i]
+        next_label = swap_labels[i+1]
+
+        # Normalize labels: if False or None, treat as 'unlabeled'
+        current_label_str = str(current_label) if isinstance(current_label, str) else 'unlabeled'
+        next_label_str = str(next_label) if isinstance(next_label, str) else 'unlabeled'
+
+        # Head-helper followed by tail-helper is OK
+        if current_label_str.startswith('head_helper') and next_label_str.startswith('tail_helper'):
+            continue
+        # Head-helper not followed by tail-helper → inconsistency
+        elif current_label_str.startswith('head_helper') and not next_label_str.startswith('tail_helper'):
+            audit_records.append({
+                'tid_subid': tid_subid,
+                'row_uid_head': row_uids[i],
+                'row_uid_tail': row_uids[i+1],
+                'current_label': current_label_str,
+                'next_label': next_label_str,
+                'issue': 'head not followed by tail'
+            })
+        # Tail-helper followed by non-tail → possible corruption
+        elif current_label_str.startswith('tail_helper') and not next_label_str.startswith('tail_helper'):
+            audit_records.append({
+                'tid_subid': tid_subid,
+                'row_uid_head': row_uids[i],
+                'row_uid_tail': row_uids[i+1],
+                'current_label': current_label_str,
+                'next_label': next_label_str,
+                'issue': 'tail followed by non-tail'
+            })
+        # Optional: track unlabeled points for completeness
+        elif current_label_str == 'unlabeled' or next_label_str == 'unlabeled':
+            audit_records.append({
+                'tid_subid': tid_subid,
+                'row_uid_head': row_uids[i],
+                'row_uid_tail': row_uids[i+1],
+                'current_label': current_label_str,
+                'next_label': next_label_str,
+                'issue': 'unlabeled point'
+            })
+
+# Convert to DataFrame
+helper_audit_df = pd.DataFrame(audit_records)
+
+print(f"Total inconsistent or unlabeled sequences: {len(helper_audit_df)}")
+helper_audit_df.head(20)
+
+#Total inconsistent or unlabeled sequences: 2803701
+# run for 218 mins
+
+#t_forSwapping_r.swap_SwappingHeadTail.unique() - takes helper and head into acocunt, so should be correct
+#%%
+helper_audit_df.issue.value_counts(dropna=False) # array(['unlabeled point', 'head not followed by tail'], dtype=object)
+#issue
+#unlabeled point              1492479
+#head not followed by tail    1311222
+#%% must export the swapping results!!!
+helper_audit_df.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_ConfirmedInconsistencies/helper_audit_df.parquet")
+t_forSwapping_r.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping_ConfirmedInconsistencies/t_forSwapping_r_cloakingBased_inconsistent.parquet")
+
+
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_ConfirmedInconsistencies/waiting.pkl", "wb") as f:
+    pickle.dump(waiting, f)
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_ConfirmedInconsistencies/point_to_tid_dict.pkl", "wb") as f:
+    pickle.dump(point_to_tid_dict, f)
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_ConfirmedInconsistencies/point_to_uid_dict_swapped.pkl", "wb") as f:
+    pickle.dump(point_to_uid_dict_swapped, f)
+with open(r"D:\paper3\Data\output\CloakingBasedSwapping_ConfirmedInconsistencies/point_to_uid_dict_orig.pkl", "wb") as f:
+    pickle.dump(point_to_uid_dict_orig, f)
 
 #%% next steps
 # (d) connect the swapped trajectories (ie main and tail via synthetic points)
