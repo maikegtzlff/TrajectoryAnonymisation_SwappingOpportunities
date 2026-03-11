@@ -463,12 +463,179 @@ print(df_points_validation.valid_swap.value_counts(dropna=False))
 
 #%%
 df_points_validation[df_points_validation['valid_swap']==False]
-# the 7 false make sense, they are not active swaps ---> list based cloaking swapping prodced valid swapping splits
+# the 7 false make sense, they are not active swaps 
+# ---> list based cloaking swapping prodced valid swapping splits
 # if there are long gaps it is becuase of the sparse data
+#%% export on VM 100
+print(len(df_points_validation))
+df_points_validation.to_parquet(r'D:\paper3\SwappingBasedCloaking_10March26_listApproach/Swapped_CloakingAreaBased_Validated_ListBasedSwappingApproach.parquet')
 
 
+
+#%% load df_points_validated back in VM131
+import geopandas as gpd
+t_cswappingl = gpd.read_parquet(r"d:\paper3\FinalCloakedBasedSwapping\SwappingBasedCloaking_10March26_listApproach\Swapped_CloakingAreaBased_Validated_ListBasedSwappingApproach.parquet")
+t_cswappingl.head()
 
 #%% add syn traj back in where needed, i.e., clk gap did not participate in swap
+import numpy as np
+# get tuples back
+t_cswappingl['main_clkgp_id_tuple'] = t_cswappingl['main_clkgp_id_tuple'].apply(
+    lambda x: tuple(x) if isinstance(x, (list, tuple, np.ndarray)) else x
+)
+# clk gaps that need their orig syn points back because they did not participate in swapping
+#t_cswappingl[t_cswappingl['main_clkgp_wHelper_id'].notna()] # not na and active_swap False = must fill with original syn points
+t_cswappingl_needOrigSynPts = t_cswappingl[
+    (t_cswappingl['main_clkgp_wHelper_id'].notna()) &
+    (~t_cswappingl['active_swap'])
+] # 20938 rows, number of unique clk gaps that did not participate in swapping: 
+
+print(t_cswappingl_needOrigSynPts['main_clkgp_id_tuple'].nunique()) # 10474
+
+#%% how do I know which points I need to add back in, and where? 
+# based on point_id_unique
+# for example
+# the gap between main_head_end_131_174 and main_tail_start_131_174 in point_id_unique are all the syn points needed
+# here from 132 to 173 (incl), point_id_unique 0f main_head_end is 131, unconnected main_tail_start is 174
+# the numbers between main_clkgp_id_tuple  [131.0, 174.0]
+#'active_swap', 'valid_swap'
+
+# need all of those ysn points that I will back in as point ids list
+# first, get the tuples of interest
+import pandas as pd
+tpl_tobefilledSyn = [
+    tuple(int(x) if pd.notna(x) else None for x in tpl)
+    for tpl in t_cswappingl_needOrigSynPts['main_clkgp_id_tuple'].unique()
+]
+tpl_tobefilledSyn
+
+#%%
+# drop the three tuples with nan as destination - no end point = no need to fill synthetically
+import math
+tpl_tobefilledSyn = [
+    tpl for tpl in tpl_tobefilledSyn
+    if tpl is not None and not any(pd.isna(x) for x in tpl)
+]
+
+points_between_unswappedClkGps = {
+    tpl: list(range(tpl[0] + 1, tpl[1]))
+    for tpl in tpl_tobefilledSyn
+}
+points_between_unswappedClkGps
+#%% export dict
+import pickle
+with open(r"D:\paper3\FinalCloakedBasedSwapping/SynPoints_between_unswappedClkGps.pickle", "wb") as f:
+    pickle.dump(points_between_unswappedClkGps, f)
+
+#%% than turn into flat list
+origsynpoints = sorted({
+    point
+    for points in points_between_unswappedClkGps.values()
+    for point in points
+})
+
+print(len(origsynpoints)) # 1827 synthetic points that I am adding back
+origsynpoints
+
+#%% add these points back to the df
+t_clkd_filled = gpd.read_parquet(r"d:\paper3\FinalCloakedBasedSwapping\filledtrajectories_gdfenriched2\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet")
+print(len(t_clkd_filled))
+
+col_name = 'row_uid'
+if col_name in t_clkd_filled.columns:
+    print(f"Column '{col_name}' exists")
+else:
+    print(f"Column '{col_name}' does NOT exist")
+
+print(t_clkd_filled.point_type.unique())
+t_clkd_filled.head() 
+
+#%% only keep the syn points that we want to add back
+origsynpoints_df = t_clkd_filled[t_clkd_filled['row_uid'].isin(origsynpoints)].copy()
+print(len(origsynpoints))
+print(len(origsynpoints_df))
+origsynpoints_df.point_type.unique() # only selected syn points :)
+
+#%% add the orig syn points back to fill the unswapped clg gaps
+origsynpoints_df.rename(columns={'row_uid': 'point_id_unique', 'tid_subid': 'original_tid'}, inplace=True)
+origsynpoints_df[['point_id_unique', 'original_tid', 'point_type', 'match_geometry']]
+
+#%% replace synthetic with "orig_synthetic"
+print(origsynpoints_df.point_type.unique())
+origsynpoints_df['point_type'] = 'orig_synthetic'
+print(origsynpoints_df.point_type.unique())
+
+
+
+
+#%% want a new tuple based on order_in_traj column for the clkg that were not swapped
+t_cswappingl_needOrigSynPts[t_cswappingl_needOrigSynPts['main_clkgp_wHelper_id'].notna()].sort_values(by='main_clkgp_id_tuple')
+
+#%%
+# rows with non-None main_clkgp_id_tuple
+df_valid = t_cswappingl_needOrigSynPts[t_cswappingl_needOrigSynPts['main_clkgp_id_tuple'].notna()].copy()
+# tuple elements as int 
+df_valid['main_clkgp_id_tuple'] = df_valid['main_clkgp_id_tuple'].apply(
+    lambda tup: tuple(int(x) for x in tup if pd.notna(x))
+)
+# dict: point_id_unique to order_in_traj
+point_to_order = dict(zip(t_cswappingl_needOrigSynPts['point_id_unique'], t_cswappingl_needOrigSynPts['order_in_traj']))
+df_valid['order_in_traj_tuple'] = df_valid['main_clkgp_id_tuple'].apply(
+    lambda tpl: tuple(point_to_order.get(pid, None) for pid in tpl)
+)
+t_cswappingl_needOrigSynPts.loc[df_valid.index, 'order_in_traj_tuple'] = df_valid['order_in_traj_tuple']
+
+t_cswappingl_needOrigSynPts[t_cswappingl_needOrigSynPts['main_clkgp_wHelper_id'].notna()] # good!
+
+#%% add the order_in_traj_tuple back to the main df!!
+# attributes I want and key
+#t_cswappingl_needOrigSynPts[['point_id_unique', 'order_in_traj_tuple']]
+t_cswappingl = t_cswappingl.merge(t_cswappingl_needOrigSynPts[['point_id_unique', 'order_in_traj_tuple']], on='point_id_unique', how='left')
+t_cswappingl
+
+
+
+#%% add points to swapped df
+t_cswappingl_origsynf = pd.concat([t_cswappingl, origsynpoints_df[['point_id_unique', 'original_tid', 'point_type', 'match_geometry']].copy()])
+t_cswappingl_origsynf
+#%% after filling, 
+t_cswappingl_origsynf = t_cswappingl_origsynf.sort_values('point_id_unique').reset_index(drop=True)
+t_cswappingl_origsynf
+#%% look at one gap I remember (131 to 174)
+t_cswappingl_origsynf[
+    (t_cswappingl_origsynf['point_id_unique'] >= 130) &
+    (t_cswappingl_origsynf['point_id_unique'] <= 176)
+][['point_id_unique', 'order_in_traj_tuple', 'order_in_traj']]
+
+
+#%% order_in_traj must be updated, best in a new column
+t_cswappingl_origsynf = t_cswappingl_origsynf.reset_index(drop=True)
+# don't think I needed the order_in_traj_tuple... using interpolate on NaN instead
+t_cswappingl_origsynf['order_in_traj_filled'] = t_cswappingl_origsynf['order_in_traj'].interpolate(method='linear') 
+
+#%% looking at a known clkg gap
+t_cswappingl_origsynf[
+    (t_cswappingl_origsynf['point_id_unique'] >= 130) &
+    (t_cswappingl_origsynf['point_id_unique'] <= 176)
+][['point_id_unique', 'order_in_traj_tuple', 'order_in_traj', 'order_in_traj_filled']]
+
+#%% look at another clk gap
+#t_cswappingl_needOrigSynPts[t_cswappingl_needOrigSynPts['main_clkgp_wHelper_id'].notna()].sort_values(by='main_clkgp_id_tuple')
+t_cswappingl_origsynf[
+    (t_cswappingl_origsynf['point_id_unique'] >= 3250) &
+    (t_cswappingl_origsynf['point_id_unique'] <= 3400)
+][['point_id_unique', 'order_in_traj_tuple', 'order_in_traj', 'order_in_traj_filled']] # worked
+
+#%% validate order_in_traj_filled
+# if order_in_traj is not nan it should not have changed
+t_cswappingl_origsynf['order_in_traj_filled_valid'] = np.nan
+mask = t_cswappingl_origsynf['order_in_traj'].notna()
+t_cswappingl_origsynf.loc[mask, 'order_in_traj_filled_valid'] = t_cswappingl_origsynf.loc[mask, 'order_in_traj'] == t_cswappingl_origsynf.loc[mask, 'order_in_traj_filled']
+print(t_cswappingl_origsynf.order_in_traj_filled_valid.unique()) # [True nan]
+# adding point ids to the orig syn points worked
+
+#%% must update final_tid for these syn points!
+
 
 #%% connect od of active swaps via synthetic trajectories
 
