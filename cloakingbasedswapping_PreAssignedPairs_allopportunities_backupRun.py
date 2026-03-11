@@ -69,8 +69,8 @@ waiting = {}
 
 
 pbar = tqdm(total=len(swap_queue), desc="Processing swaps")
-
-#pbar = tqdm(total=len(swap_queue), desc="Processing swaps (resume)")
+#%%
+pbar = tqdm(total=len(swap_queue), desc="Processing swaps (resume)") #3132  remaining
 while swap_queue:
     # (0) get splitting points
     main_sid, helper_sid_list = swap_queue.popleft()
@@ -89,7 +89,8 @@ while swap_queue:
     # compability of original tid has been validated during pre-processing)
     # helper_sid is stored as a pair (tuple) in a list
     # pick a random swapping pair
-    h_tid_attempts = helper_sid_list.copy()
+    #h_tid_attempts = helper_sid_list.copy()
+    h_tid_attempts = list(helper_sid_list)
     # reducing sampling bias by shuffling the list of helper pairs first
     random.shuffle(h_tid_attempts)
 
@@ -271,7 +272,30 @@ while swap_queue:
     pbar.update(1)
 
 pbar.close()
-#%% broke at 16300/26723 [29:06:06<21:10:29,  7.31s/it]
+#%%
+# 21213/26723 [38:09:41<11:36:02,  7.58s/it]
+#---------------------------------------------------------------------------
+#AttributeError                            Traceback (most recent call last)
+#Cell In[19], line 81
+#     74 success_tid = False
+#     76 # find helper tid with a different tid
+#     77 # (point_to_tid_dict always represents the current tid state, 
+#     78 # compability of original tid has been validated during pre-processing)
+#     79 # helper_sid is stored as a pair (tuple) in a list
+#     80 # pick a random swapping pair
+#---> 81 h_tid_attempts = helper_sid_list.copy()
+#     82 # reducing sampling bias by shuffling the list of helper pairs first
+#     83 random.shuffle(h_tid_attempts)
+
+#AttributeError: 'tuple' object has no attribute 'copy'
+
+#%%  1256/3132 [2:25:13<3:38:15,  6.98s/it] in the rerun
+print(len(swap_queue)) #0
+print(len(waiting)) #1521 tids before - 2819 --> more, took 2:25hours too run
+print(sum(len(v) for v in waiting.values())) # 2377 --> 4253
+
+
+#%% originally broke at 16300/26723 [29:06:06<21:10:29,  7.31s/it]
 # becuase ---> 67 h_tid_attempts = helper_sid_list.copy()
 #AttributeError: 'tuple' object has no attribute 'copy'
 # 26723-16300 = 10423
@@ -285,19 +309,98 @@ print(sum(len(v) for v in waiting.values())) # 4897 actual clk gaps waiting
 # 0/5525
 # immediately processed, as expected
 
-#%% export, then run again taking care of uid constraint
+# now
+#3132 left in swap que
+#1521   tids in waiting
+#2377 actual cloaking gaps waiting
 
+#%% export, then run again taking care of uid constraint 
+# - i.e. this is not taking care of uid constraint?
+# not validating ouput
 t_forSwapping_r["swap_SwappingHeadTail"] = t_forSwapping_r["swap_SwappingHeadTail"].astype("string")
 t_forSwapping_r["SwappingHeadTail"] = t_forSwapping_r["SwappingHeadTail"].astype("string")
-t_forSwapping_r.to_parquet(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/ClkGpsSwappedT.parquet")
+t_forSwapping_r.to_parquet(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/ClkGpsSwappedT_11March_waitingrerun.parquet")
 
-with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/waiting.pkl", "wb") as f:
+with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/waiting11Marchwaitingrerun.pkl", "wb") as f:
     pickle.dump(waiting, f) #<-- do I know which ones have been processed?
-with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/point_to_tid_dict.pkl", "wb") as f:
+with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/point_to_tid_dict11Marchwaitingrerun.pkl", "wb") as f:
     pickle.dump(point_to_tid_dict, f)
 # od dict should be finde because it is based on point ids!
-with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/od_dict.pkl", "wb") as f:
+with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/od_dict11Marchwaitingrerun.pkl", "wb") as f:
     pickle.dump(od_dict, f)
-
-with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/swap_history.pkl", "wb") as f:
+with open(r"D:\paper3\CloakedBasedSwappingAllPredefinedOpportunities\output/swap_history11Marchwaitingrerun.pkl", "wb") as f:
     pickle.dump(swap_history, f)
+
+
+
+
+
+
+
+
+#%% validate swaps
+t_forSwapping_r_n = t_forSwapping_r.groupby('new_tid_subid')['orig_tid_subid'].nunique().reset_index()
+print(t_forSwapping_r_n.orig_tid_subid.min()) # 1
+print(t_forSwapping_r_n.orig_tid_subid.max()) # 48
+print(t_forSwapping_r_n.orig_tid_subid.median()) # 1
+# max is higher than list based approach, but median is lower
+
+#%% look at user constraint, do the new_tid_subid have orig_tid_subid from the same user?
+# in which case: no need to validate swaps
+# how would I track this? more than one "block" with the same uid
+t_forSwapping_r_n = t_forSwapping_r.groupby('new_tid_subid')['orig_tid_subid'].nunique().reset_index()
+print(t_forSwapping_r_n[t_forSwapping_r_n['orig_tid_subid']>=3].tail(1)['new_tid_subid'].unique())
+t_forSwapping_r_n[t_forSwapping_r_n['orig_tid_subid']>=3]
+
+#%% see if uid constraint is broken
+s = t_forSwapping_r[t_forSwapping_r['new_tid_subid'] == '20201201_9af1aaa9ad4d076028a31102ef23fd16eeee2e32_7412']
+
+#num of orig_tid should be the same as uid if constraint is met
+print(s.uid.nunique())
+print(s.orig_tid_subid.nunique())
+#%%
+check = (
+    t_forSwapping_r
+    .groupby('new_tid_subid')
+    .agg(
+        uid_n=('uid', 'nunique'),
+        orig_tid_subid_n=('orig_tid_subid', 'nunique')
+    )
+)
+check[check['uid_n'] != check['orig_tid_subid_n']] # 4509 rows where number of users is different to number of orig tid
+
+#%%
+t_forSwapping_r.groupby('new_tid_subid')['swap_point_id_t'].apply(lambda x: x.is_monotonic_increasing) # rtue and False
+
+#%%
+t_forSwapping_r[t_forSwapping_r['new_tid_subid']=='20190102_05001957978e7d64c4c542c191feb5e9d5365a13_2']['swap_point_id_t'].notna().any()
+       
+#%% must merge columns back to swapped df
+df_points_validation = t_forSwapping_r.copy()
+
+import pickle
+with open(r'd:\paper3\FinalCloakedBasedSwapping\helper_pool_dict_ordered_updated.pkl', 'rb') as f:
+    helper_pool_dict_ordered_updated = pickle.load(f)
+
+t_forSwapping = gpd.read_parquet(r"d:\paper3\FinalCloakedBasedSwapping\t_forSwapping_26723gaps_labelled.parquet")
+
+t_forSwapping.rename(columns={'row_uid': 'point_id_unique'}, inplace=True)
+df_points_validation.rename(columns={'row_uid': 'point_id_unique'}, inplace=True)
+
+df_points_validation = t_forSwapping[['point_id_unique', 'main_clkgp_wHelper_id', 'main_headEND_pointid', 'main_tailStart_pointid', 'match_geometry']].merge(df_points_validation, on= 'point_id_unique', how='right')
+
+#%% tidy up df
+df_points_validation['main_clkgp_wHelper_id'] = df_points_validation['main_clkgp_wHelper_id'].replace('nan_<NA>_<NA>', None)
+df_points_validation['main_headEND_pointid'] = df_points_validation['main_headEND_pointid'].replace('<NA>', None)
+df_points_validation['main_tailStart_pointid'] = df_points_validation['main_tailStart_pointid'].replace('<NA>', None)
+
+# add tuple for clkgp
+df_points_validation['main_clkgp_id_tuple'] = list(zip(df_points_validation['main_headEND_pointid'], df_points_validation['main_tailStart_pointid']))
+df_points_validation['main_clkgp_id_tuple'] = df_points_validation['main_clkgp_id_tuple'].apply(
+    lambda x: None if (isinstance(x, tuple) and pd.isna(x[0]) and pd.isna(x[1])) else x
+)
+# look up the valid helpers!
+df_points_validation['valid_helpers'] = df_points_validation['main_clkgp_id_tuple'].map(helper_pool_dict_ordered_updated)
+df_points_validation[df_points_validation['main_clkgp_id_tuple'].notna()]
+
+#%%
