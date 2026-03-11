@@ -635,9 +635,45 @@ print(t_cswappingl_origsynf.order_in_traj_filled_valid.unique()) # [True nan]
 # adding point ids to the orig syn points worked
 
 #%% must update final_tid for these syn points!
+t_cswappingl_origsynf['final_tid_origsynfilled'] = t_cswappingl_origsynf['final_tid']
 
+# Boolean mask for NaNs
+is_nan = t_cswappingl_origsynf['final_tid'].isna()
+
+# Each contiguous block (NaN or not) gets a unique number
+nan_groups = (is_nan != is_nan.shift()).cumsum()
+
+# Only consider the groups that are NaN blocks
+nan_block_ids = nan_groups[is_nan].unique()
+
+# Loop over each NaN block
+for grp in nan_block_ids:
+    block_idx = t_cswappingl_origsynf.index[nan_groups == grp]
+    start_idx = block_idx[0]
+    end_idx = block_idx[-1]
+
+    # Value before and after the block
+    val_before = t_cswappingl_origsynf.at[start_idx-1, 'final_tid'] if start_idx > 0 else None
+    val_after = t_cswappingl_origsynf.at[end_idx+1, 'final_tid'] if end_idx+1 < len(t_cswappingl_origsynf) else None
+
+    # Fill only if both are equal and not NaN
+    if val_before is not None and val_before == val_after:
+        t_cswappingl_origsynf.loc[start_idx:end_idx, 'final_tid_origsynfilled'] = val_before
+
+t_cswappingl_origsynf[['final_tid', 'final_tid_origsynfilled']]
 
 #%% connect od of active swaps via synthetic trajectories
+t_cswappingl_origsynf['final_tid_origsynfilled'].isna().any() # none are Nan, good
+#%% again, validating by ensuring final_tid of non nan values has not changed
+t_cswappingl_origsynf['final_tid_origsynfilled_valid'] = np.nan
+mask = t_cswappingl_origsynf['final_tid'].notna()
+t_cswappingl_origsynf.loc[mask, 'final_tid_origsynfilled_valid'] = t_cswappingl_origsynf.loc[mask, 'final_tid'] == t_cswappingl_origsynf.loc[mask, 'final_tid_origsynfilled']
+print(t_cswappingl_origsynf.final_tid_origsynfilled_valid.unique()) # [True nan]
+
+
+
+#%% add synthethic trajectories to swaps
+
 
 #%% evaluate swaps
 
