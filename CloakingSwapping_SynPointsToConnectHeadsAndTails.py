@@ -212,7 +212,7 @@ for odid, segs in sp_headtail_speed.groupby('odid'):
         # tick time
         t += 1
         unix += 1
-
+# ran for 40 mins
 #%%
 #%% turn into a gdf
 import geopandas as gpd
@@ -224,11 +224,6 @@ syn_points_gdf_1sec = gpd.GeoDataFrame(
         "time_sec_sinceOrigin": all_time,
         "unix": all_unix,
         "speed_mps": all_speed_mps,
-        "speed_source": all_speed_source,
-        "unix_timestamp_destination": all_unix_dest,
-        #"edge_id" : all_edge_id,
-        #"u": all_u,
-        #"v": all_v,
     },
     geometry=all_points,
     crs=sp_headtail_speed.crs
@@ -237,7 +232,165 @@ syn_points_gdf_1sec = gpd.GeoDataFrame(
 syn_points_gdf_1sec['syn_point_id_t'] = syn_points_gdf_1sec['time_sec_sinceOrigin']
 syn_points_gdf_1sec
 
+#%%
+syn_points_gdf_1sec.to_parquet(r"D:\paper3\Data\synPointsForHeadTailConnection/synPoints_for_headtailOD_shortestPath_origTimebins_medianSpeed.parquet")
 
+#%% look at one shortest path
+import random
+from shapely.geometry import Point
+
+#random_odid = random.choice(sp_headtail_speed.odid.unique())
+print(random_odid) # 15359_orig_4349461_dest_4349462
+# syn points sownt overlap OD: 9916_orig_2880259_dest_2880260
+
+random_odid_sp = sp_headtail_speed[sp_headtail_speed['odid']==random_odid]
+
+# get origin and destination points
+#sp_t_cswappingl_origsynf_OD_odid_final = gpd.read_parquet(r"d:\paper3\Data\synPointsForHeadTailConnection\headtailOD_shortestPath.parquet")
+
+random_odid_sp_od = sp_t_cswappingl_origsynf_OD_odid_final[sp_t_cswappingl_origsynf_OD_odid_final['odid'] == random_odid]
+random_odid_sp_od['orig_geometry'] = random_odid_sp_od.apply(lambda r: Point(r['orig_x'], r['orig_y']), axis=1)
+random_odid_sp_od['dest_geometry'] = random_odid_sp_od.apply(lambda r: Point(r['dest_x'], r['dest_y']), axis=1)
+
+random_odid_sp_orig = random_odid_sp_od.set_geometry('orig_geometry')
+random_odid_sp_dest = random_odid_sp_od.set_geometry('dest_geometry')
+
+random_odid_sp_orig = random_odid_sp_orig.set_crs(4326)
+random_odid_sp_dest = random_odid_sp_dest.set_crs(4326)
+
+random_odid_sp_orig = random_odid_sp_orig[['odid', 'orig_geometry']].head(1).copy()
+random_odid_sp_dest = random_odid_sp_dest[['odid', 'dest_geometry']].head(1).copy()
+
+#  get syn points for this odid
+radnom_syn_points_1sec = syn_points_gdf_1sec[syn_points_gdf_1sec['odid'] == random_odid]
+
+#%%
+import matplotlib.pyplot as plt
+import contextily as ctx  
+import matplotlib.patheffects as path_effects
+
+gdf1 = random_odid_sp.to_crs(epsg=3857)
+
+gdf2 = random_odid_sp_orig.to_crs(epsg=3857)
+gdf3 = random_odid_sp_dest.to_crs(epsg=3857)
+
+gdf4 = radnom_syn_points_1sec.to_crs(epsg=3857)
+
+import matplotlib.patheffects as path_effects
+
+def annotate_with_halo(ax, point, label, 
+                       text_color="black", arrow_color="black", 
+                       xytext=(-60, 20), text_fontsize=12, 
+                       text_halo_width=3, arrow_halo_width=5, arrow_width=1.5,
+                       va="center", ha="center"):
+   
+    # arrow halo
+    ax.annotate(
+        "",
+        xy=(point.x, point.y),
+        xytext=xytext,
+        textcoords="offset points",
+        arrowprops=dict(
+            arrowstyle="->",
+            color="white",
+            linewidth=arrow_halo_width
+        ),
+        zorder=2
+    )
+    
+    # actual arrow
+    ax.annotate(
+        "",
+        xy=(point.x, point.y),
+        xytext=xytext,
+        textcoords="offset points",
+        arrowprops=dict(
+            arrowstyle="->",
+            color=arrow_color,
+            linewidth=arrow_width
+        ),
+        zorder=3
+    )
+    
+    # text with halo
+    txt = ax.annotate(
+        label,
+        xy=(point.x, point.y),
+        xytext=xytext,
+        textcoords="offset points",
+        fontsize=text_fontsize,
+        color=text_color,
+        va=va,
+        ha=ha,
+        zorder=4
+    )
+    
+    txt.set_path_effects([
+        path_effects.Stroke(linewidth=text_halo_width, foreground="white"),
+        path_effects.Normal()
+    ])
+    
+    return txt
+
+#%%
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# plot each GeoDataFrame with different color/marker
+gdf1.plot(ax=ax, color='black', alpha=0.6, label='shortest path', linewidth=1.5, zorder =1)
+
+gdf4.plot(ax=ax, color='black', alpha=0.6, label='synthetic points', markersize=16, zorder=2)
+
+gdf2.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=3)
+gdf3.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=4)
+
+# annotate head and tail
+# origin
+row = gdf2.iloc[0]
+annotate_with_halo(
+    ax, 
+    row.orig_geometry, 
+    "origin:\nhead end",
+    text_color="black",
+    arrow_color="black",
+    xytext=(-0, 100),   
+    text_fontsize=18,
+    va="bottom",      
+    ha="center"    
+)
+# destination
+row = gdf3.iloc[0]
+annotate_with_halo(
+    ax, 
+    row.dest_geometry, 
+    "destination:\ntail start",
+    text_color="black",
+    arrow_color="black",
+    xytext=(0, -60),
+    text_fontsize=18,
+    va="top",
+    ha="center"
+)
+
+# add basemap and legend
+xlim = ax.get_xlim()
+ylim = ax.get_ylim()
+xpad = (xlim[1] - xlim[0]) * 0.05
+ypad = (ylim[1] - ylim[0]) * 0.05
+ax.set_xlim(xlim[0] - xpad, xlim[1] + xpad)
+ax.set_ylim(ylim[0] - ypad, ylim[1] + ypad)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.legend(
+    loc='lower left',
+    fontsize=14,
+    frameon=True,
+    framealpha=0.6
+)
+ax.set_axis_off()
+
+fig.savefig(r"\\tsclient\R\paper3\Figures/HeadTail_SynPoints_1Sec.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
 
 #%% must downsample
 
