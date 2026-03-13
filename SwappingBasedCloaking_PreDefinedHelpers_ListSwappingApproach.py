@@ -1,3 +1,8 @@
+#%% THIS IS THE FINAL SWAPPING AT CLOAKING GEOMETRIES APPROACH
+# handling trajectory points in ordered lists, having pre-defined swapping partners
+
+
+
 #%%look at clkgps ouptu later, for now try a list based approach to swapping
 import pandas as pd
 import geopandas as gpd
