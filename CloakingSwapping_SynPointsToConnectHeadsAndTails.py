@@ -394,3 +394,156 @@ plt.show()
 
 #%% must downsample
 
+#%% (2) downsample  to show randomness
+import random
+import pandas as pd
+
+# set your fraction limits
+frac_min = 0.1
+frac_max = 0.2
+
+# --- downsample per odid ---
+def downsample_group(group):
+    random_frac = random.uniform(frac_min, frac_max)
+    return group.sample(frac=random_frac, random_state=None)
+
+print(len(syn_points_gdf_1sec)) # 2955095
+d_syn_points_gdf = (
+    syn_points_gdf_1sec
+    .groupby("odid", group_keys=False)
+    .apply(downsample_group)
+    .reset_index(drop=True)
+)
+print(len(d_syn_points_gdf))
+
+
+# --- add point index per trajectory ---
+# sort by odid and unix first
+d_syn_points_gdf = d_syn_points_gdf.sort_values(by=["odid", "unix"])
+d_syn_points_gdf.reset_index(inplace=True, drop=True)
+# assign sequential index per odid
+d_syn_points_gdf["synpoint_id"] = d_syn_points_gdf.groupby("odid").cumcount() + 1
+d_syn_points_gdf.head()
+
+#%% 
+d_syn_points_gdf.to_parquet(r"D:\paper3\Data\synPointsForHeadTailConnection/synPoints_DOWNSAMPLED1020_for_headtailOD_shortestPath_origTimebins_medianSpeed.parquet")
+
+
+#%% final figure
+radnom_syn_points_downsampled = d_syn_points_gdf[d_syn_points_gdf['odid'] == random_odid]
+gdf5 = radnom_syn_points_downsampled.to_crs(epsg=3857)
+
+#%%
+import matplotlib.pyplot as plt
+import contextily as ctx
+
+# -----------------------------
+# Compute unified extent for all GeoDataFrames
+# -----------------------------
+all_gdfs = [gdf1, gdf2, gdf3, gdf4, gdf5]  
+xmin = min(gdf.total_bounds[0] for gdf in all_gdfs)
+ymin = min(gdf.total_bounds[1] for gdf in all_gdfs)
+xmax = max(gdf.total_bounds[2] for gdf in all_gdfs)
+ymax = max(gdf.total_bounds[3] for gdf in all_gdfs)
+
+# add 10% padding so that labels stay witing map extent
+xpad = (xmax - xmin) * 0.1
+ypad = (ymax - ymin) * 0.1
+xlim = (xmin - xpad, xmax + xpad)
+ylim = (ymin - ypad, ymax + ypad)
+
+# -----------------------------
+# Create figure with 3 panels
+# -----------------------------
+fig, axes = plt.subplots(1, 3, figsize=(24, 10))
+axs = axes.flatten()
+
+# -----------------------------
+# Panel A: Only head/tail points
+# -----------------------------
+ax = axs[0]
+gdf2.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=3)
+gdf3.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=4)
+
+# annotate
+annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
+                   xytext=(-0, 100), va="bottom", ha="center", text_fontsize=18)
+annotate_with_halo(ax, gdf3.iloc[0].dest_geometry, "destination:\ntail start",
+                   xytext=(0, -60), va="top", ha="center", text_fontsize=18)
+
+# set unified extent
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.set_axis_off()
+ax.set_title("(A) Head and tail points", fontsize=16)
+
+# -----------------------------
+# Panel B: Original plot
+# -----------------------------
+ax = axs[1]
+gdf1.plot(ax=ax, color='black', alpha=0.6, linewidth=1.5, zorder=1)
+gdf4.plot(ax=ax, color='black', alpha=0.6, markersize=16, zorder=2)
+gdf2.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=3)
+gdf3.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=4)
+
+# annotate
+annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
+                   xytext=(-0, 100), va="bottom", ha="center", text_fontsize=18)
+annotate_with_halo(ax, gdf3.iloc[0].dest_geometry, "destination:\ntail start",
+                   xytext=(0, -60), va="top", ha="center", text_fontsize=18)
+
+# set unified extent
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.set_axis_off()
+ax.set_title("(B) Synthetic trajectory points", fontsize=16)
+
+# add legend only on B
+ax.legend(loc='lower left', fontsize=14, frameon=True, framealpha=0.6)
+
+# -----------------------------
+# Panel C: show downsampled synthetic points
+# -----------------------------
+ax = axs[2]
+gdf1.plot(ax=ax, color='black', alpha=0.6, linewidth=1.5, zorder=1)
+gdf5.plot(ax=ax, color='black', alpha=0.6, markersize=16, zorder=2)  # new data
+gdf2.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=3)
+gdf3.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=4)
+
+# annotate
+annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
+                   xytext=(-0, 100), va="bottom", ha="center", text_fontsize=18)
+annotate_with_halo(ax, gdf3.iloc[0].dest_geometry, "destination:\ntail start",
+                   xytext=(0, -60), va="top", ha="center", text_fontsize=18)
+
+# set unified extent
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.set_axis_off()
+ax.set_title("(C) Downsampled synthetic trajectory points", fontsize=16)
+
+# -----------------------------
+# Save figure as SVG
+# -----------------------------
+fig.tight_layout()
+fig.savefig(r"\\tsclient\R\paper3\Figures/HeadTail_SynPoints_3Panel.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
+
+
+#%% include some points of head and tail?
+
+
+
+#%% "fill" swapped df
+
+
+
+
+#%% harmonise timestamps and trajectory length
