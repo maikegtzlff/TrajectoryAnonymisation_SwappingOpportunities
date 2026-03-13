@@ -969,6 +969,7 @@ t_cswappingl_origsynf_OD_odid_final["v_node"] = ox.distance.nearest_nodes(
     X=t_cswappingl_origsynf_OD_odid_final["dest_x"],
     Y=t_cswappingl_origsynf_OD_odid_final["dest_y"]
 )
+# only takes seconds to run
 
 #%%
 t_cswappingl_origsynf_OD_odid_final.head()
@@ -998,35 +999,113 @@ t_cswappingl_origsynf_OD_odid_final_sp = t_cswappingl_origsynf_OD_odid_final_sp.
 
 # running this on 32588 origin destination pairs
 sp.process_od_rows(t_cswappingl_origsynf_OD_odid_final_sp, G, 'E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping\shortestPathBetweenHeadTail', chunk_size=500)
+#15 mins, probs faster if not writing to parquet in chunks
+
 
 #%% load them all back into one df
+import pandas as pd
+from shapely import wkb
+
+import glob
+import os
+
+
+# folder with your parquet files
+folder = r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping\shortestPathBetweenHeadTail"
+
+# get all parquet file paths
+parquet_files = glob.glob(os.path.join(folder, "*.parquet"))
+
+# read all files and concatenate
+sp_t_cswappingl_origsynf_OD_odid_final = pd.concat((pd.read_parquet(f) for f in parquet_files), ignore_index=True)
+print(sp_t_cswappingl_origsynf_OD_odid_final.shape)
+
+# make it a gdf
+
+sp_t_cswappingl_origsynf_OD_odid_final['geometry'] = sp_t_cswappingl_origsynf_OD_odid_final['geometry'].apply(lambda x: wkb.loads(x) if isinstance(x, (bytes, bytearray)) else x)
+sp_t_cswappingl_origsynf_OD_odid_final = gpd.GeoDataFrame(sp_t_cswappingl_origsynf_OD_odid_final, geometry='geometry', crs="EPSG:4326")  # use your CRS
+sp_t_cswappingl_origsynf_OD_odid_final.head()
+
+#%%
+sp_t_cswappingl_origsynf_OD_odid_final.to_parquet(r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/headtailOD_shortestPath.parquet")
 
 
 
-#%% might have to look at odid duplicate
-#duplicates_per_odid = (
-#    shortestpath_gdf
-#    .groupby('odid')
-#    .apply(lambda x: x.duplicated(keep=False).sum())
-#    .reset_index(name='num_duplicate_rows')
-#)
-#print(duplicates_per_odid)
-#%% look for missing edges on shortest path
+#%% quality control
+# (1) might have to look at odid duplicate
+duplicates_per_odid = (
+    sp_t_cswappingl_origsynf_OD_odid_final
+    .groupby('odid')
+    .apply(lambda x: x.duplicated(keep=False).sum())
+    .reset_index(name='num_duplicate_rows')
+)
+
+duplicates_per_odid.num_duplicate_rows.max() # 0, good
+
+#%% (2) look for missing edges on shortest path
 # add a segment id to keep df sortedt
-#shortestpath_gdf_cleaned["segment"] = shortestpath_gdf_cleaned.groupby("odid").cumcount()
-#shortestpath_gdf_cleaned["odid_segmentid"] = shortestpath_gdf_cleaned["segment"].astype(str) + "_odid_" + shortestpath_gdf_cleaned["odid"].astype(str)
-#shortestpath_gdf_cleaned.head()
+sp_t_cswappingl_origsynf_OD_odid_final["segment"] = sp_t_cswappingl_origsynf_OD_odid_final.groupby("odid").cumcount()
+sp_t_cswappingl_origsynf_OD_odid_final["odid_segmentid"] = sp_t_cswappingl_origsynf_OD_odid_final["segment"].astype(str) + "_odid_" + sp_t_cswappingl_origsynf_OD_odid_final["odid"].astype(str)
+sp_t_cswappingl_origsynf_OD_odid_final.head()
 
-#%% now compare v with next u
+#%% (3) now compare v with next u
 # for each odid, shift u up to compare with  v
-#shortestpath_gdf_cleaned["next_u"] = shortestpath_gdf_cleaned.groupby("odid")["u"].shift(-1) # if there is no next row next_u becomes NaN
+sp_t_cswappingl_origsynf_OD_odid_final["next_u"] = sp_t_cswappingl_origsynf_OD_odid_final.groupby("odid")["u"].shift(-1) # if there is no next row next_u becomes NaN
 # and ignore the NaN
-#shortestpath_gdf_cleaned["noSegmentMissing"] = (
-#    shortestpath_gdf_cleaned["v"] == shortestpath_gdf_cleaned["next_u"]
-#) | shortestpath_gdf_cleaned["next_u"].isna()
+sp_t_cswappingl_origsynf_OD_odid_final["noSegmentMissing"] = (
+    sp_t_cswappingl_origsynf_OD_odid_final["v"] == sp_t_cswappingl_origsynf_OD_odid_final["next_u"]
+) | sp_t_cswappingl_origsynf_OD_odid_final["next_u"].isna()
 # results
-#shortestpath_gdf_cleaned["noSegmentMissing"].unique() # only expected True
+sp_t_cswappingl_origsynf_OD_odid_final["noSegmentMissing"].unique() # only expected True
+
+#%% (4) look at od points and shortest path, do they match?
+import random
+from shapely.geometry import Point
+
+random_odid = random.choice(sp_t_cswappingl_origsynf_OD_odid_final.odid.unique())
+print(random_odid)
+
+random_odid_sp = sp_t_cswappingl_origsynf_OD_odid_final[sp_t_cswappingl_origsynf_OD_odid_final['odid']==random_odid]
+
+random_odid_sp['orig_geometry'] = random_odid_sp.apply(lambda r: Point(r['orig_x'], r['orig_y']), axis=1)
+random_odid_sp['dest_geometry'] = random_odid_sp.apply(lambda r: Point(r['dest_x'], r['dest_y']), axis=1)
+
+random_odid_sp_orig = random_odid_sp.set_geometry('orig_geometry')
+random_odid_sp_dest = random_odid_sp.set_geometry('dest_geometry')
+
+random_odid_sp_orig = random_odid_sp_orig.set_crs(4326)
+random_odid_sp_dest = random_odid_sp_dest.set_crs(4326)
+
+#%% map
+import matplotlib.pyplot as plt
+import contextily as ctx  
+
+gdf1 = random_odid_sp.to_crs(epsg=3857)
+gdf2 = random_odid_sp_orig.to_crs(epsg=3857)
+gdf3 = random_odid_sp_dest.to_crs(epsg=3857)
+
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# plot each GeoDataFrame with different color/marker
+gdf1.plot(ax=ax, color='red', alpha=0.6, label='shortest path', markersize=10)
+gdf2.plot(ax=ax, color='blue', alpha=0.6, label='tail start', markersize=10)
+gdf3.plot(ax=ax, color='green', alpha=0.6, label='head end', markersize=10)
+
+# add basemap
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
+
+# add legend
+ax.legend()
+
+# remove axes for nicer look
+ax.set_axis_off()
+
+plt.show()
+
 #%% interpolate synthetic points
+
+
+
 
 #%% evaluate cloaking based swaps 
 
