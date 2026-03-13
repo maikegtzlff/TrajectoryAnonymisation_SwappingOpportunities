@@ -60,11 +60,8 @@ from collections import defaultdict, deque
 import time
 
 # --------------------------
-# 0️⃣ Prepare points
+# 0️ Prepare points
 # --------------------------
-# Assume your GeoDataFrame is called gdf, with columns:
-# ['point_id', 'tid_subid', 'uid', 'u', 'v', 'time_bin', 'geometry', 'unix_timestamp']
-
 gdf['container_id'] = -1          # will be set per container
 gdf['orig_tid'] = gdf['tid_subid']
 gdf['orig_uid'] = gdf['uid']
@@ -72,7 +69,7 @@ gdf['swap_count'] = 0
 gdf['visited_containers'] = gdf.apply(lambda _: [], axis=1)  # track path history
 
 # --------------------------
-# 1️⃣ Initialize containers
+# 1️ Initialize containers
 # --------------------------
 containers = []
 for cid, (tid, df_tid) in enumerate(gdf.groupby("tid_subid", sort=False)):
@@ -90,7 +87,7 @@ for cid, (tid, df_tid) in enumerate(gdf.groupby("tid_subid", sort=False)):
     })
 
 # --------------------------
-# 2️⃣ Build key → container mapping
+# 2️ Build key → container mapping
 # --------------------------
 key_to_cids = defaultdict(set)
 for c in containers:
@@ -98,7 +95,7 @@ for c in containers:
         key_to_cids[k].add(c['cid'])
 
 # --------------------------
-# 3️⃣ Queue-based swapping loop
+# 3️ Queue-based swapping loop
 # --------------------------
 queue = deque(range(len(containers)))
 seen_swaps = set()
@@ -206,7 +203,7 @@ print("\nAll swaps completed!")
 swap_log_df = pd.DataFrame(swap_log)
 
 # --------------------------
-# 4️⃣ Container summary stats
+# 4️ Container summary stats
 # --------------------------
 container_summary = []
 for c in containers:
@@ -494,5 +491,6 @@ plt.show()
 #%% drop outdated columns
 final_gdf = final_gdf.drop(columns=["n_container_changes", "tid_change_count"])
 final_gdf.to_parquet(r"D:\paper3\Data\output/final_points_edgeSwap.parquet")
+
 
 #%% look at some stats
