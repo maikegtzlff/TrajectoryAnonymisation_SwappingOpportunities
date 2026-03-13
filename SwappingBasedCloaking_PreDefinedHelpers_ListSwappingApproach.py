@@ -722,9 +722,311 @@ def assign_true_blocks(group):
 # Apply per group
 t_cswappingl_origsynf = t_cswappingl_origsynf.groupby('final_tid_origsynfilled', group_keys=False)\
                                              .apply(assign_true_blocks)
+
+# true_pair_id:label each continuous sequence of active_swap == True
+
 #%%
 t_cswappingl_origsynf[t_cswappingl_origsynf['active_swap'] == True] # 59683 both the same length
 
+#%%
+t_cswappingl_origsynf.to_parquet(r"D:\paper3\FinalCloakedBasedSwapping/Swapped_CloakingAreaBased_Validated_ListBasedSwappingApproach_origsynfilledIfneeded.parquet")
+
+#%% true_pair_id:label each continuous sequence of active_swap == True
+# can be more than 2, ideally two onlye (OD), otherwise it is (O-D0-D)
+t_cswappingl_origsynf.true_pair_id.value_counts() # some are up to 8?
+
+#%%
+sample_activeSwapBlcok = t_cswappingl_origsynf[t_cswappingl_origsynf['true_pair_id'] == 4834.0].copy()
+print(sample_activeSwapBlcok.final_tid.unique())                # 20200110_fbe906873514e9223ef147d6b827dd559c378aa7_3576
+print(sample_activeSwapBlcok.order_in_traj_filled.unique())     # from 314 to 321
+sample_activeSwapBlcok
+
+#%% look at full tid in Q
+t_cswappingl_origsynf[t_cswappingl_origsynf['final_tid'] == '20200110_fbe906873514e9223ef147d6b827dd559c378aa7_3576'].to_parquet(r'D:\paper3\FinalCloakedBasedSwapping\lookingAtSamples/20200110_fbe906873514e9223ef147d6b827dd559c378aa7_3576.parquet')
+# not ideal, but looks good
+
+#%% histogram of 'individual vs chained origin-destination'
+import matplotlib.pyplot as plt
+
+pair_sizes = (
+    t_cswappingl_origsynf
+    .dropna(subset=['true_pair_id'])
+    .groupby('true_pair_id')
+    .size()
+)
+#%%
+plt.style.use('ggplot')
+
+plt.hist(pair_sizes, bins=range(1, pair_sizes.max()+2), align='left')
+plt.xlabel("Number of points (o-d chain if >2)")
+plt.ylabel("Frequency")
+plt.title("Number of origin-destination points of trajectory identifiers swaps at segmentation points")
+plt.xlim(left=1.5
+)
+
+plt.show()
+#%% must need a n od id that fits the syn points in both globally and locally
+# create a new, current global point id (to allow sorting by)
+t_cswappingl_origsynf = (
+    t_cswappingl_origsynf
+    .sort_values(['final_tid_origsynfilled', 'order_in_traj_filled'])
+    .reset_index(drop=True)      
+    .reset_index(names='point_id_global') 
+)
+t_cswappingl_origsynf
+
+#%% must find a good way to handle destinations that also serve as origins, i.e. more than two True in a rows/ true_pair_id of len longer than 2
+t_cswappingl_origsynf_OD = t_cswappingl_origsynf[t_cswappingl_origsynf.true_pair_id.notna()]
+
+#%% points are ordered, i.e. the first occurence of a new true_pair is the origin
+# the next orrurence of a true_pair id value is theh destination of the previous point
+# when od are chained the destination also acts as an origin
+# can we explode?
+# need a list (tuple) of od values
+# explode to make sure every destination has an origin
+
+# previous and next point ids inside each pair block
+t_cswappingl_origsynf_OD['prev_pid'] = t_cswappingl_origsynf_OD.groupby('true_pair_id')['point_id_global'].shift(1)
+t_cswappingl_origsynf_OD['next_pid'] = t_cswappingl_origsynf_OD.groupby('true_pair_id')['point_id_global'].shift(-1)
+
+# origin and destination columns
+t_cswappingl_origsynf_OD['origin_label'] = None
+t_cswappingl_origsynf_OD['destination_label'] = None
+
+# Origin: current row is origin if it has a next point in the same true_pair_id
+mask_origin = t_cswappingl_origsynf_OD['next_pid'].notna()
+t_cswappingl_origsynf_OD.loc[mask_origin, 'origin_label'] = (
+    t_cswappingl_origsynf_OD.loc[mask_origin, 'point_id_global'].astype(str)
+    + "_" + t_cswappingl_origsynf_OD.loc[mask_origin, 'true_pair_id'].astype(int).astype(str)
+    + "_Origin"
+)
+
+# Destination: current row is destination if it has a previous point in the same true_pair_id
+mask_dest = t_cswappingl_origsynf_OD['prev_pid'].notna()
+t_cswappingl_origsynf_OD.loc[mask_dest, 'destination_label'] = (
+    t_cswappingl_origsynf_OD.loc[mask_dest, 'prev_pid'].astype(int).astype(str)
+    + "_" + t_cswappingl_origsynf_OD.loc[mask_dest, 'true_pair_id'].astype(int).astype(str)
+    + "_Destination"
+)
+
+#t_cswappingl_origsynf_OD = t_cswappingl_origsynf_OD.drop(columns=['prev_pid', 'next_pid'])
+t_cswappingl_origsynf_OD
+
+#%% run shortest path between all od 
+# shortest path: how should od be structured? one row for o, one for d? coloumns? i.e. two id columns and two geometry columns
+
+# I NEED OD PAIRS to run my shortest path code
+# cannot calculate shortest path if the nearest node to both OD points is the same - this is good, takes care of very short distances where we would not want to insert synthethic trajectories anyway
+# looks like I had origin and destination as seperate rows, grouped by odid
+# also taking uid into account
+# this will be the "final_uid" after swapping
+
+# these are the columns I need
+# odid
+# uid
+# orig and dest points in the same row
+
+# how should odd chains be handled?
+# looking at t_cswappingl_origsynf_OD I would say I need duplicates of the rows that have a value in both origin_label AND destination_label
+# if they have both values, they are destination first, before becoming origin again
+# how will this impact synthetic points generation?
+# cannot dissolve the shortest paths because I want to maintain the raw points (i.e, od, along the path)
+
+# reduce od df to essential information
+t_cswappingl_origsynf_OD_odid = t_cswappingl_origsynf_OD[['point_id_global', 'match_geometry', 'final_tid', 'true_pair_id', 'origin_label', 'destination_label']].copy()
+# add uid
+t_cswappingl_origsynf_OD_odid['final_uid'] = t_cswappingl_origsynf_OD_odid['final_tid'].str.split('_').str[1]
+
+#%% have one row per odid, i.e., add destination of origin to same row
+#print(t_cswappingl_origsynf_OD_odid.loc[[614, 615, 616]][['origin_label', 'destination_label']])
+
+print(len(t_cswappingl_origsynf_OD_odid))
+# get rows that are both origin and destination
+both_mask = t_cswappingl_origsynf_OD_odid['origin_label'].notna() & t_cswappingl_origsynf_OD_odid['destination_label'].notna()
+# split by od label
+t_cswappingl_origsynf_OD_odid_origin = t_cswappingl_origsynf_OD_odid[both_mask].copy()
+t_cswappingl_origsynf_OD_odid_origin['destination_label'] = None
+
+t_cswappingl_origsynf_OD_odid_dest_only = t_cswappingl_origsynf_OD_odid[both_mask].copy()
+t_cswappingl_origsynf_OD_odid_dest_only['origin_label'] = None
+
+# return to rows that didn't need splitting
+t_cswappingl_origsynf_OD_odid = pd.concat([t_cswappingl_origsynf_OD_odid[~both_mask], t_cswappingl_origsynf_OD_odid_origin, t_cswappingl_origsynf_OD_odid_dest_only], ignore_index=True)
+
+# sort by point id
+t_cswappingl_origsynf_OD_odid = t_cswappingl_origsynf_OD_odid.sort_values(by=['point_id_global'])
+t_cswappingl_origsynf_OD_odid = t_cswappingl_origsynf_OD_odid.reset_index(drop=True)
+
+print(len(t_cswappingl_origsynf_OD_odid)) # should be longer: 59683 vs 67116
+
+#%% add odid
+# check that every point is either origin or destination, never both
+print(not (t_cswappingl_origsynf_OD_odid['origin_label'].notna() & t_cswappingl_origsynf_OD_odid['destination_label'].notna()).any(), 'expected True')
+t_cswappingl_origsynf_OD_odid['odid'] = (
+    t_cswappingl_origsynf_OD_odid['origin_label']
+    .fillna(t_cswappingl_origsynf_OD_odid['destination_label'])
+    .str.rsplit('_', n=1).str[0]
+)
+print(len(t_cswappingl_origsynf_OD_odid)) # 67116
+print(t_cswappingl_origsynf_OD_odid.odid.nunique()) #33558, which is half of the df length
+print(t_cswappingl_origsynf_OD_odid.odid.value_counts().reset_index()['count'].max())
+print(t_cswappingl_origsynf_OD_odid.odid.value_counts().reset_index()['count'].min())
+# 2, as expected. each odid only has one origin and one destination
+# also, add a dictionary lookup: key: odid, value, the origin and destination value
+
+#%% have a origin geometry and a destination geometry
+# df must be same crs as Graph, which is epsg4326
+print(t_cswappingl_origsynf_OD_odid.crs)
+t_cswappingl_origsynf_OD_odid = t_cswappingl_origsynf_OD_odid.to_crs(4326)
+print(t_cswappingl_origsynf_OD_odid.crs)
+t_cswappingl_origsynf_OD_odid['orig'] = t_cswappingl_origsynf_OD_odid['match_geometry'].where(t_cswappingl_origsynf_OD_odid['origin_label'].notna())
+t_cswappingl_origsynf_OD_odid['dest'] = t_cswappingl_origsynf_OD_odid['match_geometry'].where(t_cswappingl_origsynf_OD_odid['destination_label'].notna())
+t_cswappingl_origsynf_OD_odid.head()
+
+#%% store od point ids as a dict
+od_dict = t_cswappingl_origsynf_OD_odid.groupby('odid')['point_id_global'].apply(list).to_dict()
+od_dict['226_1'] # [226, 227] origin first, then destination, origin is the smaller out of the two
+
+
+#%% have one row per odid 
+t_cswappingl_origsynf_OD_odid_final = (
+    t_cswappingl_origsynf_OD_odid.drop(columns='match_geometry')
+      .groupby('odid', as_index=False)
+      .agg({
+          'point_id_global': lambda x: tuple(x), # create odid tuple
+          'final_uid': 'first',
+          'final_tid': 'first',
+          'true_pair_id': 'first',
+          'origin_label': 'first',
+          'destination_label': 'first',
+          'orig': 'first',
+          'dest': 'first',    
+      })
+)
+t_cswappingl_origsynf_OD_odid_final.head()
+
+#%% update odid
+t_cswappingl_origsynf_OD_odid_final['true_pair_id'] = t_cswappingl_origsynf_OD_odid_final['true_pair_id'].astype(int)
+
+t_cswappingl_origsynf_OD_odid_final['odid'] = (
+    t_cswappingl_origsynf_OD_odid_final['true_pair_id'].astype(str)
+    + '_orig_' + t_cswappingl_origsynf_OD_odid_final['point_id_global'].str[0].astype(str)
+    + '_dest_' + t_cswappingl_origsynf_OD_odid_final['point_id_global'].str[1].astype(str)
+)
+t_cswappingl_origsynf_OD_odid_final.head()
+
+#%% export dict
+import os
+import pickle
+
+output_dir = r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping"
+os.makedirs(output_dir, exist_ok=True)
+
+t_cswappingl_origsynf.to_parquet(r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/t_cswappingl_origsynf_crs4326.parquet")
+#%%
+t = t_cswappingl_origsynf_OD_odid_final.copy()
+# convert geometry to WKT string
+t['orig'] = t['orig'].apply(lambda g: g.wkt if g else None)
+t['dest'] = t['dest'].apply(lambda g: g.wkt if g else None)
+t.to_parquet(r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/t_cswappingl_origsynf_OD_odid_final_crs4326.parquet")
+
+with open(r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/od_dict.pkl", "wb") as f:
+    pickle.dump(od_dict, f)
+
+#%% speed up processing by adding nearest node to df
+import osmnx as ox
+import joblib
+G = joblib.load(r"D:\paper2\Data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath\graph.joblib")
+#nodes = gpd.read_parquet(r"D:\paper2\Data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath/nodes.parquet")
+#edges = gpd.read_parquet(r"D:\paper2\Data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath/edges.parquet")
+
+# df must be same crs as Graph, which is epsg4326
+
+#%% find nearest node before running shortest path
+t_cswappingl_origsynf_OD_odid_final = gpd.GeoDataFrame(
+    t_cswappingl_origsynf_OD_odid_final,
+    geometry='orig',
+    crs="EPSG:4326"  
+)
+
+# extract origin and destination coordinates
+t_cswappingl_origsynf_OD_odid_final["orig_x"] = t_cswappingl_origsynf_OD_odid_final.orig.x
+t_cswappingl_origsynf_OD_odid_final["orig_y"] = t_cswappingl_origsynf_OD_odid_final.orig.y
+# now change active geometry column to dest
+t_cswappingl_origsynf_OD_odid_final = t_cswappingl_origsynf_OD_odid_final.set_geometry('dest')
+t_cswappingl_origsynf_OD_odid_final["dest_x"] = t_cswappingl_origsynf_OD_odid_final.dest.x
+t_cswappingl_origsynf_OD_odid_final["dest_y"] = t_cswappingl_origsynf_OD_odid_final.dest.y
+
+# snap origins to nearest node
+t_cswappingl_origsynf_OD_odid_final["u_node"] = ox.distance.nearest_nodes(
+    G,
+    X=t_cswappingl_origsynf_OD_odid_final["orig_x"],
+    Y=t_cswappingl_origsynf_OD_odid_final["orig_y"]
+)
+# snap destinations to nearest node
+t_cswappingl_origsynf_OD_odid_final["v_node"] = ox.distance.nearest_nodes(
+    G,
+    X=t_cswappingl_origsynf_OD_odid_final["dest_x"],
+    Y=t_cswappingl_origsynf_OD_odid_final["dest_y"]
+)
+
+#%%
+t_cswappingl_origsynf_OD_odid_final.head()
+
+#%% can already filter out the ones that have the same node! no need to attempt shortest path caluclation
+t_cswappingl_origsynf_OD_odid_final['same_nearest_node'] = t_cswappingl_origsynf_OD_odid_final['u_node'] == t_cswappingl_origsynf_OD_odid_final['v_node']
+t_cswappingl_origsynf_OD_odid_final['same_nearest_node'].value_counts()
+
+# same_nearest_node
+#False    32588
+#True       970
+
+print(len(t_cswappingl_origsynf_OD_odid_final)) # 33558
+t_cswappingl_origsynf_OD_odid_final_sp = t_cswappingl_origsynf_OD_odid_final[t_cswappingl_origsynf_OD_odid_final['same_nearest_node']==False]
+print(len(t_cswappingl_origsynf_OD_odid_final_sp)) #32588
+
+#%%
+t_cswappingl_origsynf_OD_odid_final_sp.to_parquet(r"D:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/t_cswappingl_origsynf_OD_odid_final_sp.parquet")
+
+
+
+
+#%% RUN SHORTEST PATH
+import utils_shortestPath as sp
+
+t_cswappingl_origsynf_OD_odid_final_sp = t_cswappingl_origsynf_OD_odid_final_sp.rename(columns={'final_uid': 'uid'})
+
+# running this on 32588 origin destination pairs
+sp.process_od_rows(t_cswappingl_origsynf_OD_odid_final_sp, G, 'E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping\shortestPathBetweenHeadTail', chunk_size=500)
+
+#%% load them all back into one df
+
+
+
+#%% might have to look at odid duplicate
+#duplicates_per_odid = (
+#    shortestpath_gdf
+#    .groupby('odid')
+#    .apply(lambda x: x.duplicated(keep=False).sum())
+#    .reset_index(name='num_duplicate_rows')
+#)
+#print(duplicates_per_odid)
+#%% look for missing edges on shortest path
+# add a segment id to keep df sortedt
+#shortestpath_gdf_cleaned["segment"] = shortestpath_gdf_cleaned.groupby("odid").cumcount()
+#shortestpath_gdf_cleaned["odid_segmentid"] = shortestpath_gdf_cleaned["segment"].astype(str) + "_odid_" + shortestpath_gdf_cleaned["odid"].astype(str)
+#shortestpath_gdf_cleaned.head()
+
+#%% now compare v with next u
+# for each odid, shift u up to compare with  v
+#shortestpath_gdf_cleaned["next_u"] = shortestpath_gdf_cleaned.groupby("odid")["u"].shift(-1) # if there is no next row next_u becomes NaN
+# and ignore the NaN
+#shortestpath_gdf_cleaned["noSegmentMissing"] = (
+#    shortestpath_gdf_cleaned["v"] == shortestpath_gdf_cleaned["next_u"]
+#) | shortestpath_gdf_cleaned["next_u"].isna()
+# results
+#shortestpath_gdf_cleaned["noSegmentMissing"].unique() # only expected True
+#%% interpolate synthetic points
 
 #%% evaluate cloaking based swaps 
 
