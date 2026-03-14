@@ -365,7 +365,9 @@ gdf_nodess_swppd.head()
 
 #%%
 gdf_nodess_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_IntersectionSwappedTrajSplitForLength.parquet")
-
+#%%
+gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_IntersectionSwappedTrajSplitForLength.parquet")
+gdf_nodess_swppd.head()
 
 #%% edge-based
 gdf_edges_swppd = gdf_edges_swppd.sort_values(['container_id','point_id_global']).copy()
@@ -427,8 +429,35 @@ for cid, total_len in container_total.items():
 gdf_edges_swppd['sub_container_id'] = gdf_edges_swppd['sub_container_id'].astype(str) 
 
 gdf_edges_swppd
+
+#%%
+print(gdf_edges_swppd.groupby('sub_container_id')['container_id'].nunique().max()) # 1, didn't mix across containers (good)
+
+segment_lengths = (
+    gdf_edges_swppd
+    .groupby('sub_container_id')['segment_length_m']
+    .sum()
+)
+segment_lengths.describe()
+
+#%%
+segment_lengths_df = segment_lengths.reset_index()
+segment_lengths_df.rename(
+    columns={'segment_length_m':'sub_container_total_length_m'},
+    inplace=True
+)
+
+gdf_edges_swppd = gdf_edges_swppd.merge(
+    segment_lengths_df,
+    on='sub_container_id',
+    how='left'
+)
+gdf_edges_swppd['sub_container_total_length_km'] = round(gdf_edges_swppd['sub_container_total_length_m']/1000,2)
+gdf_edges_swppd.head()
+
+#%% export 
+gdf_edges_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength_EdgeSwappedTrajSplitForLength.parquet")
+
 #%% recalculate df length stats based on new split container_id
-
-
 
 #%% timestamps: fix after splitting trajectories
