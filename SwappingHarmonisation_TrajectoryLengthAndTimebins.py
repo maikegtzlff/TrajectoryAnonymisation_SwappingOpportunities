@@ -231,7 +231,7 @@ for i, dataset_name in enumerate(datasets_unique):
     )
 
 # Custom x-axis labels with LaTeX
-ax.set_xticklabels([r"$t_f$", r"$t_{se}$", r"$t_{si}$", r"$t_{sc}$"])
+ax.set_xticklabels([r"$t_f$", r"$t_{si}$", r"$t_{se}$", r"$t_{sc}$"])
 ax.set_xlabel("Trajectory anonymisation approach", fontsize=14, color='#555555')
 
 # Labels and title
@@ -240,7 +240,7 @@ ax.set_ylabel("Trajectory length (km)", fontsize=14, color='#555555')
 # add legend
 import matplotlib.patches as mpatches
 
-labels = [r"Baseline ($t_f$)", r"Edge-swapping ($t_{se}$)", r"Intersection-swapping ($t_{si}$)", r"Cloaking Area-swapping ($t_{sc}$)"]
+labels = [r"Baseline ($t_f$)", r"Intersection-swapping ($t_{si}$)", r"Edge-swapping ($t_{se}$)", r"Cloaking Area-swapping ($t_{sc}$)"]
 colors = ['#383a6b','#FDD45F','#F3B503','#C09003']
 patches = [mpatches.Patch(color=colors[i], label=labels[i]) for i in range(len(labels))]
 ax.legend(handles=patches, fontsize=12, loc='upper right', frameon=False)
@@ -251,8 +251,113 @@ plt.show()
 
 
 #%% split the tid of the swapped df by artificially adding tids
-# make sure that both segments of the split tid have reasonable lengths
+# Compute describe for each
+desc_t_p2 = t_p2_length_km.describe()
+desc_gdf_nodes = gdf_nodess_swppd_length_km.describe()
+desc_gdf_edges = gdf_edges_swppd_length_km.describe()
+desc_cswapping = t_cswappingl_origsynf_headtailsynf_length_km.describe()
 
+# Combine into single DataFrame
+summary_df = pd.DataFrame({
+    'Cloaked & filled': desc_t_p2,
+    'Nodes Swapped': desc_gdf_nodes,
+    'Edges Swapped': desc_gdf_edges,
+    'Swapped within cloaking geometry': desc_cswapping
+})
+
+print(summary_df)
+# Census and household surveys for Auckland: average 30km daily,
+# individual trip lengths is shorter (~10km when travelling by car)
+# outer districts have longer trip lengths
+# this mathces our 25% to 50%, with the mean being a little high, of the baseline. remember, baseline is the 100 most active users in the sample
+
+#%% make sure that both segments of the split tid have reasonable lengths
+
+# split intersection based swapping first
+import pandas as pd
+import numpy as np
+
+gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'segment_length_m': 'length_to_next_m'})
+
+min_len = 10000   # 10 km in meters
+max_len = 45000   # 45 km in meters
+
+# 1 sort
+gdf_nodess_swppd = gdf_nodess_swppd.sort_values(['container_id', 'point_id_global']).copy()
+
+# 2 length of container
+gdf_nodess_swppd['cum_len'] = gdf_nodess_swppd.groupby('container_id')['length_to_next_m'].cumsum()
+
+# 3 containers that need splitting
+container_total_len = gdf_nodess_swppd.groupby('container_id')['length_to_next_m'].sum()
+containers_to_split = container_total_len[container_total_len > max_len].index
+
+# 4 sub_container assignment, akak splitting
+gdf_nodess_swppd['sub_container_id'] = gdf_nodess_swppd['container_id']  
+
+for cid in containers_to_split:
+    mask = gdf_nodess_swppd['container_id'] == cid
+    cum_lengths = gdf_nodess_swppd.loc[mask, 'cum_len'].values
+
+    # random split thresholds
+    thresholds = []
+    remaining_len = cum_lengths[-1]
+    current = 0
+    while remaining_len - current > max_len:
+        split_len = np.random.uniform(min_len, max_len)
+        thresholds.append(current + split_len)
+        current += split_len
+    # ensure last threshold reaches end
+    thresholds.append(cum_lengths[-1])
+
+    sub_ids = np.searchsorted(thresholds, cum_lengths) + 1
+    gdf_nodess_swppd.loc[mask, 'sub_container_id'] = [f"{cid}_{i}" for i in sub_ids]
+
+gdf_nodess_swppd
+
+#%% edge-based
+import pandas as pd
+import numpy as np
+
+gdf_edges_swppd = gdf_edges_swppd.rename(columns={'segment_length_m': 'length_to_next_m'})
+
+min_len = 10000   # 10 km in meters
+max_len = 45000   # 45 km in meters
+
+# 1 sort
+gdf_edges_swppd = gdf_edges_swppd.sort_values(['container_id', 'point_id_global']).copy()
+
+# 2 length of container
+gdf_edges_swppd['cum_len'] = gdf_edges_swppd.groupby('container_id')['length_to_next_m'].cumsum()
+
+# 3 containers that need splitting
+container_total_len = gdf_edges_swppd.groupby('container_id')['length_to_next_m'].sum()
+containers_to_split = container_total_len[gdf_edges_swppd > max_len].index
+
+# 4 sub_container assignment, akak splitting
+gdf_edges_swppd['sub_container_id'] = gdf_edges_swppd['container_id']  
+
+for cid in containers_to_split:
+    mask = gdf_edges_swppd['container_id'] == cid
+    cum_lengths = gdf_edges_swppd.loc[mask, 'cum_len'].values
+
+    # random split thresholds
+    thresholds = []
+    remaining_len = cum_lengths[-1]
+    current = 0
+    while remaining_len - current > max_len:
+        split_len = np.random.uniform(min_len, max_len)
+        thresholds.append(current + split_len)
+        current += split_len
+    # ensure last threshold reaches end
+    thresholds.append(cum_lengths[-1])
+
+    sub_ids = np.searchsorted(thresholds, cum_lengths) + 1
+    gdf_edges_swppd.loc[mask, 'sub_container_id'] = [f"{cid}_{i}" for i in sub_ids]
+
+gdf_edges_swppd
+
+#%% recalculate df length stats based on new split container_id
 
 
 
