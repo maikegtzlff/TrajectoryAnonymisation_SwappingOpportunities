@@ -606,12 +606,6 @@ d_syn_points_gdf = d_syn_points_gdf.drop('synpoint_id', axis=1)
 d_syn_points_gdf.head()
 
 
-
-#%%
-d_syn_points_gdf.to_parquet(r"D:\paper3\Data\synPointsForHeadTailConnection/synPoints_DOWNSAMPLED1020_GLOBALPOINTID_for_headtailOD_shortestPath_origTimebins_medianSpeed.parquet")
-
-
-
 #%% the df to be filled
 #from VM 131
 #t_cswappingl_origsynf_OD_odid_final_sp.to_parquet(r"D:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/t_cswappingl_origsynf_OD_odid_final_sp.parquet")
@@ -643,18 +637,99 @@ print(t_cswappingl_origsynf.columns)
 #       'final_tid_origsynfilled', 'final_tid_origsynfilled_valid',
 #       'true_pair_id']
 
-# will pd.concat but must sort to get syn points at the correct positon
+#%% will pd.concat, then sorting by global point id to get syn points at the correct positon
+# rename tid column/add
+
 # final_tid of d_syn_points_gdf == final_tid_origsynfilled of t_cswappingl_origsynf
+d_syn_points_gdf['final_tid_origsynfilled'] = d_syn_points_gdf['final_tid']
 
-# would be easier if d_syn_points_gdf had orig and dest points
+# add orig_tid akak odid
+d_syn_points_gdf['original_tid'] = d_syn_points_gdf['odid']
+d_syn_points_gdf['point_type'] = "swapping_synthetic"
+
+# rename global point id column
+d_syn_points_gdf = d_syn_points_gdf.rename(columns={'point_id_global': 'point_id_global_OD_tuple'})
+d_syn_points_gdf = d_syn_points_gdf.rename(columns={'syn_point_id_global': 'point_id_global'})
+
+d_syn_points_gdf.head()
+
+#%%
+d_syn_points_gdf.to_parquet(r"D:\paper3\Data\synPointsForHeadTailConnection/synPoints_DOWNSAMPLED1020_GLOBALPOINTID_for_headtailOD_shortestPath_origTimebins_medianSpeed.parquet")
+
+#%% clean up both df before merge
+print(sorted(t_cswappingl_origsynf.columns)) # doesn't have geometry! will add match_geometry back, can then fill with geometry column
+print(sorted(d_syn_points_gdf.columns))
 
 
+print(t_cswappingl_origsynf[t_cswappingl_origsynf['main_clkgp_id_tuple'].notna()][[
+ 'main_clkgp_id_tuple',
+ 'main_clkgp_wHelper_id',
+ 'main_headEND_pointid',
+ 'main_involved_in_split',
+ 'main_tailStart_pointid']].head())
+
+print(t_cswappingl_origsynf.final_tid_origsynfilled_valid.unique())
+
+print(t_cswappingl_origsynf[[
+ 'order_in_traj',
+ 'order_in_traj_filled',
+ 'order_in_traj_filled_valid',
+ 'order_in_traj_tuple']].head())
+
+# print(t_cswappingl_origsynf.apply(lambda r: np.array_equal(r['main_clkgp_id_tuple'], r['order_in_traj_tuple']), axis=1).any())
+# true --> can drop one
+
+#%%
+# columns to drop from syn points
+d_syn_points_gdf = d_syn_points_gdf.drop('uid', axis=1)
+
+# rename columns
+# point_id_global_OD_tuple to  'main_clkgp_id_tuple'
+# MUST RENAME GEOMETRY TO MATCH GEOMETRY (and set active geometry column)
+d_syn_points_gdf = d_syn_points_gdf.rename(columns={'geometry': 'match_geometry', 'point_id_global_OD_tuple': 'main_clkgp_id_tuple'})
+d_syn_points_gdf = d_syn_points_gdf.set_geometry('match_geometry')
+
+# columns to drop from t_cswappingl_origsynf
+t_cswappingl_origsynf = t_cswappingl_origsynf.drop([
+ 'final_tid_origsynfilled_valid', 
+ 'order_in_traj',
+ 'order_in_traj_filled',
+ 'order_in_traj_filled_valid',
+ 'order_in_traj_tuple'], axis=1)
+
+# compare crs
+print(d_syn_points_gdf.crs)
+print(t_cswappingl_origsynf.crs)
+#%%
+t_cswappingl_origsynf = t_cswappingl_origsynf.to_crs(d_syn_points_gdf.crs)
+print(t_cswappingl_origsynf.crs)
+
+#%% can now safely concat and sort to "fill"
+t_cswappingl_origsynf_headtailsynf = gpd.GeoDataFrame(pd.concat([t_cswappingl_origsynf, d_syn_points_gdf], ignore_index=True))
+t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.sort_values('point_id_global')
+t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.reset_index(drop=True)
+
+print(t_cswappingl_origsynf_headtailsynf.columns)
+t_cswappingl_origsynf_headtailsynf.head() # no temporal information at all at the moment, otther than time_sec_sinceOrigin for new syn points
+
+#%%
+t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.reset_index().rename(columns={'index': 'point_id_global_synfilled'})
+t_cswappingl_origsynf_headtailsynf.head()
 
 
+#%% export 
+t_cswappingl_origsynf_headtailsynf.to_parquet(r"D:\paper3\Data\ClkSwpSynFilled.parquet")
 
 
 #%% include some points of head and tail in the plot?
 clk_t_sample = t_cswappingl_origsynf_OD_odid_final_sp[t_cswappingl_origsynf_OD_odid_final_sp['odid']==random_odid]
 clk_t_sample
 
+#%% and look at the full filled tid
+t_cswappingl_origsynf_headtailsynf # classified by orig tid
+
+
 #%% harmonise timestamps and trajectory length
+# and uid (depends on final_tid)
+# would be interesting to see the distribution...
+# do I still have 97 users? or have "main" heads from one user been favored? ie bias? 
