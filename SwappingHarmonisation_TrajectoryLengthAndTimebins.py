@@ -8,11 +8,11 @@ t_p2 = gpd.read_parquet(r'\\tsclient\R\paper3\filledtrajectories_gdfenriched2\tr
 
 # swapped trajectories
 # (1) edge swapped
-gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength.parquet")
+#gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength.parquet")
 #  'container_id', 'orig_tid', 'orig_uid', 'container_segment_tid', 'traj_length_container_segment', 'container_length'
 
 # (2) intersection swapped
-gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_length.parquet")
+#gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_length.parquet")
 # container_id - tid after swapping
 # print ((gdf_nodess_swppd['orig_tid'] == gdf_nodess_swppd['tid_subid']).any()) # TRUE
 # tid_subid, orig_tid - orig tid, now segmented
@@ -96,8 +96,6 @@ gdf_edges_swppd['prev_geom'] = gdf_edges_swppd.groupby('container_id')['geometry
 
 gdf_edges_swppd['segment_length_m'] = gdf_edges_swppd.geometry.distance(gdf_edges_swppd['prev_geom'])
 gdf_edges_swppd['segment_length_m'] = gdf_edges_swppd['segment_length_m'].fillna(0)
-gdf_edges_swppd_length = gdf_edges_swppd.groupby('container_id')['segment_length_m'].sum().reset_index()
-gdf_edges_swppd_length.rename(columns={'segment_length_m':'total_length_m'}, inplace=True)
 
 
 #%% intersection
@@ -111,10 +109,7 @@ gdf_nodess_swppd['prev_geom'] = gdf_nodess_swppd.groupby('container_id')['geomet
 
 gdf_nodess_swppd['segment_length_m'] = gdf_nodess_swppd.geometry.distance(gdf_nodess_swppd['prev_geom'])
 gdf_nodess_swppd['segment_length_m'] = gdf_nodess_swppd['segment_length_m'].fillna(0)
-gdf_nodess_swppd_length = gdf_nodess_swppd.groupby('container_id')['segment_length_m'].sum().reset_index()
-gdf_nodess_swppd_length.rename(columns={'segment_length_m':'total_length_m'}, inplace=True)
 
-gdf_nodess_swppd_length.head()
 
 #%% same for swapped trajectories
 if t_cswappingl_origsynf_headtailsynf.crs.to_epsg() != 2193:  
@@ -133,6 +128,13 @@ t_cswappingl_origsynf_headtailsynf_length.rename(columns={'segment_length_m':'to
 t_cswappingl_origsynf_headtailsynf_length.head()
 
 #%%
+gdf_nodess_swppd_length = gdf_nodess_swppd.groupby('container_id')['segment_length_m'].sum().reset_index()
+gdf_nodess_swppd_length.rename(columns={'segment_length_m':'total_length_m'}, inplace=True)
+
+gdf_edges_swppd_length = gdf_edges_swppd.groupby('container_id')['segment_length_m'].sum().reset_index()
+gdf_edges_swppd_length.rename(columns={'segment_length_m':'total_length_m'}, inplace=True)
+
+
 t_p2_length_km = t_p2_length['total_length_m'] / 1000
 gdf_nodess_swppd_length_km = gdf_nodess_swppd_length['total_length_m'] / 1000
 gdf_edges_swppd_length_km = gdf_edges_swppd_length['total_length_m'] / 1000
@@ -174,6 +176,7 @@ combined = pd.concat([
 ], axis=1)
 
 melted = combined.melt(var_name="Dataset", value_name="Length_km")
+
 #%%
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -251,6 +254,8 @@ plt.savefig(r"\\tsclient\R\paper3\Figures/TrajLengthSwapped.svg", format="svg", 
 plt.show()
 
 
+
+#######################################################################
 #%% split the tid of the swapped df by artificially adding tids
 # Compute describe for each
 desc_t_p2 = t_p2_length_km.describe()
@@ -458,6 +463,242 @@ gdf_edges_swppd.head()
 #%% export 
 gdf_edges_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength_EdgeSwappedTrajSplitForLength.parquet")
 
-#%% recalculate df length stats based on new split container_id
 
+
+
+#%% recalculate df length stats based on new split container_id
+#t_p2_length_km = t_p2_length['total_length_m'] / 1000
+#t_cswappingl_origsynf_headtailsynf_length_km = t_cswappingl_origsynf_headtailsynf_length['total_length_m'] / 1000
+
+split_nodess_swppd_lengths = (gdf_nodess_swppd.groupby('sub_container_id')['segment_length_m'].sum()).reset_index()
+split_nodess_swppd_lengths.rename(columns={'segment_length_m':'sub_container_total_length_m'}, inplace=True)
+split_nodess_swppd_lengths_km = split_nodess_swppd_lengths['sub_container_total_length_m'] / 1000
+
+
+split_edges_swppd_segment_lengths = (gdf_edges_swppd.groupby('sub_container_id')['segment_length_m'].sum()).reset_index()
+split_edges_swppd_segment_lengths.rename(columns={'segment_length_m':'sub_container_total_length_m'}, inplace=True)
+split_edges_swppd_segment_lengths_km = split_edges_swppd_segment_lengths['sub_container_total_length_m'] / 1000
+split_edges_swppd_segment_lengths_km
+
+#%% stats
+from scipy.stats import ks_2samp
+
+pairs = [(t_p2_length_km, split_nodess_swppd_lengths_km),
+         (t_p2_length_km, split_edges_swppd_segment_lengths_km),
+         #(t_p2_length_km, t_cswappingl_origsynf_headtailsynf_length_km),
+         ]
+for i,(a,b) in enumerate(pairs):
+    stat,p = ks_2samp(a,b)
+    print(f"Pair {i+1}: KS stat={stat:.3f}, p-value={p:.3e}")
+
+# Kolmogorov–Smirnov refresher
+# maximum difference between cumulative distributions
+# 0 distributions similar
+# 1 distributions different
+
+# before splitting
+#t_p2_length_km, gdf_nodess_swppd_length_km:                    KS stat=0.706, p-value=0.000e+00 --> very large KS = substantially different trajectory lengths
+#t_p2_length_km, gdf_edges_swppd_length_km:                     KS stat=0.164, p-value=8.164e-226 --> moderte KS = some differences, less extreme as in nodes swapping
+#t_p2_length_km, t_cswappingl_origsynf_headtailsynf_length_km:  KS stat=0.019, p-value=2.137e-03 --> distributions almost identical (expected, limited swapping opportunities - p small becasue of large sample size)
+# differences can be xplained based on number of swapping opportunities 
+
+# after splitting
+#t_p2_length_km, split_nodess_swppd_lengths_km:                 KS stat=0.424, p-value=0.000e+00 --> went down from 0.7 to 0.4. 0.4 is still moderate-to-large difference in lengths
+#t_p2_length_km, split_edges_swppd_segment_lengths_km:          KS stat=0.465, p-value=0.000e+00 --> KS went up! noticeable difference 
+
+#%%bopxlt
+combined_split = pd.concat([
+    t_p2_length_km.rename("Baseline"),
+    split_nodess_swppd_lengths_km.rename("Intersection swapped"),
+    split_edges_swppd_segment_lengths_km.rename("Edge swapped"),
+    t_cswappingl_origsynf_headtailsynf_length_km.rename("Cloaking area swapped")
+], axis=1)
+
+melted_split = combined_split.melt(var_name="Dataset", value_name="Length_km")
+#%%
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# Use ggplot style globally
+plt.style.use("ggplot")
+
+# Your palette
+colors = ['#383a6b','#FDD45F','#F3B503','#C09003']
+
+# Create figure and axis
+fig, ax = plt.subplots(figsize=(10,6))
+
+# Boxplot
+sns.boxplot(
+    x="Dataset",
+    y="Length_km",
+    data=melted_split,
+    palette=colors,
+    width=0.6,
+    fliersize=0,
+    showfliers=False,
+    ax=ax
+)
+
+# White background
+ax.set_facecolor('white')
+
+# Hide default grid, add horizontal dotted grid lines
+ax.grid(False)
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+
+# Solid y-axis line
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+
+# Hide top and right spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Annotate median values
+datasets_unique = melted_split['Dataset'].unique()
+for i, dataset_name in enumerate(datasets_unique):
+    median_val = melted_split.loc[melted_split['Dataset']==dataset_name, 'Length_km'].median()
+    ax.text(
+        x=i,
+        y=median_val,
+        s=f"{median_val:.1f}",  
+        color='black',
+        fontsize=10,
+        ha='center',
+        va='bottom',
+        alpha=0.7
+    )
+
+# Custom x-axis labels with LaTeX
+ax.set_xticklabels([r"$t_f$", r"$t_{si}$", r"$t_{se}$", r"$t_{sc}$"])
+ax.set_xlabel("Trajectory anonymisation approach", fontsize=14, color='#555555')
+
+# Labels and title
+ax.set_ylabel("Trajectory length (km)", fontsize=14, color='#555555')
+
+# add legend
+import matplotlib.patches as mpatches
+
+labels = [r"Baseline ($t_f$)", r"Intersection-swapping ($t_{si}$)", r"Edge-swapping ($t_{se}$)", r"Cloaking Area-swapping ($t_{sc}$)"]
+colors = ['#383a6b','#FDD45F','#F3B503','#C09003']
+patches = [mpatches.Patch(color=colors[i], label=labels[i]) for i in range(len(labels))]
+ax.legend(handles=patches, fontsize=12, loc='upper right', frameon=False)
+
+plt.savefig(r"\\tsclient\R\paper3\Figures/TrajLengthSwapped_split.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
+
+#%% combine them onto one bopxlpt??
+split_nodess_swppd_lengths = (gdf_nodess_swppd.groupby('sub_container_id')['segment_length_m'].sum()).reset_index()
+split_nodess_swppd_lengths.rename(columns={'segment_length_m':'sub_container_total_length_m'}, inplace=True)
+split_nodess_swppd_lengths_km = split_nodess_swppd_lengths['sub_container_total_length_m'] / 1000
+
+gdf_edges_swppd_length = gdf_edges_swppd.groupby('container_id')['segment_length_m'].sum().reset_index()
+gdf_edges_swppd_length.rename(columns={'segment_length_m':'total_length_m'}, inplace=True)
+gdf_edges_swppd_length_km = gdf_edges_swppd_length['total_length_m'] / 1000
+
+combined = pd.concat([
+    t_p2_length_km.rename("Baseline"),
+    gdf_nodess_swppd_length_km.rename("Intersection swapped"),
+    split_nodess_swppd_lengths_km.rename("Intersection swapped split"),
+    gdf_edges_swppd_length_km.rename("Edge swapped"),
+    t_cswappingl_origsynf_headtailsynf_length_km.rename("Cloaking area swapped")
+], axis=1)
+
+melted = combined.melt(var_name="Dataset", value_name="Length_km")
+
+#%%
+# %%
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.patheffects as path_effects
+
+
+plt.style.use("ggplot")
+
+#prep df
+melted_clean = melted.dropna(subset=['Length_km'])
+datasets = melted_clean['Dataset'].unique()
+box_data = [melted_clean.loc[melted_clean['Dataset']==ds, 'Length_km'].values for ds in datasets]
+
+positions = np.arange(len(datasets))
+
+colors = ['#383a6b','#FDD45F','#FDD45F','#F3B503','#C09003']
+
+# boxplot
+fig, ax = plt.subplots(figsize=(10,6))
+
+boxes = ax.boxplot(box_data, patch_artist=True, positions=positions, widths=0.6, showfliers=False)
+# 2nd box hatched
+for i, b in enumerate(boxes['boxes']):
+    b.set_facecolor(colors[i % len(colors)])
+    b.set_edgecolor('black')
+    b.set_linewidth(1.2)
+    if i == 1:  # hatch only the second box
+        b.set_hatch('//')
+# annotate medians
+for median in boxes['medians']:
+    median.set_color('black')
+    median.set_linewidth(1.2)
+for i, medline in enumerate(boxes['medians']):
+    median_val = medline.get_ydata()[0]
+    txt = ax.text(
+        x=positions[i],
+        y=median_val,
+        s=f"{median_val:.1f}",
+        ha='center',
+        va='bottom',
+        fontsize=12,
+        color='black',
+        #fontweight='bold',
+        alpha=0.7
+    )
+    txt.set_path_effects([
+        path_effects.Stroke(linewidth=3.5, foreground='white'), 
+        path_effects.Normal() 
+    ])
+
+ax.set_xticks(positions)
+ax.set_xticklabels([r"$t_f$", r"$t_{si}$", r"$t_{si}$ split", r"$t_{se}$", r"$t_{sc}$"], fontsize=14)
+ax.set_xlabel("Trajectory swapping approach", fontsize=16, color='#555555')
+ax.set_ylabel("Trajectory length (km)", fontsize=16, color='#555555')
+
+ax.set_facecolor('white')
+ax.grid(False)
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+labels = [
+    r"Baseline ($t_f$)",
+    r"Intersection-swapping ($t_{si}$ and $t_{si} split$)",
+    r"Edge-swapping ($t_{se}$)",
+    r"Cloaking Area-swapping ($t_{sc}$)"
+]
+patches = [mpatches.Patch(color=colors[i], label=labels[i]) for i in range(len(labels))]
+ax.legend(handles=patches, fontsize=14, loc='upper right', frameon=False)
+
+plt.savefig(r"\\tsclient\R\paper3\Figures/TrajLengthSwapped_split.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+########################################################################
 #%% timestamps: fix after splitting trajectories
+t_p2.to_parquet(r"D:\paper3\Data\output/FinalSwappingForEvaluationFigures\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean_length.parquet")
+t_cswappingl_origsynf_headtailsynf.to_parquet(r"D:\paper3\Data/output\FinalSwappingForEvaluationFigures/ClkSwpSynFilled_uid_length.parquet")
+
+gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_IntersectionSwappedTrajSplitForLength.parquet")
+gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength_EdgeSwappedTrajSplitForLength.parquet")
+
+# work with split containers for nodes df from now on
+# %%
