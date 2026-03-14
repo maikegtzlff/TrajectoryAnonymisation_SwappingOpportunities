@@ -869,7 +869,7 @@ ax.set_ylim(ylim)
 
 ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
 ax.set_axis_off()
-ax.set_title("(A) Head and tail points", fontsize=16)
+ax.set_title("(A) Head and tail", fontsize=24)
 
 # -----------------------------
 # Panel B: Original plot
@@ -894,10 +894,8 @@ ax.set_ylim(ylim)
 
 ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
 ax.set_axis_off()
-ax.set_title("(B) Synthetic trajectory points", fontsize=16)
+ax.set_title("(B) Connected head and tail", fontsize=24)
 
-# add legend only on B
-ax.legend(loc='lower left', fontsize=14, frameon=True, framealpha=0.6)
 
 # -----------------------------
 # Panel C: show downsampled synthetic points
@@ -922,27 +920,11 @@ ax.set_ylim(ylim)
 
 ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
 ax.set_axis_off()
-ax.set_title("(C) Downsampled synthetic trajectory points", fontsize=16)
+ax.set_title("(C) Downsampled synthetic trajectory points", fontsize=24)
 
-# -----------------------------
 # Save figure as SVG
 # -----------------------------
 fig.tight_layout()
 fig.savefig(r"\\tsclient\R\paper3\Figures/HeadTail_SynPoints_3Panel_inclHeadTail.svg", format="svg", bbox_inches="tight", dpi=300)
 
 plt.show()
-
-
-
-
-#%%
-
-
-
-
-
-
-#%% harmonise timestamps and trajectory length
-# and uid (depends on final_tid)
-# would be interesting to see the distribution...
-# do I still have 97 users? or have "main" heads from one user been favored? ie bias? 
