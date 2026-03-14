@@ -1,6 +1,7 @@
 #%% load libaries and data
 import geopandas as gpd
 import pandas as pd
+import numpy as np
 
 # baseline: cloaked and filled trajetcories (paper 2)
 t_p2 = gpd.read_parquet(r'\\tsclient\R\paper3\filledtrajectories_gdfenriched2\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet')
@@ -272,91 +273,160 @@ print(summary_df)
 # this mathces our 25% to 50%, with the mean being a little high, of the baseline. remember, baseline is the 100 most active users in the sample
 
 #%% make sure that both segments of the split tid have reasonable lengths
-
 # split intersection based swapping first
-import pandas as pd
-import numpy as np
+min_len = 10000   # 10 km
+max_len = 45000   # 45 km
 
-gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'segment_length_m': 'length_to_next_m'})
+gdf_nodess_swppd = gdf_nodess_swppd.sort_values(['container_id','point_id_global']).copy()
 
-min_len = 10000   # 10 km in meters
-max_len = 45000   # 45 km in meters
+# cumulative distance for each container
+gdf_nodess_swppd['traj_length_container_segment'] = gdf_nodess_swppd.groupby('container_id')['segment_length_m'].cumsum()
 
-# 1 sort
-gdf_nodess_swppd = gdf_nodess_swppd.sort_values(['container_id', 'point_id_global']).copy()
+container_total = gdf_nodess_swppd.groupby('container_id')['segment_length_m'].sum()
 
-# 2 length of container
-gdf_nodess_swppd['cum_len'] = gdf_nodess_swppd.groupby('container_id')['length_to_next_m'].cumsum()
+gdf_nodess_swppd['sub_container_id'] = gdf_nodess_swppd['container_id']
 
-# 3 containers that need splitting
-container_total_len = gdf_nodess_swppd.groupby('container_id')['length_to_next_m'].sum()
-containers_to_split = container_total_len[container_total_len > max_len].index
+for cid, total_len in container_total.items():
 
-# 4 sub_container assignment, akak splitting
-gdf_nodess_swppd['sub_container_id'] = gdf_nodess_swppd['container_id']  
+    if total_len <= max_len:
+        continue  # no splitting needed
 
-for cid in containers_to_split:
     mask = gdf_nodess_swppd['container_id'] == cid
-    cum_lengths = gdf_nodess_swppd.loc[mask, 'cum_len'].values
+    cum = gdf_nodess_swppd.loc[mask,'traj_length_container_segment'].values
 
-    # random split thresholds
-    thresholds = []
-    remaining_len = cum_lengths[-1]
+    splits = []
     current = 0
-    while remaining_len - current > max_len:
-        split_len = np.random.uniform(min_len, max_len)
-        thresholds.append(current + split_len)
-        current += split_len
-    # ensure last threshold reaches end
-    thresholds.append(cum_lengths[-1])
 
-    sub_ids = np.searchsorted(thresholds, cum_lengths) + 1
-    gdf_nodess_swppd.loc[mask, 'sub_container_id'] = [f"{cid}_{i}" for i in sub_ids]
+    # dynamically handle leftover distances after splitting
+    while True:
+        remaining = total_len - current
+
+        # If remaining distance fits within [min_len, max_len], make it the last segment
+        if min_len <= remaining <= max_len:
+            splits.append(total_len)
+            break
+
+        # If remaining is smaller than min_len, extend previous segment
+        if remaining < min_len:
+            if splits:
+                splits[-1] = total_len
+            else:
+                splits.append(total_len)
+            break
+
+        # Otherwise, create a random segment within min–max
+        step = np.random.uniform(min_len, max_len)
+        current += step
+
+        # If step overshoots remaining distance, cap it
+        if current > total_len:
+            current = total_len
+
+        splits.append(current)
+
+    # Assign sub_container IDs
+    segment_ids = np.searchsorted(splits, cum)
+    gdf_nodess_swppd.loc[mask,'sub_container_id'] = [
+        f"{cid}_{i+1}" for i in segment_ids
+    ]
+
+# sub_conatiner_id have _ after main container id, if main container was split
+# otherwise sub_container_id == main_container, i.e. not split --> this explains lengths under 10km
+# must treat all as string
+gdf_nodess_swppd['sub_container_id'] = gdf_nodess_swppd['sub_container_id'].astype(str) 
 
 gdf_nodess_swppd
 
+
+#%%
+print(gdf_nodess_swppd.groupby('sub_container_id')['container_id'].nunique().max()) # 1, didn't mix across containers (good)
+
+segment_lengths = (
+    gdf_nodess_swppd
+    .groupby('sub_container_id')['segment_length_m']
+    .sum()
+)
+segment_lengths.describe()
+
+#%% add split length back to df
+segment_lengths_df = segment_lengths.reset_index()
+segment_lengths_df.rename(
+    columns={'segment_length_m':'sub_container_total_length_m'},
+    inplace=True
+)
+
+gdf_nodess_swppd = gdf_nodess_swppd.merge(
+    segment_lengths_df,
+    on='sub_container_id',
+    how='left'
+)
+gdf_nodess_swppd['sub_container_total_length_km'] = round(gdf_nodess_swppd['sub_container_total_length_m']/1000,2)
+gdf_nodess_swppd.head()
+
+#%%
+gdf_nodess_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_IntersectionSwappedTrajSplitForLength.parquet")
+
+
 #%% edge-based
-import pandas as pd
-import numpy as np
+gdf_edges_swppd = gdf_edges_swppd.sort_values(['container_id','point_id_global']).copy()
 
-gdf_edges_swppd = gdf_edges_swppd.rename(columns={'segment_length_m': 'length_to_next_m'})
+# cumulative distance for each container
+gdf_edges_swppd['traj_length_container_segment'] = gdf_edges_swppd.groupby('container_id')['segment_length_m'].cumsum()
 
-min_len = 10000   # 10 km in meters
-max_len = 45000   # 45 km in meters
+container_total = gdf_edges_swppd.groupby('container_id')['segment_length_m'].sum()
 
-# 1 sort
-gdf_edges_swppd = gdf_edges_swppd.sort_values(['container_id', 'point_id_global']).copy()
+gdf_edges_swppd['sub_container_id'] = gdf_edges_swppd['container_id']
 
-# 2 length of container
-gdf_edges_swppd['cum_len'] = gdf_edges_swppd.groupby('container_id')['length_to_next_m'].cumsum()
+for cid, total_len in container_total.items():
 
-# 3 containers that need splitting
-container_total_len = gdf_edges_swppd.groupby('container_id')['length_to_next_m'].sum()
-containers_to_split = container_total_len[gdf_edges_swppd > max_len].index
+    if total_len <= max_len:
+        continue  # no splitting needed
 
-# 4 sub_container assignment, akak splitting
-gdf_edges_swppd['sub_container_id'] = gdf_edges_swppd['container_id']  
-
-for cid in containers_to_split:
     mask = gdf_edges_swppd['container_id'] == cid
-    cum_lengths = gdf_edges_swppd.loc[mask, 'cum_len'].values
+    cum = gdf_edges_swppd.loc[mask,'traj_length_container_segment'].values
 
-    # random split thresholds
-    thresholds = []
-    remaining_len = cum_lengths[-1]
+    splits = []
     current = 0
-    while remaining_len - current > max_len:
-        split_len = np.random.uniform(min_len, max_len)
-        thresholds.append(current + split_len)
-        current += split_len
-    # ensure last threshold reaches end
-    thresholds.append(cum_lengths[-1])
 
-    sub_ids = np.searchsorted(thresholds, cum_lengths) + 1
-    gdf_edges_swppd.loc[mask, 'sub_container_id'] = [f"{cid}_{i}" for i in sub_ids]
+    # dynamically handle leftover distances after splitting
+    while True:
+        remaining = total_len - current
+
+        # If remaining distance fits within [min_len, max_len], make it the last segment
+        if min_len <= remaining <= max_len:
+            splits.append(total_len)
+            break
+
+        # If remaining is smaller than min_len, extend previous segment
+        if remaining < min_len:
+            if splits:
+                splits[-1] = total_len
+            else:
+                splits.append(total_len)
+            break
+
+        # Otherwise, create a random segment within min–max
+        step = np.random.uniform(min_len, max_len)
+        current += step
+
+        # If step overshoots remaining distance, cap it
+        if current > total_len:
+            current = total_len
+
+        splits.append(current)
+
+    # Assign sub_container IDs
+    segment_ids = np.searchsorted(splits, cum)
+    gdf_edges_swppd.loc[mask,'sub_container_id'] = [
+        f"{cid}_{i+1}" for i in segment_ids
+    ]
+
+# sub_conatiner_id have _ after main container id, if main container was split
+# otherwise sub_container_id == main_container, i.e. not split --> this explains lengths under 10km
+# must treat all as string
+gdf_edges_swppd['sub_container_id'] = gdf_edges_swppd['sub_container_id'].astype(str) 
 
 gdf_edges_swppd
-
 #%% recalculate df length stats based on new split container_id
 
 
