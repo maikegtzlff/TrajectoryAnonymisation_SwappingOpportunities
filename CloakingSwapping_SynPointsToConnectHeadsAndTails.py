@@ -392,7 +392,10 @@ fig.savefig(r"\\tsclient\R\paper3\Figures/HeadTail_SynPoints_1Sec.svg", format="
 
 plt.show()
 
-#%% must downsample
+
+
+
+
 
 #%% (2) downsample  to show randomness
 import random
@@ -537,13 +540,121 @@ fig.savefig(r"\\tsclient\R\paper3\Figures/HeadTail_SynPoints_3Panel.svg", format
 plt.show()
 
 
-#%% include some points of head and tail?
+
+
 
 
 
 #%% "fill" swapped df
+#%% haven't looked at point id of syn points yet
+print((syn_points_gdf_1sec['time_sec_sinceOrigin'] == syn_points_gdf_1sec['syn_point_id_t']).any()) # True
+syn_points_gdf_1sec.head() 
+# time_sec_sinceOrigin, don't need unix column
+# syn_point_id_t is the same as time_sec
+
+#%%
+d_syn_points_gdf.head() # point id: synpoint_id is correct, syn_point_id_t mst be from before downsampling!
+# ['odid', 'uid', 'time_sec_sinceOrigin', 'unix', 'speed_mps', 'geometry', 'syn_point_id_t', 'synpoint_id']
+
+# odid is also fake orig_tid
+# must add final_tid
+# final_tid is based on odid
+
+#%% odid to final_tid dict
+# from VM 131
+#t_cswappingl_origsynf.to_parquet(r"E:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/t_cswappingl_origsynf_crs4326.parquet")
+t_cswappingl_origsynf_OD_odid_final_sp = pd.read_parquet(r"d:\paper3\Data\synPointsForHeadTailConnection\t_cswappingl_origsynf_OD_odid_final_crs4326.parquet")
+print(len(t_cswappingl_origsynf_OD_odid_final_sp)) # 33558 --> only od
+t_cswappingl_origsynf_OD_odid_final_sp.head() # has odid, point_id_global of origin AND destination, true_pair_id, origin_label, destination_label
+#%%
+odid_to_finalTid_dict = dict(zip(
+    t_cswappingl_origsynf_OD_odid_final_sp['odid'],
+    zip(
+        t_cswappingl_origsynf_OD_odid_final_sp['final_tid'], 
+        t_cswappingl_origsynf_OD_odid_final_sp['true_pair_id'],
+        t_cswappingl_origsynf_OD_odid_final_sp['point_id_global']
+    )
+))
+
+d_syn_points_gdf[['final_tid', 'true_pair_id', 'point_id_global']] = d_syn_points_gdf['odid'].map(odid_to_finalTid_dict).apply(pd.Series)
+d_syn_points_gdf.head()
+
+#%% claen up d_syn_points_gdf
+d_syn_points_gdf[['orig_point_id_global', 'dest_point_id_global']] = d_syn_points_gdf['point_id_global'].apply(pd.Series)
+d_syn_points_gdf = d_syn_points_gdf.drop(['unix', 'syn_point_id_t'], axis=1)
+
+d_syn_points_gdf.head()
+
+#%% update syn_point_id to be within orig and dest global point id
+d_syn_points_gdf = d_syn_points_gdf.sort_values(['final_tid', 'synpoint_id'])
+
+# assign a value between the tuple range as syn point id global
+def assign_within_range(group):
+    start = group['point_id_global'].iloc[0][0]
+    end = group['point_id_global'].iloc[0][1]
+    n = len(group)
+    # add offset to exclude tuple values
+    group = group.copy()
+    group['syn_point_id_global'] = np.linspace(start + 1e-6, end - 1e-6, n)
+    return group
+
+d_syn_points_gdf = d_syn_points_gdf.groupby('odid', group_keys=False).apply(assign_within_range)
+d_syn_points_gdf[['odid', 'synpoint_id', 'point_id_global', 'syn_point_id_global']].head()
+
+#%% clean d_syn_points_gdf
+d_syn_points_gdf = d_syn_points_gdf.drop('synpoint_id', axis=1)
+d_syn_points_gdf.head()
 
 
 
+#%%
+d_syn_points_gdf.to_parquet(r"D:\paper3\Data\synPointsForHeadTailConnection/synPoints_DOWNSAMPLED1020_GLOBALPOINTID_for_headtailOD_shortestPath_origTimebins_medianSpeed.parquet")
+
+
+
+#%% the df to be filled
+#from VM 131
+#t_cswappingl_origsynf_OD_odid_final_sp.to_parquet(r"D:\paper3\FinalCloakedBasedSwapping\shortestPath_CloakedBasedSwapping/t_cswappingl_origsynf_OD_odid_final_sp.parquet")
+# now on VM 201
+
+#%% len 7328560 --> all points not just od
+t_cswappingl_origsynf = gpd.read_parquet(r"d:\paper3\Data\synPointsForHeadTailConnection\t_cswappingl_origsynf_crs4326.parquet") 
+t_cswappingl_origsynf.head()
+# does not have an odid 
+
+#%% look for common columns
+#set(t_cswappingl_origsynf_OD_odid_final_sp.columns) & set(t_cswappingl_origsynf.columns)
+# {'final_tid', 'point_id_global', 'true_pair_id'}
+# pointd_id_gloobal is unique, can add odid to traj based on this
+
+# don't need to do this, syn points have final_tid and would only be concated
+# would only need odid in main df for plot
+
+print(d_syn_points_gdf.columns) 
+#['odid', 'uid', 'time_sec_sinceOrigin', 'speed_mps', 'geometry', 'synpoint_id', 'final_tid', 'true_pair_id']
+
+print(t_cswappingl_origsynf.columns)
+#['point_id_global', 'point_id_unique', 'main_clkgp_wHelper_id',
+#       'main_headEND_pointid', 'main_tailStart_pointid', 'match_geometry',
+#       'final_tid', 'order_in_traj', 'swap_id', 'original_tid',
+#       'main_clkgp_id_tuple', 'valid_helpers', 'active_swap',
+#      'main_involved_in_split', 'valid_swap', 'order_in_traj_tuple',
+#       'point_type', 'order_in_traj_filled', 'order_in_traj_filled_valid',
+#       'final_tid_origsynfilled', 'final_tid_origsynfilled_valid',
+#       'true_pair_id']
+
+# will pd.concat but must sort to get syn points at the correct positon
+# final_tid of d_syn_points_gdf == final_tid_origsynfilled of t_cswappingl_origsynf
+
+# would be easier if d_syn_points_gdf had orig and dest points
+
+
+
+
+
+
+#%% include some points of head and tail in the plot?
+clk_t_sample = t_cswappingl_origsynf_OD_odid_final_sp[t_cswappingl_origsynf_OD_odid_final_sp['odid']==random_odid]
+clk_t_sample
 
 #%% harmonise timestamps and trajectory length
