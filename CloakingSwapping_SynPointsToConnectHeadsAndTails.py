@@ -512,10 +512,10 @@ ax.legend(loc='lower left', fontsize=14, frameon=True, framealpha=0.6)
 # Panel C: show downsampled synthetic points
 # -----------------------------
 ax = axs[2]
-gdf1.plot(ax=ax, color='black', alpha=0.6, linewidth=1.5, zorder=1)
-gdf5.plot(ax=ax, color='black', alpha=0.6, markersize=16, zorder=2)  # new data
-gdf2.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=3)
-gdf3.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=4)
+gdf1.plot(ax=ax, color='black', alpha=0.6, linewidth=1.5, zorder=1) # shortest path
+gdf5.plot(ax=ax, color='black', alpha=0.6, markersize=16, zorder=2)  # downsampled syn trajectory points
+gdf2.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=3) # origin
+gdf3.plot(ax=ax, color='#fcc72d', alpha=1, markersize=60, zorder=4) # destination
 
 # annotate
 annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
@@ -722,11 +722,224 @@ t_cswappingl_origsynf_headtailsynf.to_parquet(r"D:\paper3\Data\ClkSwpSynFilled.p
 
 
 #%% include some points of head and tail in the plot?
-clk_t_sample = t_cswappingl_origsynf_OD_odid_final_sp[t_cswappingl_origsynf_OD_odid_final_sp['odid']==random_odid]
-clk_t_sample
+# get tid of the odid plotted in figure
+tid_of_random_odid = t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['odid']==random_odid]['final_tid_origsynfilled'].unique()[0]
+# 20200303_5e61a24666c6e1162e17749370d1f52e0600d897_4814
 
-#%% and look at the full filled tid
-t_cswappingl_origsynf_headtailsynf # classified by orig tid
+#%%
+clk_t_sample = t_cswappingl_origsynf[t_cswappingl_origsynf['final_tid_origsynfilled']==tid_of_random_odid]
+clk_t_connected_sample = t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['final_tid_origsynfilled']==tid_of_random_odid]
+
+clk_t_sample.head()
+
+# both of them should be classified by orig tid
+
+
+#%% add these to the figure
+gdf_c = clk_t_sample.to_crs(epsg=3857)
+gdf_f = clk_t_connected_sample.to_crs(epsg=3857)
+
+#%% showing the full gdf for that tid does not work well visualisation wise, only look at a few points before and after the head end and satil start
+print(gdf_c.true_pair_id.unique()) # has multiple cloaking gaps
+# [  nan, 9911., 9912., 9913., 9914., 9915., 9916., 9917., 9918.,
+#       9919., 9920., 9921., 9922., 9923., 9924., 9925., 9926., 9927.,
+#       9928., 9929., 9930., 9931., 9932.]
+
+# which one is the one in the figure?
+print(random_odid) #9916_orig_2880259_dest_2880260
+true_pair_id, orig_id, dest_id = int(random_odid.split('_')[0]), int(random_odid.split('_')[2]), int(random_odid.split('_')[4])
+print(true_pair_id, orig_id, dest_id )
+
+# true_pair is 9916
+# point id of origin is 2880259
+# point id of destination is 2880260
+
+#%% how many points before/after this clk gap are continous, i.e., not broken by another clk gap
+# look at a few columns before and after
+n_pts = 65
+gdf_c = gdf_c.sort_values(by='point_id_global').reset_index(drop=True)
+# points before origin
+gdf_c_clkgp_origin = gdf_c[(gdf_c['point_id_global'] >= orig_id - 5) & 
+                            (gdf_c['point_id_global'] < orig_id)]
+print('points before', orig_id-n_pts)
+print('orig_id', orig_id)
+print(gdf_c_clkgp_origin.point_id_global.min())
+print(gdf_c_clkgp_origin.point_id_global.max())
+print(gdf_c_clkgp_origin.true_pair_id.unique())
+
+# points after destination
+gdf_c_clkgp_dest = gdf_c[(gdf_c['point_id_global'] > dest_id) & 
+                          (gdf_c['point_id_global'] <= dest_id + n_pts)]
+print('\ndest_id', dest_id)
+print('points after destination', dest_id+n_pts)
+print(gdf_c_clkgp_dest.point_id_global.min())
+print(gdf_c_clkgp_dest.point_id_global.max())                          
+print(gdf_c_clkgp_dest.true_pair_id.unique()) #array([  nan, 9917.])
+
+# points for true pair id of interest [2880259 2880260]
+print(clk_t_sample[clk_t_sample['true_pair_id'] == true_pair_id].point_id_global.unique())
+# how close is the next true pair_id?
+print(clk_t_sample[clk_t_sample['true_pair_id'] == 9917].point_id_global.unique())
+#[2880330 2880331]
+# do not include points after 2880330 in gdf_c_clkgp_dest
+#print(gdf_c_clkgp_dest.point_id_global.max()) was 2880335, 5 over     
+# none include when looking at 65 points before/after               
+
+#%%
+fig, ax = plt.subplots(figsize=(12, 12))
+
+# Origin points
+gdf_c_clkgp_origin.plot(ax=ax, color='red', alpha=0.5, markersize=10, label='head')
+# Destination points
+gdf_c_clkgp_dest.plot(ax=ax, color='blue', alpha=0.5, markersize=10, label='tail')
+
+# origin and destination points have the same matched geometry? (when looking at 50 points before and after)
+# they are not the same, I called the same df and labelled it tail
+
+# Other layers
+gdf2.plot(ax=ax, color='red', alpha=1, markersize=60)
+gdf3.plot(ax=ax, color='blue', alpha=1, markersize=60)
+
+# Add basemap
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
+ax.legend()
+ax.set_axis_off()
+
+plt.show()
+
+#%% explore in Q
+gdf_c_clkgp_origin.to_parquet(r'D:\paper3\Data\debugging/gdf_c_clkgp_origin.parquet')
+gdf_c_clkgp_dest.to_parquet(r'D:\paper3\Data\debugging/gdf_c_clkgp_dest.parquet')
+gdf2.to_parquet(r'D:\paper3\Data\debugging/gdf2_orig.parquet')
+gdf3.to_parquet(r'D:\paper3\Data\debugging/gdf3_dest.parquet')
+
+#%% look at direction of syn points
+gdf1.to_parquet(r"D:\paper3\Data\debugging/shortestPath.parquet")  # shortest path
+gdf5.to_parquet(r"D:\paper3\Data\debugging/sample_synPoints_downsamples.parquet")  # downsampled syn trajectory points
+#gdf2  # origin
+#gdf3  # destination
+
+
+
+
+#%% add these to figure
+
+# -----------------------------
+# Compute unified extent for all GeoDataFrames
+# -----------------------------
+all_gdfs = [gdf1, gdf2, gdf3, gdf4, gdf5, gdf_c_clkgp_origin, gdf_c_clkgp_dest]  
+xmin = min(gdf.total_bounds[0] for gdf in all_gdfs)
+ymin = min(gdf.total_bounds[1] for gdf in all_gdfs)
+xmax = max(gdf.total_bounds[2] for gdf in all_gdfs)
+ymax = max(gdf.total_bounds[3] for gdf in all_gdfs)
+
+# add 10% padding so that labels stay witing map extent
+xpad = (xmax - xmin) * 0.1
+ypad = (ymax - ymin) * 0.1
+xlim = (xmin - xpad, xmax + xpad)
+ylim = (ymin - ypad, ymax + ypad)
+
+# -----------------------------
+# Create figure with 3 panels
+# -----------------------------
+fig, axes = plt.subplots(1, 3, figsize=(24, 10))
+axs = axes.flatten()
+
+# -----------------------------
+# Panel A: Only head/tail points
+# -----------------------------
+ax = axs[0]
+gdf_c_clkgp_origin.plot(ax=ax, color='#FDD45F', alpha=1, markersize=16)#, label='head')
+gdf_c_clkgp_dest.plot(ax=ax, color='#C09003', alpha=1, markersize=16)#, label='tail')
+
+# origin shortest path
+gdf2.plot(ax=ax, color='#FDD45F', alpha=1, markersize=60, zorder=3)
+# destination shortest path
+gdf3.plot(ax=ax, color='#C09003', alpha=1, markersize=60, zorder=4)
+
+# annotate
+annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
+                   xytext=(-0, 100), va="bottom", ha="center", text_fontsize=18)
+annotate_with_halo(ax, gdf3.iloc[0].dest_geometry, "destination:\ntail start",
+                   xytext=(0, -60), va="top", ha="center", text_fontsize=18)
+
+# set unified extent
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.set_axis_off()
+ax.set_title("(A) Head and tail points", fontsize=16)
+
+# -----------------------------
+# Panel B: Original plot
+# -----------------------------
+ax = axs[1]
+gdf1.plot(ax=ax, color='black', alpha=0.6, linewidth=1.5, zorder=1)
+gdf4.plot(ax=ax, color='black', alpha=0.6, markersize=16, zorder=2)
+gdf2.plot(ax=ax, color='#FDD45F', alpha=1, markersize=60, zorder=3)
+gdf3.plot(ax=ax, color='#C09003', alpha=1, markersize=60, zorder=4)
+gdf_c_clkgp_origin.plot(ax=ax, color='#FDD45F', alpha=1, markersize=16)#, label='head')
+gdf_c_clkgp_dest.plot(ax=ax, color='#C09003', alpha=1, markersize=16)#, label='tail')
+
+# annotate
+annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
+                   xytext=(-0, 100), va="bottom", ha="center", text_fontsize=18)
+annotate_with_halo(ax, gdf3.iloc[0].dest_geometry, "destination:\ntail start",
+                   xytext=(0, -60), va="top", ha="center", text_fontsize=18)
+
+# set unified extent
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.set_axis_off()
+ax.set_title("(B) Synthetic trajectory points", fontsize=16)
+
+# add legend only on B
+ax.legend(loc='lower left', fontsize=14, frameon=True, framealpha=0.6)
+
+# -----------------------------
+# Panel C: show downsampled synthetic points
+# -----------------------------
+ax = axs[2]
+gdf1.plot(ax=ax, color='black', alpha=0.6, linewidth=1.5, zorder=1) # shortest path
+gdf5.plot(ax=ax, color='black', alpha=0.6, markersize=16, zorder=2)  # downsampled syn trajectory points
+gdf2.plot(ax=ax, color='#FDD45F', alpha=1, markersize=60, zorder=3) # origin
+gdf3.plot(ax=ax, color='#C09003', alpha=1, markersize=60, zorder=4) # destination
+gdf_c_clkgp_origin.plot(ax=ax, color='#FDD45F', alpha=1, markersize=16)#, label='head')
+gdf_c_clkgp_dest.plot(ax=ax, color='#C09003', alpha=1, markersize=16)#, label='tail')
+
+# annotate
+annotate_with_halo(ax, gdf2.iloc[0].orig_geometry, "origin:\nhead end",
+                   xytext=(-0, 100), va="bottom", ha="center", text_fontsize=18)
+annotate_with_halo(ax, gdf3.iloc[0].dest_geometry, "destination:\ntail start",
+                   xytext=(0, -60), va="top", ha="center", text_fontsize=18)
+
+# set unified extent
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+
+ctx.add_basemap(ax, source=ctx.providers.CartoDB.PositronNoLabels, attribution=False)
+ax.set_axis_off()
+ax.set_title("(C) Downsampled synthetic trajectory points", fontsize=16)
+
+# -----------------------------
+# Save figure as SVG
+# -----------------------------
+fig.tight_layout()
+fig.savefig(r"\\tsclient\R\paper3\Figures/HeadTail_SynPoints_3Panel_inclHeadTail.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
+
+
+
+
+#%%
+
+
+
+
 
 
 #%% harmonise timestamps and trajectory length
