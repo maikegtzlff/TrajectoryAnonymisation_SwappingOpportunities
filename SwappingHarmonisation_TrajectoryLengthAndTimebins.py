@@ -284,34 +284,33 @@ plt.show()
 
 
 
+
+
+
 ########################################################################
-#%% look at uid of containers for nodes and edges
-#print(gdf_edges_swppd.groupby('container_id')['tid_subid'].first().nunique()) # 19,189 --> each orig tid starts at least one container, qualifies to base uid on this value
-first_tid = gdf_edges_swppd.groupby('container_id')['tid_subid'].first()
-first_uid_per_container = first_tid.str.split('_').str[1]
-gdf_edges_swppd['container_uid'] = gdf_edges_swppd['container_id'].map(first_uid_per_container)
-
-print(gdf_edges_swppd.container_uid.nunique()) # same as before swapping
-gdf_edges_swppd[['container_id', 'tid_subid', 'container_uid']].head(10)
 
 #%%
-gdf_edges_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength_EdgeSwappedTrajSplitForLength_containerUid.parquet")
-
-#%%
-#print(gdf_nodess_swppd.groupby('container_id')['tid_subid'].first().nunique()) # 19,189 --> each orig tid starts at least one container, qualifies to base uid on this value
-first_tid = gdf_nodess_swppd.groupby('container_id')['tid_subid'].first()
-first_uid_per_container = first_tid.str.split('_').str[1]
-gdf_nodess_swppd['container_uid'] = gdf_nodess_swppd['container_id'].map(first_uid_per_container)
-
-print(gdf_nodess_swppd.container_uid.nunique()) # same as before swapping
-gdf_nodess_swppd[['container_id', 'tid_subid', 'container_uid']].head(10)
-
-#%%
-gdf_nodess_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_IntersectionSwappedTrajSplitForLength_containerUid.parquet")
-
-
-
-
-
-
+t_cswappingl_origsynf_headtailsynf.columns
+# no time_bin or timesstamp column, must add from t_froSwapping based on point_id_unique
 #%% now look at timestamps after swapping: cloaking areas
+df = t_cswappingl_origsynf_headtailsynf.copy()
+# Previous time_bin within container
+df['prev_time_bin'] = df.groupby('final_tid_origsynfilled')['time_bin'].shift()
+# Difference
+df['time_bin_diff'] = df['time_bin'] - df['prev_time_bin']
+# Flag decreases
+df['flag_problem'] = df['time_bin_diff'] < 0
+# Remove valid wrap-around (3 -> 0)
+#df.loc[(df['prev_time_bin'] == 3) & (df['time_bin'] == 0), 'flag_problem'] = False
+df.loc[df['time_bin'] == 0, 'flag_problem'] = False
+
+df[df['flag_problem']] # NO JUMPS IN TIME BINS, when taking gaps in sparse trajectories into account 
+# (i.e., a sparse trajectory can record a point in time bin  2, skips 3, goes directly to 0. 0 is the night time time bin (to early morning))
+# hence any 'decrease' to 0 is acceptable
+
+#%% now calculate time diff in seconds to previous point as replacement for timestamp
+# block identifier for orig_tid, incase orig_tid is repeated (shouldn't be repeated, thiss is a safety measure only)
+# how do I handle segment shifts? none for now
+t_cswappingl_origsynf_headtailsynf['orig_tid_block'] = t_cswappingl_origsynf_headtailsynf.groupby('final_tid_origsynfilled')['original_tid'].transform(lambda x: (x != x.shift()).cumsum())
+t_cswappingl_origsynf_headtailsynf['sec_fromPrevPoint'] = t_cswappingl_origsynf_headtailsynf.groupby(['final_tid_origsynfilled','orig_tid_block'])['unix_timestamp_afterCloaking'].diff()
+t_cswappingl_origsynf_headtailsynf
