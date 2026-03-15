@@ -292,10 +292,84 @@ plt.show()
 #%%
 t_cswappingl_origsynf_headtailsynf.columns
 # no time_bin or timesstamp column, must add from t_froSwapping based on point_id_unique
+
+#%% clean up df
+pd.set_option('display.max_colwidth', None)
+print(t_cswappingl_origsynf_headtailsynf['final_tid'].equals(t_cswappingl_origsynf_headtailsynf['original_tid'])) # false
+#t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['final_tid'] != t_cswappingl_origsynf_headtailsynf['original_tid']][['final_tid', 'original_tid']]
+# some final_tid has none, oriinal_tid is also different to final. 
+# final is after swapping and not filled with tid ofr syn points yet?
+print(t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['final_tid'] != t_cswappingl_origsynf_headtailsynf['original_tid']]['point_type'].unique())
+# ['orig_synthetic' 'swapping_synthetic' None]
+t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['final_tid'] != t_cswappingl_origsynf_headtailsynf['original_tid']][['point_type', 'final_tid', 'original_tid', 'final_tid_origsynfilled']]
+# final_tid_origsynfilled is final_tid but with values for the synthetic points
+
+#pd.reset_option('display.max_colwidth')
+#%% update column names 
+t_cswappingl_origsynf_headtailsynf['container_tid'] = t_cswappingl_origsynf_headtailsynf['final_tid_origsynfilled']
+
+
+#%% look at uid
+t_cswappingl_origsynf_headtailsynf[['point_id_global_synfilled', 'point_id_global', 'point_id_unique']]
+# point_id_global_synfilled is the container point id
+# point_id_global is shorter
+# point_id_global is NOT in t_forSwapping, so this is the point_id after swapping before filling
+#%% rename columns
+t_cswappingl_origsynf_headtailsynf.rename(columns={'point_id_global': 'point_id_global_beforeFilling'}, inplace=True)
+t_cswappingl_origsynf_headtailsynf.rename(columns={'point_id_global_synfilled': 'point_id_global'}, inplace=True)
+
+
+
+
+#%%
+t_forSwapping = gpd.read_parquet(r"d:\paper3\Data\t_forSwapping_26723gaps_labelled.parquet")
+t_forSwapping.columns
+# point_id_unique
+# unix_timestamp_final
+# hour
+# time_bin
+# 
+#%% 
+t_forSwapping = t_forSwapping[['point_id_unique', 'unix_timestamp_final', 'hour', 'time_bin_label', 'time_bin']].copy()
+t_forSwapping.head()
+
+#%% merge time bin info to df
+# won't have time info for synthetic points
+t_cswappingl_origsynf_headtailsynf_temporal = t_cswappingl_origsynf_headtailsynf.merge(t_forSwapping, on='point_id_unique', how='left')
+t_cswappingl_origsynf_headtailsynf_temporal
+
+#%%
+print(t_cswappingl_origsynf_headtailsynf_temporal.unix_timestamp_final.isna().any())
+# True
+print(t_cswappingl_origsynf_headtailsynf_temporal.hour.isna().any())
+# True
+print(t_cswappingl_origsynf_headtailsynf_temporal.time_bin.isna().any())
+# True
+
+
+cols = ['unix_timestamp_final', 'hour', 'time_bin']
+na_summary = pd.DataFrame({
+    'NA_count': t_cswappingl_origsynf_headtailsynf_temporal[cols].isna().sum(),
+    'NA_percent': t_cswappingl_origsynf_headtailsynf_temporal[cols].isna().mean() * 100
+})
+print(na_summary)
+
+#                      NA_count  NA_percent
+#unix_timestamp_final    443867    5.712133
+#hour                    443867    5.712133
+#time_bin                443867    5.712133
+
+#%% look at the temporal information for the synthetic trajectories connecting heads and tails
+t_cswappingl_origsynf_headtailsynf_temporal['time_sec_sinceOrigin'].isna().mean() * 100
+#94.31137878670887
+#94.31137878670887 + 5.712133 = 100
+
+
+
 #%% now look at timestamps after swapping: cloaking areas
-df = t_cswappingl_origsynf_headtailsynf.copy()
+df = t_cswappingl_origsynf_headtailsynf_temporal.copy()
 # Previous time_bin within container
-df['prev_time_bin'] = df.groupby('final_tid_origsynfilled')['time_bin'].shift()
+df['prev_time_bin'] = df.groupby('container_tid')['time_bin'].shift()
 # Difference
 df['time_bin_diff'] = df['time_bin'] - df['prev_time_bin']
 # Flag decreases
@@ -304,13 +378,197 @@ df['flag_problem'] = df['time_bin_diff'] < 0
 #df.loc[(df['prev_time_bin'] == 3) & (df['time_bin'] == 0), 'flag_problem'] = False
 df.loc[df['time_bin'] == 0, 'flag_problem'] = False
 
-df[df['flag_problem']] # NO JUMPS IN TIME BINS, when taking gaps in sparse trajectories into account 
-# (i.e., a sparse trajectory can record a point in time bin  2, skips 3, goes directly to 0. 0 is the night time time bin (to early morning))
-# hence any 'decrease' to 0 is acceptable
+df[df['flag_problem']] # 4 rows, 4 different container_tids
+# all flat_peak (2), prev time bin 3
+
+
+
+
+#%% fix these timebins
+print(df[df['flag_problem']].container_tid.unique())
+
+# look at one of them
+df_cont = df[df['container_tid'] == '20200422_465b146da7c31336a60ae621318be651e9da3571_5603'].copy()
+
+mask = pd.Series(False, index=df_cont.index)
+
+for shift in range(-5, 6):
+    mask |= df_cont['flag_problem'].shift(shift, fill_value=False)
+
+df_context = df_cont[mask]
+
+df_context[['point_type', 'point_id_global', 'point_id_unique', 'active_swap', 'true_pair_id', 'original_tid', 'hour', 'time_bin', 'unix_timestamp_final']]
+# going from 16 to 15 o'clock
+
+# NOT AN ACTIVE SWAP, same original tid! hour also goes back to 16
+# --> overwrite the hour, timebin columns and remove timesmatp
+
+
+#%% look at the timestamp!
+import pandas as pd
+
+# Example timestamps
+unix_ts = [
+    1.58830565e+09, 1.58830565e+09, 1.58830565e+09, 1.58830568e+09,
+    1.58830568e+09, 1.58830569e+09, 1.58830570e+09, 1.58830571e+09,
+    1.58830572e+09, 1.58830572e+09
+]
+
+# Convert to pandas datetime in UTC, then convert to Auckland timezone
+auckland_ts = pd.to_datetime(unix_ts, unit='s', utc=True).tz_convert('Pacific/Auckland')
+
+print(auckland_ts)
+
+# they are ALL 16, not 15
+# DatetimeIndex([   '2020-05-01 16:00:50+12:00', 
+#                   '2020-05-01 16:00:50+12:00',
+#                   '2020-05-01 16:00:50+12:00', 
+#                   '2020-05-01 16:01:20+12:00',
+#                   '2020-05-01 16:01:20+12:00', 
+#                   '2020-05-01 16:01:30+12:00',
+#                   '2020-05-01 16:01:40+12:00', 
+#                   '2020-05-01 16:01:50+12:00',
+#                   '2020-05-01 16:02:00+12:00', 
+#                   '2020-05-01 16:02:00+12:00'],
+#              dtype='datetime64[ns, Pacific/Auckland]', freq=None)
+
+#%% look at the timestamp
+print(df['unix_timestamp_final'].isna().any()) # true
+df['datetime_debug'] = pd.to_datetime(df['unix_timestamp_final'], unit='s', utc=True)
+df['datetime_debug'] = df['datetime_debug'].dt.tz_convert('Pacific/Auckland')
+print(df['datetime_debug'].isna().any()) # true
+
+#%%
+df['hour_debug'] = df['datetime_debug'].dt.hour
+print(df['hour_debug'].isna().any()) # true
+#%% only get time_bin if hour exists
+import numpy as np
+
+def assign_time_bin(hour):
+    if pd.isna(hour):
+        return np.nan
+    elif 7 <= hour < 9:
+        return "morning peak"
+    elif 9 <= hour < 16:
+        return "flat peak"
+    elif 16 <= hour < 20:
+        return "evening peak"
+    else:
+        return "night time"
+
+df['time_bin_label_debug'] = df['hour_debug'].apply(assign_time_bin)
+
+mapping = {
+    'night time': 0,
+    'morning peak': 1,
+    'flat peak': 2,
+    'evening peak': 3,
+}
+
+df['time_bin_debug'] = df['time_bin_label_debug'].map(mapping)
+
+
+print(df['time_bin_debug'].isna().any()) # True
+print(df['time_bin_label_debug'].isna().any())# False
+print("Label NaNs:", df['time_bin_label_debug'].isna().sum())
+print("Numeric NaNs:", df['time_bin_debug'].isna().sum())
+
+
+df[['datetime_debug', 'hour_debug', 'time_bin_debug']].head()
+
+#%%
+# Previous time_bin within container
+df['prev_time_bin_debug'] = df.groupby('container_tid')['time_bin_debug'].shift()
+# Difference
+df['time_bin_diff_debug'] = df['time_bin_debug'] - df['prev_time_bin_debug']
+# Flag decreases
+df['flag_problem_debug'] = df['time_bin_diff_debug'] < 0
+# Remove valid wrap-around (3 -> 0)
+#df.loc[(df['prev_time_bin'] == 3) & (df['time_bin'] == 0), 'flag_problem'] = False
+df.loc[df['time_bin_debug'] == 0, 'flag_problem_debug'] = False
+
+df[df['flag_problem_debug']] # 0 rows!
+
+#%% those timestamps to 
+df.rename(columns={'unix_timestamp_final': 'unix_timestamp_final_debug'}, inplace=True)
+t_cswappingl_origsynf_headtailsynf_temporal = t_cswappingl_origsynf_headtailsynf_temporal.merge(df[['point_id_global', 'hour_debug', 'time_bin_debug', 'time_bin_label_debug', 'unix_timestamp_final_debug']], on ='point_id_global', how='left')
+print(t_cswappingl_origsynf_headtailsynf_temporal['unix_timestamp_final'].equals(t_cswappingl_origsynf_headtailsynf_temporal['unix_timestamp_final_debug']))    
+t_cswappingl_origsynf_headtailsynf_temporal.head()
+
+#%%
+t_cswappingl_origsynf_headtailsynf_temporal[t_cswappingl_origsynf_headtailsynf_temporal['time_sec_sinceOrigin'].notna()][['point_type', 'point_id_global', 'point_id_global_beforeFilling', 
+                                                                                                                            'unix_timestamp_final', 'unix_timestamp_final_debug',
+                                                                                                                            'hour', 'hour_debug',
+                                                                                                                            'time_bin', 'time_bin_debug',
+                                                                                                                            'time_bin_label', 'time_bin_label_debug'
+                                                                                                                          ]]
+
+
+
+#%%
+cols_to_check = [
+    'unix_timestamp_final', 'unix_timestamp_final_debug',
+    'hour', 'hour_debug',
+    'time_bin', 'time_bin_debug',
+    'time_bin_label', 'time_bin_label_debug'
+]
+
+# Subset of the DataFrame where time_sec_sinceOrigin is not NA
+df_subset = t_cswappingl_origsynf_headtailsynf_temporal[
+    t_cswappingl_origsynf_headtailsynf_temporal['time_sec_sinceOrigin'].notna()
+][cols_to_check]
+
+# Check if all values in each column are NaN
+all_na = df_subset.isna().all()
+print(all_na)
+
+#%%
+print(t_cswappingl_origsynf_headtailsynf_temporal['unix_timestamp_final'].equals(t_cswappingl_origsynf_headtailsynf_temporal['unix_timestamp_final_debug'])) 
+# TRUE
+
+#%% create one 'timestamp like' column
+t_cswappingl_origsynf_headtailsynf_temporal['seconds_to_unixOROrigin'] = np.where(
+    t_cswappingl_origsynf_headtailsynf_temporal['unix_timestamp_final'].isna(),
+    t_cswappingl_origsynf_headtailsynf_temporal['time_sec_sinceOrigin'],  # use this if unix_timestamp_final is NaN
+    t_cswappingl_origsynf_headtailsynf_temporal['unix_timestamp_final']     # else use original unix_timestamp_final
+)
+
+t_cswappingl_origsynf_headtailsynf_temporal[['unix_timestamp_final', 'time_sec_sinceOrigin', 'seconds_to_unixOROrigin']]
+#%%
+cols_to_check2 = [
+    'unix_timestamp_final', 'time_sec_sinceOrigin', 'seconds_to_unixOROrigin'
+]
+
+# Subset of the DataFrame where time_sec_sinceOrigin is not NA
+df_subset2 = t_cswappingl_origsynf_headtailsynf_temporal[
+    t_cswappingl_origsynf_headtailsynf_temporal['time_sec_sinceOrigin'].notna()
+][cols_to_check2]
+df_subset2
+
 
 #%% now calculate time diff in seconds to previous point as replacement for timestamp
 # block identifier for orig_tid, incase orig_tid is repeated (shouldn't be repeated, thiss is a safety measure only)
 # how do I handle segment shifts? none for now
-t_cswappingl_origsynf_headtailsynf['orig_tid_block'] = t_cswappingl_origsynf_headtailsynf.groupby('final_tid_origsynfilled')['original_tid'].transform(lambda x: (x != x.shift()).cumsum())
-t_cswappingl_origsynf_headtailsynf['sec_fromPrevPoint'] = t_cswappingl_origsynf_headtailsynf.groupby(['final_tid_origsynfilled','orig_tid_block'])['unix_timestamp_afterCloaking'].diff()
-t_cswappingl_origsynf_headtailsynf
+t_cswappingl_origsynf_headtailsynf_temporal['orig_tid_block'] = t_cswappingl_origsynf_headtailsynf_temporal.groupby('container_tid')['original_tid'].transform(lambda x: (x != x.shift()).cumsum())
+# synthetic points alread have sec from PrevPoints (or is it seconds to next?)
+# these will have their own orig_tid (the odid)
+
+t_cswappingl_origsynf_headtailsynf_temporal['sec_fromPrevPoint'] = t_cswappingl_origsynf_headtailsynf_temporal.groupby(['container_tid','orig_tid_block'])['seconds_to_unixOROrigin'].diff()
+print(t_cswappingl_origsynf_headtailsynf_temporal.sec_fromPrevPoint.isna().any()) # True, but other dfs have this too (firs/last in container)
+t_cswappingl_origsynf_headtailsynf_temporal
+
+
+
+#%% get hour for synthetic points from previous point!
+# hour_debug
+print(t_cswappingl_origsynf_headtailsynf_temporal.hour_debug.isna().any())
+# True
+t_cswappingl_origsynf_headtailsynf_temporal['hour_debug_filled'] = (
+    t_cswappingl_origsynf_headtailsynf_temporal
+    .groupby('container_tid')['hour_debug']
+    .ffill()
+)
+print(t_cswappingl_origsynf_headtailsynf_temporal.hour_debug_filled.isna().any()) #False
+
+#%% export df
+t_cswappingl_origsynf_headtailsynf_temporal.to_parquet(r'D:\paper3\Data\ClkSwpSynFilled_uid_length_timestamps_FINAL.parquet')
