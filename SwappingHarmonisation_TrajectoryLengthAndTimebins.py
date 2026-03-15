@@ -701,4 +701,35 @@ gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEval
 gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength_EdgeSwappedTrajSplitForLength.parquet")
 
 # work with split containers for nodes df from now on
-# %%
+
+
+#%% look at uid of containers for nodes and edges
+#print(gdf_edges_swppd.groupby('container_id')['tid_subid'].first().nunique()) # 19,189 --> each orig tid starts at least one container, qualifies to base uid on this value
+first_tid = gdf_edges_swppd.groupby('container_id')['tid_subid'].first()
+first_uid_per_container = first_tid.str.split('_').str[1]
+gdf_edges_swppd['container_uid'] = gdf_edges_swppd['container_id'].map(first_uid_per_container)
+
+print(gdf_edges_swppd.container_uid.nunique()) # same as before swapping
+gdf_edges_swppd[['container_id', 'tid_subid', 'container_uid']].head(10)
+
+#%%
+gdf_edges_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength_EdgeSwappedTrajSplitForLength_containerUid.parquet")
+
+#%%
+#print(gdf_nodess_swppd.groupby('container_id')['tid_subid'].first().nunique()) # 19,189 --> each orig tid starts at least one container, qualifies to base uid on this value
+first_tid = gdf_nodess_swppd.groupby('container_id')['tid_subid'].first()
+first_uid_per_container = first_tid.str.split('_').str[1]
+gdf_nodess_swppd['container_uid'] = gdf_nodess_swppd['container_id'].map(first_uid_per_container)
+
+print(gdf_nodess_swppd.container_uid.nunique()) # same as before swapping
+gdf_nodess_swppd[['container_id', 'tid_subid', 'container_uid']].head(10)
+
+#%%
+gdf_nodess_swppd.to_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_IntersectionSwappedTrajSplitForLength_containerUid.parquet")
+
+
+
+
+
+
+#%% now look at timestamps after swapping
