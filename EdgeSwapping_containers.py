@@ -753,4 +753,16 @@ segment_lengths = (
     .groupby('sub_container_id')['segment_length_m']
     .sum()
 )
+
 segment_lengths.describe()
+
+#count    46645.000000
+#mean     27377.391068
+#std      11414.308311
+#min          0.000000
+#25%      18514.627795
+#50%      27894.025888 --> median is 27km
+#75%      36551.501700 
+#max      78426.112724 --> max is now 78km
+#%% export
+gdf_edges_swppd.to_parquet(r"D:\paper3\Data\output/final_points_edgeSwap_FINAL.parquet")
