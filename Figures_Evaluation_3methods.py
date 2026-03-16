@@ -14,10 +14,7 @@ t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\output\swapped
 
 
 #%% EVALUATION FIGURES
-#(1) CDF
-
-#%% add 3rd data df
-####################
+#(1) CDF - number of pseudonyms per trajectory (split or unsplit input)
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -122,12 +119,217 @@ plt.show()
 
 
 
+#%% CFD but number of non-original pseudonyms per trajectory instead of number of pseudonyms
+# number of pseudonyms covers fragmentation
+# number of unique non-original pseudonyms takes swapping into account
 
+# prepping data for CDF plot
+gdf_edges_swppd['is_swap'] = gdf_edges_swppd['orig_uid'] != gdf_edges_swppd['container_uid']
+
+unique_swaps_per_container = (
+    gdf_edges_swppd[gdf_edges_swppd['is_swap']]  
+    .groupby('container_id')['orig_uid']
+    .nunique()
+    .reset_index(name='n_unique_non_original')
+)
+data1 = unique_swaps_per_container['n_unique_non_original'].values
+
+data1_sorted = np.sort(data1)
+cdf1 = np.arange(1, len(data1_sorted) + 1) / len(data1_sorted) * 100
+# split container
+unique_swaps_per_container = (
+    gdf_edges_swppd[gdf_edges_swppd['is_swap']]  
+    .groupby('sub_container_id')['orig_uid']
+    .nunique()
+    .reset_index(name='n_unique_non_original')
+)
+data1 = unique_swaps_per_container['n_unique_non_original'].values
+
+data1_sorted_split = np.sort(data1)
+cdf1_split = np.arange(1, len(data1_sorted_split) + 1) / len(data1_sorted_split) * 100
+color1 = "#FDD45F"
+
+
+# NODE BASED SWAPPING
+# full container
+gdf_nodess_swppd['is_swap'] = gdf_nodess_swppd['orig_uid'] != gdf_nodess_swppd['container_uid']
+
+unique_swaps_per_container = (
+    gdf_nodess_swppd[gdf_nodess_swppd['is_swap']]  
+    .groupby('container_id')['orig_uid']
+    .nunique()
+    .reset_index(name='n_unique_non_original')
+)
+data2 = unique_swaps_per_container['n_unique_non_original'].values
+
+data2_sorted = np.sort(data2)
+cdf2 = np.arange(1, len(data2_sorted) + 1) / len(data2_sorted) * 100
+# split container
+unique_swaps_per_container = (
+    gdf_nodess_swppd[gdf_nodess_swppd['is_swap']]  
+    .groupby('sub_container_id')['orig_uid']
+    .nunique()
+    .reset_index(name='n_unique_non_original')
+)
+data2 = unique_swaps_per_container['n_unique_non_original'].values
+
+data2_sorted_split = np.sort(data2)
+cdf2_split = np.arange(1, len(data2_sorted_split) + 1) / len(data2_sorted_split) * 100
+color2 = "#F3B503"
+
+# CLOAKING BASED SWAPS
+t_cswappingl_origsynf_headtailsynf['is_swap'] = t_cswappingl_origsynf_headtailsynf['orig_uid'] != t_cswappingl_origsynf_headtailsynf['container_uid']
+
+unique_swaps_per_container = (
+    t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['is_swap']]  
+    .groupby('container_id')['orig_uid']
+    .nunique()
+    .reset_index(name='n_unique_non_original')
+)
+data3 = unique_swaps_per_container['n_unique_non_original'].values
+
+data3_sorted = np.sort(data3)
+cdf3 = np.arange(1, len(data3_sorted) + 1) / len(data3_sorted) * 100
+color3 = "#C09003"  
+
+#%% CDF for trajectories with changed pseudonyms
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.set_facecolor('white')
+
+# Plot CDF lines
+ax.plot(data1_sorted, cdf1, color=color1, linewidth=2, label="Edge")
+ax.plot(data2_sorted, cdf2, color=color2, linewidth=2, label="Intersection")
+ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
+
+# Limits and ticks
+ax.set_xlim(left=0)
+ax.set_ylim(0, 105)
+ax.set_yticks([0, 25, 50, 75, 100])
+
+# Axis labels
+ax.set_xlabel("Number of non-original pseudonyms per trajectory", fontsize=14, color='#555555')
+ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
+
+# Tick labels and tick lines (ggplot-style gray)
+tick_color = '#555555'
+for tick, label in zip(ax.yaxis.get_major_ticks(), ax.get_yticklabels()):
+    if label.get_text() == "50":  # 50% special case
+        tick.tick1line.set_color('red')
+        tick.tick2line.set_color('red')
+        label.set_color('red')
+    else:
+        tick.tick1line.set_color(tick_color)
+        tick.tick2line.set_color(tick_color)
+        label.set_color(tick_color)
+
+for tick, label in zip(ax.xaxis.get_major_ticks(), ax.get_xticklabels()):
+    tick.tick1line.set_color(tick_color)
+    tick.tick2line.set_color(tick_color)
+    label.set_color(tick_color)
+
+ax.tick_params(axis='x', labelsize=12)
+ax.tick_params(axis='y', labelsize=12)
+
+# Solid axes
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color(tick_color)
+ax.spines['left'].set_linewidth(0.8)
+ax.spines['bottom'].set_visible(True)
+ax.spines['bottom'].set_color(tick_color)
+ax.spines['bottom'].set_linewidth(0.8)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Horizontal lines at 25, 50, 75, 100 (skip 0)
+for y in [25, 50, 75, 100]:
+    if y == 50:
+        ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
+    else:
+        ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
+
+ax.set_axisbelow(True)
+
+# Legend with title and ggplot-style text color
+leg = ax.legend(title="Swapping Opportunity", fontsize=12, loc='lower right', frameon=False)
+leg.get_title().set_fontsize(12)
+leg.get_title().set_color(tick_color)
+for text in leg.get_texts():
+    text.set_color(tick_color)
+
+#plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
+#%% CDF for trajectories with changed pseudonyms - split trajectory
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.set_facecolor('white')
+
+# Plot CDF lines
+ax.plot(data1_sorted_split, cdf1_split, color=color1, linewidth=2, label="Edge")
+ax.plot(data2_sorted_split, cdf2_split, color=color2, linewidth=2, label="Intersection")
+ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
+
+# Limits and ticks
+ax.set_xlim(left=0)
+ax.set_ylim(0, 105)
+ax.set_yticks([0, 25, 50, 75, 100])
+
+# Axis labels
+ax.set_xlabel("Number of non-original pseudonyms per trajectory", fontsize=14, color='#555555')
+ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
+
+# Tick labels and tick lines (ggplot-style gray)
+tick_color = '#555555'
+for tick, label in zip(ax.yaxis.get_major_ticks(), ax.get_yticklabels()):
+    if label.get_text() == "50":  # 50% special case
+        tick.tick1line.set_color('red')
+        tick.tick2line.set_color('red')
+        label.set_color('red')
+    else:
+        tick.tick1line.set_color(tick_color)
+        tick.tick2line.set_color(tick_color)
+        label.set_color(tick_color)
+
+for tick, label in zip(ax.xaxis.get_major_ticks(), ax.get_xticklabels()):
+    tick.tick1line.set_color(tick_color)
+    tick.tick2line.set_color(tick_color)
+    label.set_color(tick_color)
+
+ax.tick_params(axis='x', labelsize=12)
+ax.tick_params(axis='y', labelsize=12)
+
+# Solid axes
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color(tick_color)
+ax.spines['left'].set_linewidth(0.8)
+ax.spines['bottom'].set_visible(True)
+ax.spines['bottom'].set_color(tick_color)
+ax.spines['bottom'].set_linewidth(0.8)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Horizontal lines at 25, 50, 75, 100 (skip 0)
+for y in [25, 50, 75, 100]:
+    if y == 50:
+        ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
+    else:
+        ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
+
+ax.set_axisbelow(True)
+
+# Legend with title and ggplot-style text color
+leg = ax.legend(title="Swapping Opportunity", fontsize=12, loc='lower right', frameon=False)
+leg.get_title().set_fontsize(12)
+leg.get_title().set_color(tick_color)
+for text in leg.get_texts():
+    text.set_color(tick_color)
+
+plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
+#plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
 
 ################
-
-
-
 #%% look at containers with no swaps
 import pandas as pd
 import numpy as np
@@ -138,7 +340,7 @@ import numpy as np
 # calcualte the persentage of containers with no swap
 
 no_swap_edges_split = (gdf_edges_swppd['orig_uid'] == gdf_edges_swppd['container_uid']).groupby(gdf_edges_swppd['sub_container_id']).all()
-# retursn True and False
+# returns True and False
 #True (1): orig_uid == container_uid for all rows in container aka no swap
 #False (0): at least one row differs aka sawpped
 n_no_swap_edges = no_swap_edges_split.sum() # adds up all Trues (1)
@@ -154,7 +356,6 @@ n_no_swap_nodes_split = no_swap_nodes_split.sum() # adds up all Trues (1)
 total_containers = len(no_swap_nodes_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
 pct_no_swap_nodes_split = n_no_swap_nodes_split / total_containers * 100
 
-#
 # edges not split
 data1 = gdf_edges_swppd.groupby('container_id')['orig_uid'].nunique().values
 n_single_e = np.sum(data1 == 1)
