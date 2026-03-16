@@ -326,7 +326,9 @@ import s_clustering_final as cstp
 
 import geopandas as gpd
 stop_points_cswappingl = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/cloakedSwapped_StopPoints.parquet")
-# taking up 70GB of RAM
+stop_points_cswappingl.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+# taking up 70GB of RAM - something must have been wrong, reload and only taking up 35GB
 # might be better to read them in individually/ in batches 
 
 #%%
@@ -341,10 +343,8 @@ print(n_stps_c[0].max())        # 4,976,988
 # longer thna edge splits
 # the maximum one is more than half the data set
 
-#%%
-#%% clusteirng cloaking stops using DBSCAN in scikit-learn
-stop_points_cswappingl.rename(columns={'container_uid': 'uid'}, inplace=True)
 
+#%% clusteirng cloaking stops using DBSCAN in scikit-learn
 # distance 60m, 4 stops
 cstp.cluster_users_to_parquet_resumable(
     stop_points_cswappingl,
@@ -355,3 +355,54 @@ cstp.cluster_users_to_parquet_resumable(
     large_threshold=100000
 )
 
+#%% look at the users that have already been processed
+folder = r"D:\paper3\Data\SWAPPEDTRAJECTORIES\StopPoints\Clustering\CloakingSwapping"
+u_clstrd = [f.replace(".parquet", "") 
+              for f in os.listdir(folder) 
+              if f.endswith(".parquet")]
+# remove them from the input df, run again (less RAM)
+print(len(stop_points_cswappingl))
+stop_points_cswappingl_remaining = stop_points_cswappingl[~stop_points_cswappingl['uid'].isin(u_clstrd)]
+print(len(stop_points_cswappingl_remaining))
+
+#%% also remove the massive user, can run that one seperately at the end
+n_stps_c = stop_points_cswappingl.groupby(['uid']).size().reset_index(name='n_points')
+n_stps_c = n_stps_c.sort_values('n_points', ascending=True)
+n_stps_c
+#%%
+megausers = n_stps_c.tail(4)['uid'].unique() # > 2,001,202 large
+print(len(stop_points_cswappingl_remaining))
+stop_points_cswappingl_remaining = stop_points_cswappingl_remaining[~stop_points_cswappingl_remaining['uid'].isin(megausers)]
+print(len(stop_points_cswappingl_remaining))
+
+stop_points_cswappingl_megausers = stop_points_cswappingl[stop_points_cswappingl['uid'].isin(megausers)]
+print(len(stop_points_cswappingl_megausers))
+
+#%%
+stop_points_cswappingl_remaining.to_parquet(r'D:\paper3\Data\SWAPPEDTRAJECTORIES\StopPoints\processing_cloakedSwappedStopPoints_remaining/stop_points_cswappingl_remaining.parquet')
+stop_points_cswappingl_megausers.to_parquet(r'D:\paper3\Data\SWAPPEDTRAJECTORIES\StopPoints\processing_cloakedSwappedStopPoints_remaining/stop_points_cswappingl_megausers.parquet')
+#%%
+for uid, gdf_user in stop_points_cswappingl_megausers.groupby('uid'):
+    file_path = os.path.join(r"D:\paper3\Data\SWAPPEDTRAJECTORIES\StopPoints\processing_cloakedSwappedStopPoints_remaining", f"mega_{uid}.parquet")
+    gdf_user.to_parquet(file_path)
+
+
+#%% rerun, tracking problematic users
+import os 
+os.chdir(r"D:\paper3")
+import importlib
+import s_clustering_final as cstp
+importlib.reload(cstp)
+
+import geopandas as gpd
+stop_points_cswappingl = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/cloakedSwapped_StopPoints.parquet")
+stop_points_cswappingl.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+# distance 60m, 4 stops
+cstp.cluster_users_to_parquet_resumable(
+    stop_points_cswappingl,
+    radius_km=0.06,
+    min_points=4,
+    output_dir=r"D:\paper3\Data\SWAPPEDTRAJECTORIES\StopPoints\Clustering\CloakingSwapping"
+)
+#MemoryError clustering uid e0c5f086b656acb16469a988e639119a3fbf73bb, skipping
