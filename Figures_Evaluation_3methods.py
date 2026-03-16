@@ -3,30 +3,14 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
+
 #%%
-#gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\output\EdgeSwapping\final_points_edgeSwap.parquet")
-#gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength.parquet")
-gdf_edges_swppd = gpd.read_parquet(r"D:\paper3\Data\output/final_points_edgeSwap_FINAL.parquet")
+gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\output\swappedtrajs\final_points_edgeSwap_FINAL_ContainerDatetime.parquet")
 #  'sub_container_id' because split
 
-#gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable.parquet")
-#gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_length.parquet")
-gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\filled_trajectories_list\trajectories_swapped_nodes_FINAL.parquet")
+gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\output\swappedtrajs\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet")
 
-
-#t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid.parquet")
-t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid_length_timestamps_FINAL.parquet")
-
-t_cswappingl_origsynf_headtailsynf['container_id'] = t_cswappingl_origsynf_headtailsynf['final_tid_origsynfilled']
-t_cswappingl_origsynf_headtailsynf['orig_uid'] = t_cswappingl_origsynf_headtailsynf['original_tid'].str.split('_').str[1]
-#t_cswappingl_origsynf_headtailsynf.orig_uid.unique() # how to handle synthetic ones> 
-t_cswappingl_origsynf_headtailsynf['orig_uid'] = np.where(
-    t_cswappingl_origsynf_headtailsynf['orig_uid'] == 'orig',
-    t_cswappingl_origsynf_headtailsynf['original_tid'],
-    t_cswappingl_origsynf_headtailsynf['orig_uid']
-)
-
-
+t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\output\swappedtrajs\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet")
 
 
 #%% EVALUATION FIGURES
@@ -132,7 +116,7 @@ for text in leg.get_texts():
     text.set_color(tick_color)
 
 #plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
-plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
+#plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
 
 plt.show()
 
@@ -148,133 +132,59 @@ plt.show()
 import pandas as pd
 import numpy as np
 
-# -----------------------------
-# Dataset 1: Edge-swapping
-# -----------------------------
+# containers with no swap: orig_uid == container_uid for all points
+# give me the number of containers that meet this condition
+# also give me the number of total unique containers (container_id)
+# calcualte the persentage of containers with no swap
+
+no_swap_edges_split = (gdf_edges_swppd['orig_uid'] == gdf_edges_swppd['container_uid']).groupby(gdf_edges_swppd['sub_container_id']).all()
+# retursn True and False
+#True (1): orig_uid == container_uid for all rows in container aka no swap
+#False (0): at least one row differs aka sawpped
+n_no_swap_edges = no_swap_edges_split.sum() # adds up all Trues (1)
+total_containers = len(no_swap_edges_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
+pct_no_swap_edges_split = n_no_swap_edges / total_containers * 100
+
+# intersection split
+no_swap_nodes_split = (gdf_nodess_swppd['orig_uid'] == gdf_nodess_swppd['container_uid']).groupby(gdf_nodess_swppd['sub_container_id']).all()
+# retursn True and False
+#True (1): orig_uid == container_uid for all rows in container aka no swap
+#False (0): at least one row differs aka sawpped
+n_no_swap_nodes_split = no_swap_nodes_split.sum() # adds up all Trues (1)
+total_containers = len(no_swap_nodes_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
+pct_no_swap_nodes_split = n_no_swap_nodes_split / total_containers * 100
+
+#
+# edges not split
 data1 = gdf_edges_swppd.groupby('container_id')['orig_uid'].nunique().values
 n_single_e = np.sum(data1 == 1)
 n_total_e = len(data1)
 perc_single_e = n_single_e / n_total_e * 100
 
-# Points per container for single-uid containers
-uid_counts_e = gdf_edges_swppd.groupby('container_id')['orig_uid'].nunique()
-single_uid_containers_e = uid_counts_e[uid_counts_e == 1].index
-point_counts_e = gdf_edges_swppd.groupby('container_id').size()
-single_uid_point_counts_e = point_counts_e.loc[single_uid_containers_e]
-
-median_points_e = single_uid_point_counts_e.median()
-max_points_e = single_uid_point_counts_e.max()
-
-# -----------------------------
-# Dataset 2: Intersection-swapping
-# -----------------------------
+# intersections not split
 data2 = gdf_nodess_swppd.groupby('container_id')['orig_uid'].nunique().values
 n_single_i = np.sum(data2 == 1)
 n_total_i = len(data2)
 perc_single_i = n_single_i / n_total_i * 100
 
-# Points per container for single-uid containers
-uid_counts_i = gdf_nodess_swppd.groupby('container_id')['orig_uid'].nunique()
-single_uid_containers_i = uid_counts_i[uid_counts_i == 1].index
-point_counts_i = gdf_nodess_swppd.groupby('container_id').size()
-single_uid_point_counts_i = point_counts_i.loc[single_uid_containers_i]
-
-median_points_i = single_uid_point_counts_i.median()
-max_points_i = single_uid_point_counts_i.max()
-
-# -----------------------------
-# Dataset 3: cloaking based swapping
-# -----------------------------
+# cloaking based (never split)
 data3 = t_cswappingl_origsynf_headtailsynf.groupby('container_id')['orig_uid'].nunique().values
 n_single_c = np.sum(data3 == 1)
 n_total_c = len(data3)
 perc_single_c = n_single_c / n_total_c * 100
 
-# Points per container for single-uid containers
-uid_counts_c = t_cswappingl_origsynf_headtailsynf.groupby('container_id')['orig_uid'].nunique()
-single_uid_containers_c = uid_counts_c[uid_counts_c == 1].index
-point_counts_c = t_cswappingl_origsynf_headtailsynf.groupby('container_id').size()
-single_uid_point_counts_c = point_counts_c.loc[single_uid_containers_c]
 
-median_points_c = single_uid_point_counts_c.median()
-max_points_c = single_uid_point_counts_c.max()
-
-#%%
-#%% splitting: must find a new way to measure 'trajectories with no swaps'
-# split: only one orig_uid != not swapped
-#print(gdf_edges_swppd.columns)
-#gdf_edges_swppd[['container_id', 'sub_container_id', 'orig_uid']] # could assign each uid a number based on the original container?
-
-# compare orig_uid to container_uid and flag differences
-gdf_edges_swppd['uid_swapped_boolean'] = gdf_edges_swppd['container_uid'] != gdf_edges_swppd['orig_uid']
-gdf_edges_swppd[['container_id', 'sub_container_id', 'container_uid', 'orig_uid', 'uid_swapped_boolean']]
-
-
-#%%
-####
-# -----------------------------
-# Dataset 1: Edge-swapping SPLIT
-# -----------------------------
-#data1s = gdf_edges_swppd.groupby('sub_container_id')['orig_uid'].nunique().values
-#n_single_es = np.sum(data1s == 1)
-
-# all the points that have been swapped
-#gdf_edges_swppd[gdf_edges_swppd['uid_swapped_boolean']==True] 
-# but not by container yet
-
-n_total_es= len(data1s)
-perc_single_es = n_single_es / n_total_is * 100
-
-# Points per container for single-uid containers
-uid_counts_es = gdf_edges_swppd.groupby('sub_container_id')['orig_uid'].nunique()
-single_uid_containers_es = uid_counts_es[uid_counts_es == 1].index
-point_counts_es = gdf_edges_swppd.groupby('sub_container_id').size()
-single_uid_point_counts_es = point_counts_es.loc[single_uid_containers_es]
-
-median_points_es = single_uid_point_counts_es.median()
-max_points_es = single_uid_point_counts_es.max()
-
-# -----------------------------
-# Dataset 2: Intersection-swapping SPLIT
-# -----------------------------
-data2s = gdf_nodess_swppd.groupby('sub_container_id')['orig_uid'].nunique().values
-n_single_is = np.sum(data2s == 1)
-n_total_is = len(data2s)
-perc_single_is = n_single_is / n_total_is * 100
-
-# Points per container for single-uid containers
-uid_counts_is = gdf_nodess_swppd.groupby('sub_container_id')['orig_uid'].nunique()
-single_uid_containers_is = uid_counts_is[uid_counts_is == 1].index
-point_counts_is = gdf_nodess_swppd.groupby('sub_container_id').size()
-single_uid_point_counts_is = point_counts_is.loc[single_uid_containers_is]
-
-median_points_is = single_uid_point_counts_is.median()
-max_points_is = single_uid_point_counts_is.max()
-
-
-####
-#%%-----------------------------
-# Build summary table
-# -----------------------------
 summary_table = pd.DataFrame({
     "Swapping method": ["Edge-swapping", "Edge-swapping (split)", "Intersection-swapping", 'Intersection-swapping (split)', "Cloaking Area-swapping"],
     
-    #"Percentage (%)": [round(perc_single_e,2), round(perc_single_i,2), round(perc_single_c,2)],
-    #"Trajectories with no swaps": [n_single_e, n_single_i, n_single_c],
-    #"Total trajectories": [n_total_e, n_total_i, n_total_c],
-    
+
     "Trajectories with no swaps": [f"{perc_single_e:.2f}% ({n_single_e})",
-                                    f"{perc_single_es:.2f}% ({n_single_es})",
+                                    f"{pct_no_swap_edges_split:.2f}% ({n_no_swap_edges})",
                                     f"{perc_single_i:.2f}% ({n_single_i})",
-                                    f"{perc_single_is:.2f}% ({n_single_is})",
+                                    f"{pct_no_swap_nodes_split:.2f}% ({n_no_swap_nodes_split})",
                                     f"{perc_single_c:.2f}% ({n_single_c})"],
 
 
-    "Median points": [f"{median_points_e:.0f}", f"{median_points_es:.0f}", 
-                      f"{median_points_i:.0f}", f"{median_points_is:.0f}",
-                      f"{median_points_c:.0f}"],
-    
-    #"Max points": [max_points_e, max_points_i, max_points_c]
 })
 
 from IPython.display import display, HTML
