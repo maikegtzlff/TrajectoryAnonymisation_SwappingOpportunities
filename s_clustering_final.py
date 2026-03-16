@@ -13,7 +13,7 @@ from geopy.distance import great_circle
 from shapely.geometry import MultiPoint
 
 def get_cluster(gdf, radius, min_points): # radius in km
-    # control input fulfills requirements
+    # (a) control input fulfills requirements
     # crs must be epsg 4326
     if gdf.crs is None:
         raise ValueError("GeoDataFrame has no CRS defined.")
@@ -23,8 +23,14 @@ def get_cluster(gdf, radius, min_points): # radius in km
     # must have lat and lng columns
     gdf["lat"] = gdf.geometry.y
     gdf["lng"] = gdf.geometry.x
+
+    # radius must be in correct format (i.e., km not m)
+    if radius > 1:  
+        print(f"Radius interpreted as meters ({radius} m) → converting to km")
+        radius = radius / 1000
+
     
-    # clustering
+    # (b) clustering
     matrix = gdf[['lat', 'lng']].to_numpy()
 
     kms_per_radian = 6371.0088
