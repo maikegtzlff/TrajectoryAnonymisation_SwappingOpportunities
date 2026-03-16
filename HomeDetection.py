@@ -66,7 +66,6 @@ gdf_edges_swppd.to_parquet(r"D:\paper3\Data\output/final_points_edgeSwap_FINAL_C
 
 
 #%% ADD DATETIME TO NODES BASED SWAPPED DF
-#%% ADD DATETIME COLUMN TO SWAPPED EDGES DF
 print(gdf_nodess_swppd.columns)
 
 # must know timebin breaks
@@ -128,6 +127,42 @@ gdf_nodess_swppd.to_parquet(r"d:\paper3\Data\filled_trajectories_list\trajectori
 
 
 
+#%% add datetime column to cloaked swapped
+time_bin_start_dict = {
+    'night time': 21,
+    'morning peak': 7,
+    'flat peak': 9,
+    'evening peak': 16,
+}
+# date comes from here container_tid_subid - date is before first _, add to new column
+t_cswappingl_origsynf_headtailsynf['time_bin_start'] = t_cswappingl_origsynf_headtailsynf['time_bin_label'].map(time_bin_start_dict)
+t_cswappingl_origsynf_headtailsynf['container_date'] = t_cswappingl_origsynf_headtailsynf['container_id'].str.split('_').str[0].astype(int)
+t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart'] = (
+    t_cswappingl_origsynf_headtailsynf['sec_fromPrevPoint']
+    .fillna(0)
+    .groupby(t_cswappingl_origsynf_headtailsynf['container_id'])
+    .cumsum()
+)
+t_cswappingl_origsynf_headtailsynf['date_unix_midnight'] = (
+    pd.to_datetime(t_cswappingl_origsynf_headtailsynf['container_date'].astype(str), format='%Y%m%d')
+    .dt.tz_localize('Pacific/Auckland')
+    .astype('int64') // 10**9
+)
+t_cswappingl_origsynf_headtailsynf['time_bin_start_sec'] = t_cswappingl_origsynf_headtailsynf['time_bin_start'] *3600
+t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart'] = t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart'].astype(int)
+
+t_cswappingl_origsynf_headtailsynf['container_unix_timestamp'] = t_cswappingl_origsynf_headtailsynf['date_unix_midnight'] + t_cswappingl_origsynf_headtailsynf['time_bin_start_sec'] + t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart']
+
+t_cswappingl_origsynf_headtailsynf['container_datetime'] = pd.to_datetime(
+    t_cswappingl_origsynf_headtailsynf['container_unix_timestamp'], unit='s', utc=True
+).dt.tz_convert('Pacific/Auckland')
+
+t_cswappingl_origsynf_headtailsynf[[ 'container_datetime', 'container_date', 'time_bin_start', 'container_unix_timestamp']]
+
+
+#%% export df 
+t_cswappingl_origsynf_headtailsynf.to_parquet(r"D:\paper3\output\swappedtrajs\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet")
+# VM13
 
 
 
@@ -214,8 +249,40 @@ stop_points_nodes.head()
 stop_points_nodes.to_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/nodesSwapped_split_StopPoints.parquet")
 
 
+#%% this is where all files are stored on VM201
+#########################
+#d:\paper3\Data\SWAPPEDTRAJECTORIES\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet 
+#d:\paper3\Data\SWAPPEDTRAJECTORIES\final_points_edgeSwap_FINAL_ContainerDatetime.parquet 
+#d:\paper3\Data\SWAPPEDTRAJECTORIES\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet
+# and R
+#\\tsclient\R\paper3\Data\swappedtrajs\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet 
+#\\tsclient\R\paper3\Data\swappedtrajs\final_points_edgeSwap_FINAL_ContainerDatetime.parquet 
+#\\tsclient\R\paper3\Data\swappedtrajs\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet
 
+#########################
+#%%  stop poinst for cloaking  based swapping
+# try parallelisation
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+import movingpandas as mpd
 
+def detect_stops_single(traj, min_duration=180, max_diameter=65):
+    detector = mpd.TrajectoryStopDetector(traj)
+    stops = detector.get_stop_points(min_duration=timedelta(seconds=min_duration),
+                                     max_diameter=max_diameter)
+    stops['uid'] = traj.id
+    return stops
+
+stop_points_list = []
+
+with ThreadPoolExecutor(max_workers=8) as executor:  # adjust threads
+    futures = {executor.submit(detect_stops_single, traj): traj.id for traj in nodes_traj_collection.trajectories}
+
+    for future in tqdm(as_completed(futures), total=len(futures), desc="Detecting stops"):
+        stop_points_list.append(future.result())
+
+# combine all results
+stop_points_nodes = pd.concat(stop_points_list, ignore_index=True)
 
 
 
