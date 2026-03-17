@@ -337,6 +337,89 @@ plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTra
 plt.show()
 
 
+#%% CDFs next to each other (a and b)
+fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+
+# Define colors (same as histograms)
+color1, color2, color3 = "#FDD45F", "#F3B503", "#C09003"
+
+# ---------------- LEFT PANEL ----------------
+ax = axes[0]
+ax.set_facecolor("white")
+ax.plot(data1_sorted, cdf1, color=color1, linewidth=2, label="Edge")
+ax.plot(data2_sorted, cdf2, color=color2, linewidth=2, label="Intersection")
+ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
+
+# ---------------- RIGHT PANEL ----------------
+ax = axes[1]
+ax.set_facecolor("white")
+ax.plot(data1_sorted_split, cdf1_split, color=color1, linewidth=2, label="Edge")
+ax.plot(data2_sorted_split, cdf2_split, color=color2, linewidth=2, label="Intersection")
+ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
+
+# ---------------- SHARED STYLING ----------------
+tick_color = "#555555"
+for i, ax in enumerate(axes):
+    ax.set_xlim(left=0)
+    ax.set_ylim(0, 105)
+    ax.set_yticks([0, 25, 50, 75, 100])
+    ax.tick_params(axis='x', labelsize=12, colors=tick_color)
+    ax.tick_params(axis='y', labelsize=12)
+
+    # Remove y-axis from right panel
+    if i > 0:
+        ax.spines['left'].set_visible(False)
+        ax.tick_params(axis='y', left=False, labelleft=False)
+    else:
+        ax.spines['left'].set_color(tick_color)
+
+    ax.spines['bottom'].set_color(tick_color)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # Horizontal gridlines
+    for y in [25, 50, 75, 100]:
+        #color = 'red' if y == 50 else '#b0b0b0'  
+        #ax.axhline(y, color=color, linestyle=':', linewidth=1.2 if y==50 else 0.7, zorder=0)
+        if y == 50:
+            ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
+        else:
+            ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
+    for i, ax in enumerate(axes):
+        ax.set_xlim(left=0)
+        ax.set_ylim(0, 105)
+        ax.set_yticks([0, 25, 50, 75, 100])
+
+
+        ax.set_axisbelow(True)
+
+
+# Labels & titles
+axes[0].set_ylabel("CDF (%)", fontsize=14, color=tick_color)
+axes[0].set_title("(A) Original trajectories", fontsize=16, color="#333333")
+axes[1].set_title("(B) Split trajectories", fontsize=16, color="#333333")
+fig.supxlabel("Number of non-original pseudonyms per trajectory", fontsize=14, color=tick_color)
+
+# Only set legend for the right panel (axes[1])
+leg = axes[1].legend(
+    title="Swapping Opportunity",
+    fontsize=14,
+    loc='lower right',
+    frameon=False
+)
+
+leg.get_title().set_fontsize(14)
+leg.get_title().set_color("#555555")
+leg.get_title().set_ha('left') 
+
+# Ensure title color and text color match ticks
+leg.get_title().set_color('#555555')
+for text in leg.get_texts():
+    text.set_color('#555555')
+
+
+plt.tight_layout(rect=[0, 0, 1, 0.95])
+plt.show()
 
 
 ################
