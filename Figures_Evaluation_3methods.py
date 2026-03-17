@@ -419,6 +419,9 @@ for text in leg.get_texts():
 
 
 plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_PanelSplitNosplit.svg", format="svg", bbox_inches="tight", dpi=300)
+
 plt.show()
 
 
@@ -877,23 +880,6 @@ plt.show()
 #%% get duration of each segment in seconds
 import pandas as pd
 
-# get start and end timestamps
-segment_durations = gdf_edges_swppd.groupby(['container_id', 'orig_tid_subid'])['unix_timestamp_afterCloaking'].agg(['min', 'max']).reset_index()
-
-# duration in seconds
-segment_durations['duration_sec'] = segment_durations['max'] - segment_durations['min']
-
-# finding longest segment duration per container
-longest_segment = segment_durations.groupby('container_id')['duration_sec'].max().reset_index()
-longest_segment.rename(columns={'duration_sec': 'longest_segment_sec'}, inplace=True)
-
-# converting to minutes 
-longest_segment['longest_segment_min'] = longest_segment['longest_segment_sec'] / 60
-longest_segment
-
-#%% split edges
-import pandas as pd
-
 def longest_segment(df, full_or_split_container_col, segment_col, unix_col):
 
     # get start and end timestamps per container & segment
@@ -927,9 +913,9 @@ longest_cloaked = longest_segment(t_cswappingl_origsynf_headtailsynf, 'container
 data_hours_cloaked = longest_cloaked['duration_hr']
 
 
-#%% as a boxplot - looked different before (edg-based swapping must be wrong)
-# edge based swapping: timestamp is off in gdf_edges_swppd
 
+
+#%% as a boxplot
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -1009,7 +995,7 @@ ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15
 
 plt.tight_layout()
 #plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_split.svg", format="svg", bbox_inches="tight", dpi=300)
-plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_Notsplit.svg", format="svg", bbox_inches="tight", dpi=300)
+#plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_Notsplit.svg", format="svg", bbox_inches="tight", dpi=300)
 
 plt.show()
 
@@ -1041,7 +1027,7 @@ def pct_segments_under(df_seg, thresholds):
 # Compute segment durations for edges
 # -----------------------------
 df_edges = gdf_edges_swppd.copy()
-df_edges_segments = df_edges.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min','max']).reset_index()
+df_edges_segments = df_edges.groupby(['container_id', 'orig_tid_subid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
 df_edges_segments['duration_sec'] = df_edges_segments['max'] - df_edges_segments['min']
 df_edges_segments['duration_min'] = df_edges_segments['duration_sec'] / 60
 
@@ -1051,30 +1037,175 @@ pct_edges = pct_segments_under(df_edges_segments, thresholds_min)
 # Compute segment durations for intersections
 # -----------------------------
 df_nodes = gdf_nodess_swppd.copy()
-df_nodes_segments = df_nodes.groupby(['container_id', 'orig_tid'])['unix_timestamp'].agg(['min','max']).reset_index()
+df_nodes_segments = df_nodes.groupby(['container_id', 'orig_tid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
 df_nodes_segments['duration_sec'] = df_nodes_segments['max'] - df_nodes_segments['min']
 df_nodes_segments['duration_min'] = df_nodes_segments['duration_sec'] / 60
 
 pct_nodes = pct_segments_under(df_nodes_segments, thresholds_min)
 
+#%%
+# -----------------------------
+# Compute segment durations for cloaking
+# -----------------------------
+df_cloaked = t_cswappingl_origsynf_headtailsynf.copy()
+df_cloaked_segments = t_cswappingl_origsynf_headtailsynf.groupby(['container_id', 'original_tid'])['unix_timestamp_final'].agg(['min','max']).reset_index()
+df_cloaked_segments['duration_sec'] = df_cloaked_segments['max'] - df_cloaked_segments['min']
+df_cloaked_segments['duration_min'] = df_cloaked_segments['duration_sec'] / 60
+
+pct_cloaked = pct_segments_under(df_cloaked_segments, thresholds_min)
+
+#%% inspect cloaked data
+for th, data in zip(thresholds_min, data_all_cloaked):
+    q1, median, q3 = np.percentile(data, [25, 50, 75])
+    print(f"Threshold <{th} min: Q1={q1}, Median={median}, Q3={q3}, IQR={q3-q1}")
+
+#Threshold <15 min: Q1=0.0, Median=0.0, Q3=20.0, IQR=20.0
+#Threshold <60 min: Q1=0.0, Median=20.0, Q3=40.0, IQR=40.0
+#Threshold <240 min: Q1=0.0, Median=42.857142857142854, Q3=100.0, IQR=100.0
+
+#%% categorise and show table instead
+import pandas as pd
+
+# Define bins and labels
+bins = [0, 15, 60, 240, float('inf')]
+labels = ['<15 min', '<60 min', '<240 min', '>=240 min']
+
+df_cloaked_segments['duration_category'] = pd.cut(df_cloaked_segments['duration_min'], bins=bins, labels=labels, right=False)
+counts = df_cloaked_segments['duration_category'].value_counts().sort_index()
+percentages = df_cloaked_segments['duration_category'].value_counts(normalize=True).sort_index() * 100
+summary_cloaked = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
+
+df_nodes_segments['duration_category'] = pd.cut(df_nodes_segments['duration_min'], bins=bins, labels=labels, right=False)
+counts = df_nodes_segments['duration_category'].value_counts().sort_index()
+percentages = df_nodes_segments['duration_category'].value_counts(normalize=True).sort_index() * 100
+summary_nodes = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
+
+df_edges_segments['duration_category'] = pd.cut(df_edges_segments['duration_min'], bins=bins, labels=labels, right=False)
+counts = df_edges_segments['duration_category'].value_counts().sort_index()
+percentages = df_edges_segments['duration_category'].value_counts(normalize=True).sort_index() * 100
+summary_edges = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
+
+# split ones
+df_nodes_segments_split = gdf_nodess_swppd.groupby(['sub_container_id', 'orig_tid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
+df_nodes_segments_split['duration_sec'] = df_nodes_segments_split['max'] - df_nodes_segments_split['min']
+df_nodes_segments_split['duration_min'] = df_nodes_segments_split['duration_sec'] / 60
+
+df_edges_segments_split = gdf_edges_swppd.groupby(['sub_container_id', 'orig_tid_subid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
+df_edges_segments_split['duration_sec'] = df_edges_segments_split['max'] - df_edges_segments_split['min']
+df_edges_segments_split['duration_min'] = df_edges_segments_split['duration_sec'] / 60
+
+df_nodes_segments_split['duration_category'] = pd.cut(df_nodes_segments_split['duration_min'], bins=bins, labels=labels, right=False)
+counts = df_nodes_segments_split['duration_category'].value_counts().sort_index()
+percentages = df_nodes_segments_split['duration_category'].value_counts(normalize=True).sort_index() * 100
+summary_nodes_split = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
+
+df_edges_segments_split['duration_category'] = pd.cut(df_edges_segments_split['duration_min'], bins=bins, labels=labels, right=False)
+counts = df_edges_segments_split['duration_category'].value_counts().sort_index()
+percentages = df_edges_segments_split['duration_category'].value_counts(normalize=True).sort_index() * 100
+summary_edges_split = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
+summary_edges_split
+
+#%%
+import matplotlib.pyplot as plt
+import numpy as np
+
+# List of your summary DataFrames
+dfs = [summary_edges, summary_edges_split, summary_nodes, summary_nodes_split, summary_cloaked]
+labels = ["Edge-swapping\n(t$_{se}$)", "Edge-swapping\n(t$_{se}$ split)", "Intersection-swapping\n(t$_{si}$)",  "Intersection-swapping\n(t$_{si}$ split)",  "Cloaking Area-swapping\n(t$_{sc}$)"]  
+
+categories = summary_edges.index  # ['<15 min','<60 min','<240 min','>=240 min']
+colors = ['#fef0d9','#fdcc8a','#fc8d59','#d7301f']
+
+category_labels = {
+    '<15 min': 'under 15 min',
+    '<60 min': 'under 1 h',
+    '<240 min': 'under 4h',
+    '>=240 min': 'over 4h'
+}
+
+
+x = np.arange(len(labels))
+width = 0.6
+
+# White background style
+plt.style.use('default')
+fig, ax = plt.subplots(figsize=(10,6))
+fig.patch.set_facecolor('white')
+ax.set_facecolor('white')
+
+bottom = [0]*len(dfs)
+
+# Plot stacked bars with high zorder so they appear on top of grid
+for i, cat in enumerate(categories):
+    heights = [df.loc[cat, 'percentage'] for df in dfs]
+    ax.bar(x, heights, width=0.8, bottom=bottom, color=colors[i], zorder=3)
+    
+    # Add segment labels inside bars if large enough
+    for xi, (h, b) in enumerate(zip(heights, bottom)):
+        if h > 3:  # avoid clutter on very small segments
+            #ax.text(xi, b + h/2, f"{cat}: {h:.1f}%", ha='center', va='center', fontsize=9, zorder=4)
+            #ax.text(xi, b + h/2, f"{h:.1f}% {cat}", ha='center', va='center', fontsize=9, zorder=4)
+            ax.text(xi, b + h/2, f"{int(round(h))}% {category_labels[cat]}", ha='center', va='center', fontsize=9, zorder=4)
+    
+    bottom = [b + h for b, h in zip(bottom, heights)]
+
+# Axis labels and title
+ax.set_xticks(x)
+ax.set_xticklabels(labels, fontsize=13, color="#333333", rotation=25, ha='right')
+ax.set_ylabel("Container segments (%)", fontsize=13, color="#333333")
+
+# Grid lines behind bars
+ax.yaxis.grid(True, color='lightgrey', linestyle='--', linewidth=0.7, zorder=0)
+ax.xaxis.grid(False)
+
+# Spines style
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+ax.spines['left'].set_visible(True)
+ax.spines['bottom'].set_visible(True)
+
+tick_color = '#555555'
+
+# Set tick color
+ax.tick_params(axis='x', colors=tick_color)  # x-axis tick marks
+ax.tick_params(axis='y', colors=tick_color)  # y-axis tick marks
+ax.tick_params(axis='x', labelcolor=tick_color)  # x-axis labels
+ax.tick_params(axis='y', labelcolor=tick_color)  # y-axis labels
+
+# Set spine (axis line) color
+for spine in ['left', 'bottom']:
+    ax.spines[spine].set_color(tick_color)
+
+ax.set_ylim(0, 100)
+
+plt.tight_layout()
+plt.savefig(r"\\tsclient\R\paper3\Figures/stackedBars_segmentDuration.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
+
+
+
+#%% cloaking based containers not suitable for tboxplot, see comment above
 # -----------------------------
 # Prepare data for boxplot (all segments)
 # Each element is a list of values for a threshold
 data_all_edges = [pct_edges[f'under_{th}min'] for th in thresholds_min]
 data_all_nodes = [pct_nodes[f'under_{th}min'] for th in thresholds_min]
+data_all_cloaked = [pct_cloaked[f'under_{th}min'] for th in thresholds_min]
 
 # Combine for grouped boxplot: [edges_thresh1, nodes_thresh1, edges_thresh2, nodes_thresh2, ...]
 data_grouped = []
-for e, n in zip(data_all_edges, data_all_nodes):
-    data_grouped.extend([e, n])
+for e, n, c in zip(data_all_edges, data_all_nodes, data_all_cloaked):
+    data_grouped.extend([e, n, c])
 
 # Colors: alternate edges and nodes
-colors = ["#FDD45F", "#F3B503"] * len(thresholds_min)
+colors = ["#FDD45F", "#F3B503", "#C09003"] * len(thresholds_min)
 
 # X-axis positions
 positions = []
 for i in range(len(thresholds_min)):
-    positions.extend([i*3+1, i*3+2])  # space between threshold groups
+    # 3 boxes per threshold, spaced by 1
+    positions.extend([i*4 + 1, i*4 + 2, i*4 + 3])
 
 # -----------------------------
 # Plot
@@ -1124,10 +1255,13 @@ for i, d in zip(positions, data_grouped):
 
 # Custom legend
 handles = [plt.Line2D([0],[0], color="#FDD45F", lw=8),
-           plt.Line2D([0],[0], color="#F3B503", lw=8)]
-labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
+           plt.Line2D([0],[0], color="#F3B503", lw=8),
+           plt.Line2D([0],[0], color="#C09003", lw=8)
+           ]
 
-ax.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
+labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)", "Cloaking Area-Swapping (t$_{sc}$)"]  
+
+ax.legend(handles, labels,  title="Swapping Opportunity", loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, frameon=False)
 
 plt.tight_layout()
 #plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentDuration_edges_and_nodes.svg", format="svg", bbox_inches="tight", dpi=300)
