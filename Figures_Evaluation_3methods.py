@@ -63,7 +63,7 @@ ax.set_ylim(0, 105)
 ax.set_yticks([0, 25, 50, 75, 100])
 
 # Axis labels
-ax.set_xlabel("Number of pseudonyms per trajectory", fontsize=14, color='#555555')
+ax.set_xlabel("Number of pseudonyms per container", fontsize=14, color='#555555')
 ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
 
 # Tick labels and tick lines (ggplot-style gray)
