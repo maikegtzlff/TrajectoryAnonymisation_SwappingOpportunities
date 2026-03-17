@@ -4,13 +4,13 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 
-#%%
-gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\output\swappedtrajs\final_points_edgeSwap_FINAL_ContainerDatetime.parquet")
+gdf_edges_swppd = gpd.read_parquet(r"e:\paper3\data\final_points_edgeSwap_FINAL_ContainerDatetime.parquet ")
 #  'sub_container_id' because split
 
-gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\output\swappedtrajs\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet")
+gdf_nodess_swppd = gpd.read_parquet(r"e:\paper3\data\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet")
 
-t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\output\swappedtrajs\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet")
+t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"e:\paper3\data\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet")
+
 
 
 #%% EVALUATION FIGURES
@@ -192,6 +192,10 @@ data3_sorted = np.sort(data3)
 cdf3 = np.arange(1, len(data3_sorted) + 1) / len(data3_sorted) * 100
 color3 = "#C09003"  
 
+
+
+
+
 #%% CDF for trajectories with changed pseudonyms
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.set_facecolor('white')
@@ -259,7 +263,10 @@ for text in leg.get_texts():
 #plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
 plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
 
+
 plt.show()
+
+
 #%% CDF for trajectories with changed pseudonyms - split trajectory
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.set_facecolor('white')
@@ -329,6 +336,9 @@ plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTra
 
 plt.show()
 
+
+
+
 ################
 #%% look at containers with no swaps
 import pandas as pd
@@ -343,9 +353,9 @@ no_swap_edges_split = (gdf_edges_swppd['orig_uid'] == gdf_edges_swppd['container
 # returns True and False
 #True (1): orig_uid == container_uid for all rows in container aka no swap
 #False (0): at least one row differs aka sawpped
-n_no_swap_edges = no_swap_edges_split.sum() # adds up all Trues (1)
-total_containers = len(no_swap_edges_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
-pct_no_swap_edges_split = n_no_swap_edges / total_containers * 100
+n_no_swap_edges_split = no_swap_edges_split.sum() # adds up all Trues (1)
+total_containers_n_no_swap_edges_split = len(no_swap_edges_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
+pct_no_swap_edges_split = n_no_swap_edges_split / total_containers_n_no_swap_edges_split * 100
 
 # intersection split
 no_swap_nodes_split = (gdf_nodess_swppd['orig_uid'] == gdf_nodess_swppd['container_uid']).groupby(gdf_nodess_swppd['sub_container_id']).all()
@@ -353,7 +363,7 @@ no_swap_nodes_split = (gdf_nodess_swppd['orig_uid'] == gdf_nodess_swppd['contain
 #True (1): orig_uid == container_uid for all rows in container aka no swap
 #False (0): at least one row differs aka sawpped
 n_no_swap_nodes_split = no_swap_nodes_split.sum() # adds up all Trues (1)
-total_containers = len(no_swap_nodes_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
+total_containers = len(no_swap_nodes_split) # same length as gdf_nodess_swppd['sub_container_id'].nunique()
 pct_no_swap_nodes_split = n_no_swap_nodes_split / total_containers * 100
 
 # edges not split
@@ -379,11 +389,11 @@ summary_table = pd.DataFrame({
     "Swapping method": ["Edge-swapping", "Edge-swapping (split)", "Intersection-swapping", 'Intersection-swapping (split)', "Cloaking Area-swapping"],
     
 
-    "Trajectories with no swaps": [f"{perc_single_e:.2f}% ({n_single_e})",
-                                    f"{pct_no_swap_edges_split:.2f}% ({n_no_swap_edges})",
-                                    f"{perc_single_i:.2f}% ({n_single_i})",
-                                    f"{pct_no_swap_nodes_split:.2f}% ({n_no_swap_nodes_split})",
-                                    f"{perc_single_c:.2f}% ({n_single_c})"],
+    "Trajectories with no swaps": [f"{perc_single_e:.2f}% ({n_single_e} out of {gdf_edges_swppd['container_id'].nunique()})",
+                                    f"{pct_no_swap_edges_split:.2f}% ({n_no_swap_edges_split} out of {gdf_edges_swppd['sub_container_id'].nunique()})",
+                                    f"{perc_single_i:.2f}% ({n_single_i} out of {gdf_nodess_swppd['container_id'].nunique()})",
+                                    f"{pct_no_swap_nodes_split:.2f}% ({n_no_swap_nodes_split} out of {gdf_nodess_swppd['sub_container_id'].nunique()})",
+                                    f"{perc_single_c:.2f}% ({n_single_c} out of {t_cswappingl_origsynf_headtailsynf['container_id'].nunique()})"],
 
 
 })
@@ -394,95 +404,25 @@ display(HTML(summary_table.to_html(index=False)))
 
 
 
-################################################
-#%% (2) pseudonym changes by point
-import matplotlib.pyplot as plt
-
-plt.tight_layout()
-plt.show()
-plt.style.use("ggplot")
-
-fig, ax = plt.subplots(figsize=(6, 4))
-
-changes = gdf_edges_swppd['swap_count']
-
-ax.boxplot(
-    changes,
-    patch_artist=True,
-    boxprops=dict(facecolor="#FDD45F", edgecolor="black"),
-    medianprops=dict(color="black", linewidth=2),
-    whiskerprops=dict(color="black"),
-    capprops=dict(color="black"),
-    flierprops=dict(
-        marker='o',
-        markerfacecolor='#FDD45F',
-        markeredgecolor='#FDD45F',
-        markersize=4,
-        alpha=0.01  
-    )
-)
-
-# White background
-ax.set_facecolor('white')
-
-# Hide the default grid
-ax.grid(False)
-# Add horizontal dotted grid lines at y-axis ticks
-ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
-
-# Solid y-axis line
-ax.spines['left'].set_visible(True)
-ax.spines['left'].set_color('black')
-ax.spines['left'].set_linewidth(0.8)
-
-# Hide top and right spines
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-
-ax.set_ylabel("Pseudonym changes")
-
-# Custom x-axis label
-ax.set_xticks([1])
-ax.set_xticklabels([r"$t_{se}$"])
-
-# Get the median from the data
-median_val = changes.median()
-
-# Annotate the median on top of the existing median line
-ax.text(
-    x=1,  # x-position aligned with the box
-    y=median_val,  # y-position exactly at the median
-    s=f"{int(median_val)}",  # text to display
-    color='black',  # same as median line
-    fontsize=10,
-    ha='center',  # horizontally centered over the box
-    va='bottom',   # place text just above the line
-    alpha=0.5
-)
-
-plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/PointsSwapped_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
-plt.show()
-
-
-
-
 #################################################
+#%% look for missing columns
+sorted(gdf_edges_swppd.columns)
 #%% Figrues on longest sub-segment
 container_counts = gdf_edges_swppd.groupby('container_id').agg(
-    n_tid_subid=('tid_subid', 'nunique'),
-    n_orig_tid_subid=('orig_tid_subid', 'nunique'),
-    n_orig_tid=('orig_tid', 'nunique'),
-    n_points=('uid', 'size')
+    n_tid_subid=('container_tid_subid', 'nunique'),
+    n_orig_tid_subid=('orig_tid_subid', 'nunique'), 
+    n_points=('container_uid', 'size')
 ).reset_index()
 
 print(container_counts.head())
 
+container_counts_split = gdf_edges_swppd.groupby('sub_container_id').agg(
+    n_tid_subid=('container_tid_subid', 'nunique'),
+    n_orig_tid_subid=('orig_tid_subid', 'nunique'), 
+    n_points=('container_uid', 'size')
+).reset_index()
 
-
-
-
-
+print(container_counts_split.head())
 
 #%% longest sub-segment based on points
 import pandas as pd
@@ -660,99 +600,7 @@ data_percent_intersection_s = longest_segments_is['prop_longest_segment'] * 100
 
 data_percent_cloaked = longest_segments_c['prop_longest_segment'] * 100
 
-#%% histogram
-#%% option1: grouped histogram
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Data
-data_list = [data_percent_edge, data_percent_intersection, data_percent_cloaked]
-colors = ["#FDD45F", "#F3B503", "#C09003"]
-custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)", "Cloaking Area-swapping (t$_{sc}$)"]
-
-fig, ax = plt.subplots(figsize=(8,5))
-
-bins = np.arange(0, 101, 5)
-
-# Compute shared bins
-all_data = np.concatenate(data_list)
-counts = []
-for data in data_list:
-    c, bin_edges = np.histogram(data, bins=bins, range=(all_data.min(), all_data.max()))
-    counts.append(c)
-
-bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-bin_width = bin_edges[1] - bin_edges[0]
-
-# Offset for grouped bars
-n = len(data_list)
-offset = bin_width / (n + 1)
-
-for i, (c, color) in enumerate(zip(counts, colors)):
-    ax.bar(
-        bin_centers + (i - (n-1)/2)*offset,
-        c,
-        width=offset,
-        color=color,
-        edgecolor="white",
-        alpha=0.9,
-        linewidth=0.6
-    )
-
-# Median lines
-for i, (data, color) in enumerate(zip(data_list, colors)):
-    median_val = np.median(data)
-    
-    ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5)
-    
-    # different offset for last label
-    if i == 2:   # last dataset
-        x_offset = -2.75
-    else:
-        x_offset = -1.5
-
-    ax.text(
-        median_val + x_offset,
-        ax.get_ylim()[1]*0.8,
-        f"{median_val:.0f}%",
-        color=color,
-        fontsize=12,
-        ha='center',
-        rotation=90
-    )
-
-# Background
-ax.set_facecolor("white")
-ax.grid(False)
-ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
-
-# Spines
-ax.spines['left'].set_visible(True)
-ax.spines['left'].set_color('black')
-ax.spines['bottom'].set_visible(True)
-ax.spines['bottom'].set_color('black')
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-
-# Labels
-ax.set_xlabel("Trajectory points of longest segment (%)", fontsize=14, color="#555555")
-ax.set_ylabel("Swapped trajectories", fontsize=14, color="#555555")
-
-# Ticks
-tick_color = "#555555"
-ax.tick_params(axis='x', colors=tick_color, labelsize=12)
-ax.tick_params(axis='y', colors=tick_color, labelsize=12)
-
-# Legend
-handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
-ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False, fontsize=12)
-
-plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_medianAnnotated.svg", format="svg", bbox_inches="tight", dpi=300)
-plt.show()
-
-
-#%% option 2: three seperate plots
+#%% histogram 2: three seperate plots
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -830,10 +678,10 @@ for i, (ax, data, color, counts) in enumerate(zip(axes, data_list, colors, count
     ax.set_xlim(0,100)
 
 # Axis labels
-axes[0].set_ylabel("Swapped trajectories", fontsize=14, color="#555555")
+axes[0].set_ylabel("Number of swapped trajectories", fontsize=14, color="#555555")
 #for ax in axes:
 #    ax.set_xlabel("Longest segment (%)", fontsize=13, color="#555555")
-axes[1].set_xlabel("Longest segment (%)", fontsize=13, color="#555555")
+axes[1].set_xlabel("Share of trajectory points by dominant user (%)", fontsize=13, color="#555555")
 #fig.supxlabel("Longest segment (%)", fontsize=14, color="#555555")
 
 titles = ["(A) Edge-swapping (t$_{se}$)", "(B) Intersection-swapping (t$_{si}$)", "(C) Cloaking Area-swapping (t$_{sc}$)"]
@@ -845,6 +693,102 @@ plt.tight_layout(rect=[0,0.08,1,1])
 plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_threePanels.svg", format="svg", bbox_inches="tight", dpi=300)
 
 plt.show()
+
+#%% and for split trajectories
+
+# Data
+data_list = [data_percent_edge_s, data_percent_intersection_s, data_percent_cloaked]
+#colors = ["#fcc72d", "#F3B503", "#C09003"]
+colors = ["#FDD45F", "#F3B503", "#C09003"]
+
+# Create 3 side-by-side plots
+fig, axes = plt.subplots(1, 3, figsize=(12,5), sharey=True)
+
+bins = np.arange(0, 101, 5)
+
+counts_list = []
+for data in data_list:
+    counts, _ = np.histogram(data, bins=bins)
+    counts_list.append(counts)
+
+global_max = max([c.max() for c in counts_list])
+
+for i, (ax, data, color, counts) in enumerate(zip(axes, data_list, colors, counts_list)):
+
+    bin_edges = bins
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_width = bin_edges[1] - bin_edges[0]
+
+    ax.bar(
+        bin_centers,
+        counts,
+        width=bin_width*0.9,
+        color=color,
+        edgecolor="white",
+        alpha=0.9,
+        linewidth=0.6
+    )
+
+    # force same y-scale for all plots
+    ax.set_ylim(0, global_max * 1.15)
+
+    # Median line
+    median_val = np.median(data)
+    ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5)
+    
+    median_offsets = [4, 4, 4]
+    median_y_pos = [0.9, 0.9, 0.9]   
+
+    ax.text(
+        median_val + median_offsets[i],
+        global_max * median_y_pos[i],
+        f"{median_val:.0f}%",
+        color=color,
+        fontsize=12,
+        ha='center',
+        rotation=90
+    )
+
+
+    
+    # Remove y-axis for plots 2 and 3
+    if i > 0:
+        ax.spines['left'].set_visible(False)
+        ax.tick_params(axis='y', left=False, labelleft=False)
+
+    # Background
+    ax.set_facecolor("white")
+    ax.grid(False)
+    ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
+
+    # Spines
+    ax.spines['bottom'].set_visible(True)
+    ax.spines['bottom'].set_color('black')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    ax.set_xlim(0,100)
+
+# Axis labels
+axes[0].set_ylabel("Number of swapped trajectories", fontsize=14, color="#555555")
+#for ax in axes:
+#    ax.set_xlabel("Longest segment (%)", fontsize=13, color="#555555")
+axes[1].set_xlabel("Share of trajectory points by dominant user (%)", fontsize=13, color="#555555")
+#fig.supxlabel("Longest segment (%)", fontsize=14, color="#555555")
+
+titles = ["(A) Edge-swapping (t$_{se} split$)", "(B) Intersection-swapping (t$_{si} split$)", "(C) Cloaking Area-swapping (t$_{sc}$)"]
+for ax, title in zip(axes, titles):
+    ax.set_title(title, fontsize=13, color="#333333")
+
+plt.tight_layout(rect=[0,0.08,1,1])
+
+plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_splitTraj_threePanels.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
+
+
+
+
 
 
 
@@ -1698,3 +1642,82 @@ gdf_edges_swppd.osmid_edge
 # container id is new final tid
 # trajectory sub-segments are tid_subid
 # would compare number of points by osmid_edge to raw. by time bin? total?
+
+
+
+
+
+
+#%%################################################
+#%%################################################
+#%%################################################
+# attributes that would need to be derived from swapping history
+#%%################################################
+#%% (2) pseudonym changes by point
+import matplotlib.pyplot as plt
+
+plt.tight_layout()
+plt.show()
+plt.style.use("ggplot")
+
+fig, ax = plt.subplots(figsize=(6, 4))
+
+changes = gdf_edges_swppd['swap_count']
+
+ax.boxplot(
+    changes,
+    patch_artist=True,
+    boxprops=dict(facecolor="#FDD45F", edgecolor="black"),
+    medianprops=dict(color="black", linewidth=2),
+    whiskerprops=dict(color="black"),
+    capprops=dict(color="black"),
+    flierprops=dict(
+        marker='o',
+        markerfacecolor='#FDD45F',
+        markeredgecolor='#FDD45F',
+        markersize=4,
+        alpha=0.01  
+    )
+)
+
+# White background
+ax.set_facecolor('white')
+
+# Hide the default grid
+ax.grid(False)
+# Add horizontal dotted grid lines at y-axis ticks
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+
+# Solid y-axis line
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+
+# Hide top and right spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+ax.set_ylabel("Pseudonym changes")
+
+# Custom x-axis label
+ax.set_xticks([1])
+ax.set_xticklabels([r"$t_{se}$"])
+
+# Get the median from the data
+median_val = changes.median()
+
+# Annotate the median on top of the existing median line
+ax.text(
+    x=1,  # x-position aligned with the box
+    y=median_val,  # y-position exactly at the median
+    s=f"{int(median_val)}",  # text to display
+    color='black',  # same as median line
+    fontsize=10,
+    ha='center',  # horizontally centered over the box
+    va='bottom',   # place text just above the line
+    alpha=0.5
+)
+
+plt.tight_layout()
+#plt.savefig(r"\\tsclient\R\paper3\Figures/PointsSwapped_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.show()
