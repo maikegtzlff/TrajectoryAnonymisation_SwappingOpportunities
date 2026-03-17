@@ -695,7 +695,6 @@ plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_threePanels
 plt.show()
 
 #%% and for split trajectories
-
 # Data
 data_list = [data_percent_edge_s, data_percent_intersection_s, data_percent_cloaked]
 #colors = ["#fcc72d", "#F3B503", "#C09003"]
@@ -792,11 +791,11 @@ plt.show()
 
 
 
-#%% get length of each segment in seconds
+#%% get duration of each segment in seconds
 import pandas as pd
 
 # get start and end timestamps
-segment_durations = gdf_edges_swppd.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min', 'max']).reset_index()
+segment_durations = gdf_edges_swppd.groupby(['container_id', 'orig_tid_subid'])['unix_timestamp_afterCloaking'].agg(['min', 'max']).reset_index()
 
 # duration in seconds
 segment_durations['duration_sec'] = segment_durations['max'] - segment_durations['min']
@@ -809,48 +808,41 @@ longest_segment.rename(columns={'duration_sec': 'longest_segment_sec'}, inplace=
 longest_segment['longest_segment_min'] = longest_segment['longest_segment_sec'] / 60
 longest_segment
 
-
-
-#%% prep gdf_nodess_swppd df to calculate duration of segment
-gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'timestamp': 'unix_timestamp'})
-
-
-#%%
+#%% split edges
 import pandas as pd
 
-def longest_segment(df, segment_col):
-    """
-    Compute longest segment duration per container.
+def longest_segment(df, full_or_split_container_col, segment_col, unix_col):
+
+    # get start and end timestamps per container & segment
+    seg_durations = df.groupby([full_or_split_container_col, segment_col])[unix_col].agg(['min','max']).reset_index()
     
-    df: GeoDataFrame
-    segment_col: column identifying segment ('tid_subid' or 'orig_tid')
-    """
-    # Start and end timestamps per container & segment
-    seg_durations = df.groupby(['container_id', segment_col])['unix_timestamp'].agg(['min','max']).reset_index()
-    
-    # Duration in seconds (ensure numeric)
+    # calculate segment duration in seconds
     if np.issubdtype(seg_durations['min'].dtype, np.datetime64):
         seg_durations['duration_sec'] = (seg_durations['max'] - seg_durations['min']).dt.total_seconds()
     else:
         seg_durations['duration_sec'] = seg_durations['max'] - seg_durations['min']
     
-    # Longest segment per container
-    longest = seg_durations.groupby('container_id')['duration_sec'].max().reset_index()
-    
-    # Convert to hours
+    # find longest segment per container
+    longest = seg_durations.groupby(full_or_split_container_col)['duration_sec'].max().reset_index()
     longest['duration_hr'] = longest['duration_sec'] / 3600
     
     return longest
 
-# load different df version
-gdf_edges_swppd_unix = gpd.read_parquet(r'd:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap.parquet')
-longest_edge = longest_segment(gdf_edges_swppd_unix, 'tid_subid')
-longest_intersection = longest_segment(gdf_nodess_swppd, 'orig_tid')
 
+longest_edge = longest_segment(gdf_edges_swppd, 'container_id', 'orig_tid_subid', 'unix_timestamp_afterCloaking')
+longest_edge_split = longest_segment(gdf_edges_swppd, 'sub_container_id', 'orig_tid_subid', 'unix_timestamp_afterCloaking')
 data_hours_edge = longest_edge['duration_hr']
-data_hours_intersection = longest_intersection['duration_hr']
+data_hours_edge_split = longest_edge_split['duration_hr']
 
-#%%
+#gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'timestamp': 'unix_timestamp_afterCloaking'})
+longest_intersection = longest_segment(gdf_nodess_swppd, 'container_id', 'orig_tid', 'unix_timestamp_afterCloaking')
+longest_intersection_split = longest_segment(gdf_nodess_swppd, 'sub_container_id', 'orig_tid', 'unix_timestamp_afterCloaking')
+data_hours_intersection = longest_intersection['duration_hr']
+data_hours_intersection_split = longest_intersection_split['duration_hr']
+
+longest_cloaked = longest_segment(t_cswappingl_origsynf_headtailsynf, 'container_id', 'original_tid', 'unix_timestamp_final')
+data_hours_cloaked = longest_cloaked['duration_hr']
+
 
 #%% as a boxplot - looked different before (edg-based swapping must be wrong)
 # edge based swapping: timestamp is off in gdf_edges_swppd
@@ -861,9 +853,19 @@ import numpy as np
 plt.style.use("ggplot")
 fig, ax = plt.subplots(figsize=(6,5))
 
-data_list = [data_hours_edge, data_hours_intersection]
-labels = [r"t$_{se}$", r"t$_{si}$"]
-colors = ["#FDD45F", "#F3B503"]
+#data_list = [data_hours_edge, data_hours_edge_split, data_hours_intersection, data_hours_intersection_split, data_hours_cloaked]
+#labels = [r"t$_{se}$", r"t$_{se}$ split", r"t$_{si}$", r"t$_{si}$ split", r"t$_{sc}$"]
+#colors = ["#FDD45F", "#FDD45F", "#F3B503", "#F3B503",  "#C09003"]
+
+# "raw" conatiners
+data_list = [data_hours_edge, data_hours_intersection, data_hours_cloaked]
+labels = [r"t$_{se}$", r"t$_{si}$", r"t$_{sc}$"]
+
+# split containers
+#data_list = [data_hours_edge_split, data_hours_intersection_split, data_hours_cloaked]
+#labels = [r"t$_{se}$ split", r"t$_{si}$ split", r"t$_{sc}$"]
+
+colors = ["#FDD45F", "#F3B503", "#C09003"]
 
 # Boxplot with wider boxes
 bp = ax.boxplot(
@@ -873,19 +875,21 @@ bp = ax.boxplot(
     whiskerprops=dict(color="black"),
     capprops=dict(color="black"),
     flierprops=dict(marker='o', markersize=4, alpha=0.2),
+    showfliers=False,
     labels=labels,
     widths=0.7  # <-- make boxes wider
 )
 
 # Apply colors to boxes and fliers
-for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
+#for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
+for patch, color in zip(bp['boxes'], colors):
     patch.set_facecolor(color)
     patch.set_edgecolor('black')
-    flier.set_markerfacecolor(color)
-    flier.set_markeredgecolor(color)
+    #flier.set_markerfacecolor(color)
+    #flier.set_markeredgecolor(color)
 
 # Axis formatting
-ax.set_ylabel("Longest segment duration (hours)")
+ax.set_ylabel("Duration of longest segment (hours)")
 ax.set_facecolor("white")
 ax.grid(False)
 ax.yaxis.grid(True, linestyle=":", color="gray", alpha=0.7, zorder=0)
@@ -903,7 +907,7 @@ for i, data in enumerate(data_list, start=1):
     ax.text(
         x=i,
         y=median_val,
-        s=f"{median_hours_int}h {median_minutes}m",
+        s=f"{median_hours_int}h {median_minutes}min",
         color='black',
         fontsize=10,
         ha='center',
@@ -913,12 +917,17 @@ for i, data in enumerate(data_list, start=1):
 
 # Legend below without title
 handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
-custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
-ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
+#custom_labels = ["Edge-swapping (t$_{se}$)", "Edge-swapping (t$_{se}$ split)", "Intersection-swapping (t$_{si}$)",  "Intersection-swapping (t$_{si}$ split)",  "Cloaking Area-swapping (t$_{sc}$)"]  
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)",  "Cloaking Area-swapping (t$_{sc}$)"]  
+#custom_labels = ["Edge-swapping (t$_{se}$ split)", "Intersection-swapping (t$_{si}$ split)",  "Cloaking Area-swapping (t$_{sc}$)"]  
 
+ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=1, frameon=False, fontsize=12)
+#ax.legend(handles, custom_labels, loc='upper left', bbox_to_anchor=(0.02, 0.98), frameon=False, fontsize=12)
 
 plt.tight_layout()
-#plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_edgeAndNode.svg", format="svg", bbox_inches="tight", dpi=300)
+#plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_split.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_Notsplit.svg", format="svg", bbox_inches="tight", dpi=300)
+
 plt.show()
 
 
