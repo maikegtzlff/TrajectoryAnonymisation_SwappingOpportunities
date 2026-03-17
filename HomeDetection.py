@@ -295,7 +295,12 @@ ranked_clusters_edges.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoi
 ranked_clusters_edges_top2 = ranked_clusters_edges[ranked_clusters_edges['rank'] <= 2]
 ranked_clusters_edges_top2['HomeWork'] = ranked_clusters_edges_top2['rank'].map({1: 'home', 2: 'work'})
 ranked_clusters_edges_top2 # 192 rows
-# add back geometry and find centroid
+
+#%%
+ranked_clusters_edges_top2.to_parquet(r"E:\paper3\data\HomeDetection/EdgeSwappingStopPointsClusters_rankedTop2.parquet")
+ranked_clusters_edges_top2.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/EdgeSwappingStopPointsClusters_rankedTop2.parquet")
+
+#%% add back geometry and find centroid
 # those are the orginal point geometries
 # can either calculate centroid, or find 95% MCP and get centroid (see chapter 1 )
 
@@ -308,5 +313,84 @@ ranked_clusters_edges_top2 # 192 rows
 
 
 
+####################
+#%% run clustering on nodes
+import os
+print(os.getcwd())
+os.chdir(r"E:\paper3")
+print(os.getcwd())
 
-#%%
+import geopandas as gpd
+stop_points_nodes = gpd.read_parquet(r"e:\paper3\data\HomeDetection\nodesSwapped_split_StopPoints.parquet")
+#(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints.parquet")
+stop_points_nodes.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+
+#%% clusteirng stops using DBSCAN in scikit-learn
+# distance 60m, 4 stops
+import importlib
+import s_clustering_final as cstp
+importlib.reload(cstp)
+
+cstp.cluster_users_to_parquet_resumable(
+    stop_points_nodes,
+    radius_km=0.06,
+    min_points=4,
+    output_dir=r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped",
+    small_threshold=50000,
+    large_threshold=100000
+)
+# RAM usage isn't high at all! (but it's crashing for nodes and edge based swaps...)
+# until it is high for the last user
+# Clustering users:  99%|█████████▉| 96/97 [1:10:32<02:43, 163.56s/it]
+# is the problematic user that also crashed the node swapping stop points from clustering?
+
+#%% look at processed users
+folder = r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped"
+
+u_clustered = [os.path.splitext(f)[0]
+              for f in os.listdir(folder)
+              if f.endswith(".parquet")]
+
+
+#%% get cluster ranks
+# 
+import os
+os.chdir(r"E:\paper3")
+import s_clustering_final as cstp
+
+import pandas as pd
+
+clustered_files = [os.path.join(r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped", f)
+                   for f in os.listdir(r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped") 
+                   if f.endswith(".parquet")]
+
+stop_points_nodes_clustered = pd.concat([pd.read_parquet(f) for f in clustered_files], ignore_index=True)
+print(len(stop_points_nodes_clustered)) # 25,379,389
+
+ranked_clusters_nodess = cstp.rank_clusters(stop_points_nodes_clustered)
+
+# reduce to the top 2 location by user
+ranked_clusters_nodes_top2 = ranked_clusters_nodess[ranked_clusters_nodess['rank'] <= 2]
+ranked_clusters_nodes_top2['HomeWork'] = ranked_clusters_nodes_top2['rank'].map({1: 'home', 2: 'work'})
+ranked_clusters_nodes_top2 # 192 rows
+
+#%% export all
+stop_points_nodes_clustered.to_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters.parquet")
+stop_points_nodes_clustered.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodeSwappingStopPointsClusters.parquet")
+
+ranked_clusters_nodess.to_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters_rankedAll.parquet")
+ranked_clusters_nodess.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodeSwappingStopPointsClusters_rankedAll.parquet")
+
+ranked_clusters_nodes_top2.to_parquet(r"E:\paper3\data\HomeDetection/NodesSwappingStopPointsClusters_rankedTop2.parquet")
+ranked_clusters_nodes_top2.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodesSwappingStopPointsClusters_rankedTop2.parquet")
+
+
+#%% identify the problematic user 
+import geopandas as gpd
+stop_points_nodes = gpd.read_parquet(r"e:\paper3\data\HomeDetection\nodesSwapped_split_StopPoints.parquet")
+stop_points_nodes.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+prbl_u = stop_points_nodes[~stop_points_nodes['uid'].isin(u_clustered)].uid.unique()
+print('problematic user: ', prbl_u)
+# problematic user:  ['0d5010abd3d6f0bcd8cee8c66cb58784af4357a1']
