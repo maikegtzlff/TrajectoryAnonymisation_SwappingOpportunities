@@ -66,6 +66,7 @@ gdf_edges_swppd.to_parquet(r"D:\paper3\Data\output/final_points_edgeSwap_FINAL_C
 
 
 #%% ADD DATETIME TO NODES BASED SWAPPED DF
+#%% ADD DATETIME COLUMN TO SWAPPED EDGES DF
 print(gdf_nodess_swppd.columns)
 
 # must know timebin breaks
@@ -127,42 +128,6 @@ gdf_nodess_swppd.to_parquet(r"d:\paper3\Data\filled_trajectories_list\trajectori
 
 
 
-#%% add datetime column to cloaked swapped
-time_bin_start_dict = {
-    'night time': 21,
-    'morning peak': 7,
-    'flat peak': 9,
-    'evening peak': 16,
-}
-# date comes from here container_tid_subid - date is before first _, add to new column
-t_cswappingl_origsynf_headtailsynf['time_bin_start'] = t_cswappingl_origsynf_headtailsynf['time_bin_label'].map(time_bin_start_dict)
-t_cswappingl_origsynf_headtailsynf['container_date'] = t_cswappingl_origsynf_headtailsynf['container_id'].str.split('_').str[0].astype(int)
-t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart'] = (
-    t_cswappingl_origsynf_headtailsynf['sec_fromPrevPoint']
-    .fillna(0)
-    .groupby(t_cswappingl_origsynf_headtailsynf['container_id'])
-    .cumsum()
-)
-t_cswappingl_origsynf_headtailsynf['date_unix_midnight'] = (
-    pd.to_datetime(t_cswappingl_origsynf_headtailsynf['container_date'].astype(str), format='%Y%m%d')
-    .dt.tz_localize('Pacific/Auckland')
-    .astype('int64') // 10**9
-)
-t_cswappingl_origsynf_headtailsynf['time_bin_start_sec'] = t_cswappingl_origsynf_headtailsynf['time_bin_start'] *3600
-t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart'] = t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart'].astype(int)
-
-t_cswappingl_origsynf_headtailsynf['container_unix_timestamp'] = t_cswappingl_origsynf_headtailsynf['date_unix_midnight'] + t_cswappingl_origsynf_headtailsynf['time_bin_start_sec'] + t_cswappingl_origsynf_headtailsynf['sec_fromTrajStart']
-
-t_cswappingl_origsynf_headtailsynf['container_datetime'] = pd.to_datetime(
-    t_cswappingl_origsynf_headtailsynf['container_unix_timestamp'], unit='s', utc=True
-).dt.tz_convert('Pacific/Auckland')
-
-t_cswappingl_origsynf_headtailsynf[[ 'container_datetime', 'container_date', 'time_bin_start', 'container_unix_timestamp']]
-
-
-#%% export df 
-t_cswappingl_origsynf_headtailsynf.to_parquet(r"D:\paper3\output\swappedtrajs\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet")
-# VM13
 
 
 
@@ -249,40 +214,8 @@ stop_points_nodes.head()
 stop_points_nodes.to_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/nodesSwapped_split_StopPoints.parquet")
 
 
-#%% this is where all files are stored on VM201
-#########################
-#d:\paper3\Data\SWAPPEDTRAJECTORIES\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet 
-#d:\paper3\Data\SWAPPEDTRAJECTORIES\final_points_edgeSwap_FINAL_ContainerDatetime.parquet 
-#d:\paper3\Data\SWAPPEDTRAJECTORIES\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet
-# and R
-#\\tsclient\R\paper3\Data\swappedtrajs\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet 
-#\\tsclient\R\paper3\Data\swappedtrajs\final_points_edgeSwap_FINAL_ContainerDatetime.parquet 
-#\\tsclient\R\paper3\Data\swappedtrajs\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet
 
-#########################
-#%%  stop poinst for cloaking  based swapping
-# try parallelisation
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
-import movingpandas as mpd
 
-def detect_stops_single(traj, min_duration=180, max_diameter=65):
-    detector = mpd.TrajectoryStopDetector(traj)
-    stops = detector.get_stop_points(min_duration=timedelta(seconds=min_duration),
-                                     max_diameter=max_diameter)
-    stops['uid'] = traj.id
-    return stops
-
-stop_points_list = []
-
-with ThreadPoolExecutor(max_workers=8) as executor:  # adjust threads
-    futures = {executor.submit(detect_stops_single, traj): traj.id for traj in nodes_traj_collection.trajectories}
-
-    for future in tqdm(as_completed(futures), total=len(futures), desc="Detecting stops"):
-        stop_points_list.append(future.result())
-
-# combine all results
-stop_points_nodes = pd.concat(stop_points_list, ignore_index=True)
 
 
 
@@ -291,18 +224,363 @@ stop_points_nodes = pd.concat(stop_points_list, ignore_index=True)
 #%% clusteirng stops using DBSCAN in scikit-learn
 # distance 60m, 4 stops
 
-#import s_clustering_final as cstp
-#import os
-#os.chdir(r"D:\paper3")
-#print(os.getcwd())
 
-#stop_points.rename(columns={'container_uid': 'uid'}, inplace=True)
 
-#stop_points_ranked = cstp.get_ranked_clusters(stop_points, 60, 4)
 
-# clustering for edge_based swapping stop points runs on VM131
+
+
+
+#%%
+import os
+print(os.getcwd())
+os.chdir(r"E:\paper3")
+print(os.getcwd())
+
+import geopandas as gpd
+stop_points_edges = gpd.read_parquet(r"e:\paper3\data\HomeDetection\edgeSwapped_split_StopPoints.parquet")
+#(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints.parquet")
+stop_points_edges.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+
+#%% clusteirng stops using DBSCAN in scikit-learn
+# distance 60m, 4 stops
+import importlib
+import s_clustering_final as cstp
+importlib.reload(cstp)
+
+cstp.cluster_users_to_parquet_resumable(
+    stop_points_edges,
+    radius_km=0.06,
+    min_points=4,
+    output_dir=r"E:\paper3\data\HomeDetection\Clustering_EdgeSwapped",
+    small_threshold=50000,
+    large_threshold=100000
+)
+
+# Clustering users:  99%|█████████▊| 70/71 [4:06:51<03:31, 211.59s/it]  
+# only 1 user that is problematic (crashing RAM - other 26 user pre-processed)
+#%% all clsuter info as one df
+import pandas as pd
+
+clustered_files = [os.path.join(r"E:\paper3\data\HomeDetection\Clustering_EdgeSwapped", f)
+                   for f in os.listdir(r"E:\paper3\data\HomeDetection\Clustering_EdgeSwapped") 
+                   if f.endswith(".parquet")]
+
+all_clustered = pd.concat([pd.read_parquet(f) for f in clustered_files], ignore_index=True)
+print(len(all_clustered)) # 25,379,389
+#%%
+all_clustered.head() # cluster and clsuter_id. cluster_id is user plus cluster. Geometry
+
+
+#%%
+import os 
+os.chdir(r"E:\paper3")
+import s_clustering_final as cstp
+
+ranked_clusters_edges = cstp.rank_clusters(all_clustered)
+
+#%%
+print(len(ranked_clusters_edges)) # 103986
+ranked_clusters_edges.head()
+
+#%%
+all_clustered.to_parquet(r"E:\paper3\data\HomeDetection/EdgeSwappingStopPointsClusters.parquet")
+all_clustered.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/EdgeSwappingStopPointsClusters.parquet")
+
+ranked_clusters_edges.to_parquet(r"E:\paper3\data\HomeDetection/EdgeSwappingStopPointsClusters_rankedAll.parquet")
+ranked_clusters_edges.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/EdgeSwappingStopPointsClusters_rankedAll.parquet")
+
+
+#%% reduce to the top 2 location by user
+ranked_clusters_edges_top2 = ranked_clusters_edges[ranked_clusters_edges['rank'] <= 2]
+ranked_clusters_edges_top2['HomeWork'] = ranked_clusters_edges_top2['rank'].map({1: 'home', 2: 'work'})
+ranked_clusters_edges_top2 # 192 rows
+
+#%%
+ranked_clusters_edges_top2.to_parquet(r"E:\paper3\data\HomeDetection/EdgeSwappingStopPointsClusters_rankedTop2.parquet")
+ranked_clusters_edges_top2.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/EdgeSwappingStopPointsClusters_rankedTop2.parquet")
+
+#%% add back geometry and find centroid
+# those are the orginal point geometries
+# can either calculate centroid, or find 95% MCP and get centroid (see chapter 1 )
+
+#%% take the cluster centroid as the significant location
 
 
 
 #%% point after swapping not the exact same, or within buffer?
 # take the cluster centroid as the significant location
+
+
+
+####################
+#%% run clustering on nodes
+import os
+print(os.getcwd())
+os.chdir(r"E:\paper3")
+print(os.getcwd())
+
+import geopandas as gpd
+stop_points_nodes = gpd.read_parquet(r"e:\paper3\data\HomeDetection\nodesSwapped_split_StopPoints.parquet")
+#(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints.parquet")
+stop_points_nodes.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+
+#%% clusteirng stops using DBSCAN in scikit-learn
+# distance 60m, 4 stops
+import importlib
+import s_clustering_final as cstp
+importlib.reload(cstp)
+
+cstp.cluster_users_to_parquet_resumable(
+    stop_points_nodes,
+    radius_km=0.06,
+    min_points=4,
+    output_dir=r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped",
+    small_threshold=50000,
+    large_threshold=100000
+)
+# RAM usage isn't high at all! (but it's crashing for nodes and edge based swaps...)
+# until it is high for the last user
+# Clustering users:  99%|█████████▉| 96/97 [1:10:32<02:43, 163.56s/it]
+# is the problematic user that also crashed the node swapping stop points from clustering?
+
+#%% look at processed users
+folder = r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped"
+
+u_clustered = [os.path.splitext(f)[0]
+              for f in os.listdir(folder)
+              if f.endswith(".parquet")]
+
+
+#%% get cluster ranks
+# 
+import os
+os.chdir(r"E:\paper3")
+import s_clustering_final as cstp
+
+import pandas as pd
+
+clustered_files = [os.path.join(r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped", f)
+                   for f in os.listdir(r"E:\paper3\data\HomeDetection\Clustering_IntersectionSwapped") 
+                   if f.endswith(".parquet")]
+
+stop_points_nodes_clustered = pd.concat([pd.read_parquet(f) for f in clustered_files], ignore_index=True)
+print(len(stop_points_nodes_clustered)) # 25,379,389
+
+ranked_clusters_nodess = cstp.rank_clusters(stop_points_nodes_clustered)
+
+# reduce to the top 2 location by user
+ranked_clusters_nodes_top2 = ranked_clusters_nodess[ranked_clusters_nodess['rank'] <= 2]
+ranked_clusters_nodes_top2['HomeWork'] = ranked_clusters_nodes_top2['rank'].map({1: 'home', 2: 'work'})
+ranked_clusters_nodes_top2 # 192 rows
+
+#%% export all
+stop_points_nodes_clustered.to_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters.parquet")
+stop_points_nodes_clustered.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodeSwappingStopPointsClusters.parquet")
+
+ranked_clusters_nodess.to_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters_rankedAll.parquet")
+ranked_clusters_nodess.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodeSwappingStopPointsClusters_rankedAll.parquet")
+
+ranked_clusters_nodes_top2.to_parquet(r"E:\paper3\data\HomeDetection/NodesSwappingStopPointsClusters_rankedTop2.parquet")
+ranked_clusters_nodes_top2.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodesSwappingStopPointsClusters_rankedTop2.parquet")
+
+
+#%% identify the problematic user 
+import geopandas as gpd
+stop_points_nodes = gpd.read_parquet(r"e:\paper3\data\HomeDetection\nodesSwapped_split_StopPoints.parquet")
+stop_points_nodes.rename(columns={'container_uid': 'uid'}, inplace=True)
+
+prbl_u = stop_points_nodes[~stop_points_nodes['uid'].isin(u_clustered)].uid.unique()
+print('problematic user: ', prbl_u)
+# problematic user:  ['0d5010abd3d6f0bcd8cee8c66cb58784af4357a1']
+
+
+
+#%% ####################################################################
+#%% are clustered points of rank 1 and 2 within the cloaking geometries?
+import pandas as pd
+StpPntsClstered_intersection = pd.read_parquet(r"E:\paper3\data\HomeDetection\NodesSwappingStopPointsClusters_rankedTop2.parquet")
+StpPntsClstered_edges = pd.read_parquet(r"E:\paper3\data\HomeDetection\EdgeSwappingStopPointsClusters_rankedTop2.parquet")
+
+StpPntsClstered_edges.head() # rank and uid to match ranked location of each user to before swapping
+#%%
+StpPntsClstered_edges['rank_uid'] = StpPntsClstered_edges['rank'].astype(int).astype(str) + "_" + StpPntsClstered_edges['uid']
+StpPntsClstered_intersection['rank_uid'] = StpPntsClstered_intersection['rank'].astype(int).astype(str) + "_" + StpPntsClstered_intersection['uid']
+StpPntsClstered_intersection.head()
+#%% no geometry yet! tidy up and add geom back
+StpPntsClstered_edges = StpPntsClstered_edges[['rank_uid', 'uid', 'cluster_id', 'rank']].copy()
+StpPntsClstered_intersection = StpPntsClstered_intersection[['rank_uid', 'uid', 'cluster_id', 'rank']].copy()
+
+
+
+
+#%% get cluster geometry
+stop_points_nodes_clustered = pd.read_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters.parquet")
+stop_points_edges_clustered = pd.read_parquet(r"E:\paper3\data\HomeDetection/EdgeSwappingStopPointsClusters.parquet")
+
+#%%
+stop_points_edges_clustered = gpd.GeoDataFrame(
+    stop_points_edges_clustered,
+    geometry=gpd.points_from_xy(
+        stop_points_edges_clustered['lng'],
+        stop_points_edges_clustered['lat']
+    ),
+    crs="EPSG:2193"
+)
+
+# get centroid by cluster_id
+stop_points_edges_clustered_centroids = (
+    stop_points_edges_clustered.groupby('cluster_id')['geometry']
+    .apply(lambda x: x.unary_union.centroid)
+    .reset_index()
+)
+
+stop_points_edges_clustered_centroids = gpd.GeoDataFrame(stop_points_edges_clustered_centroids, geometry='geometry', crs=2193)
+stop_points_edges_clustered_centroids # calculated centroids for all, only needed them for ranks 1 to 2
+#%% join centroid to top 2
+StpPntsClstered_edges = StpPntsClstered_edges.merge(stop_points_edges_clustered_centroids, on = "cluster_id", how="left")
+print(type(StpPntsClstered_edges))
+StpPntsClstered_edges.head()
+
+#%%
+StpPntsClstered_edges = gpd.GeoDataFrame(StpPntsClstered_edges, geometry='geometry', crs="EPSG:2193")
+StpPntsClstered_edges.to_parquet(r"E:\paper3\data\HomeDetection/StpPntsClstered_edges_top2.parquet")
+
+#%%
+cloaking_geom = gpd.read_file(r"e:\paper3\data\HomeDetection\polys.gpkg")
+print(cloaking_geom.crs)
+cloaking_geom = cloaking_geom.to_crs(2193)
+print(cloaking_geom.crs)
+cloaking_geom.head() # rank_uid
+
+#%% merge on rank_uid
+print(cloaking_geom.crs)
+print(StpPntsClstered_edges.crs)
+
+if cloaking_geom.crs == StpPntsClstered_edges.crs:
+
+    StpPntsClstered_edges_cloakingGeom = StpPntsClstered_edges.merge(cloaking_geom[['rank_uid', 'geometry']], on='rank_uid', suffixes=('_point', '_polygon'))
+
+    # is "new" significant location inside old significant location?
+    StpPntsClstered_edges_cloakingGeom['intersects_sigLoc'] = StpPntsClstered_edges_cloakingGeom.apply(lambda row: row['geometry_point'].intersects(row['geometry_polygon']), axis=1)
+    print(StpPntsClstered_edges_cloakingGeom['intersects_sigLoc'].value_counts())
+    # 
+    #intersects_sigLoc
+    #False    188
+    #True       4
+
+    # this is a 1-1 approach: does rank 1 intersect with sig loc 1
+
+
+
+#%% but rank 1 should also not sintersect with sig loc 2 of user
+import pandas as pd
+
+results = []
+
+for uid in StpPntsClstered_edges['rank_uid'].unique():
+    pts = StpPntsClstered_edges[StpPntsClstered_edges['rank_uid'] == uid]
+    polys = cloaking_geom[cloaking_geom['rank_uid'] == uid]
+
+    # safety check
+    if pts.empty or polys.empty:
+        results.append((uid, False))
+        continue
+
+    # check all combinations within the uid
+    intersects = False
+
+    for p in pts['geometry']:
+        if polys['geometry'].intersects(p).any():
+            intersects = True
+            break
+
+    results.append((uid, intersects))
+
+result_df = pd.DataFrame(results, columns=['rank_uid', 'intersects'])
+print(result_df['intersects'].value_counts())
+#intersects
+#False    188
+#True       4
+
+# same as before
+#%% not sure how 4 can be within the cloaking geom...
+
+TrueClusterCentroid = StpPntsClstered_edges[StpPntsClstered_edges['rank_uid'].isin(result_df[result_df['intersects']==True]['rank_uid'].unique())]
+TrueClusterCentroid.to_parquet(r"E:\paper3\data\HomeDetection\testing/StpPntsClstered_edgesCentroidWithinCentroid.parquet")
+# all more towards the outside of the cloalking geometry (could provide figures?)
+# cloaking geometry is calculated with some randomness for each signifcant location (and cloak?) so this could be variable
+# cluster centroid?
+
+#%% look at all clustered stop points/
+stop_points_edges_clustered[stop_points_edges_clustered['cluster_id'].isin(TrueClusterCentroid['cluster_id'].unique())].to_parquet(r"E:\paper3\data\HomeDetection\testing/StpPntsClstered_edgesCentroidWithin.parquet")
+
+#%%
+#TrueClusterCentroid
+cloaking_geom_True = cloaking_geom[cloaking_geom['rank_uid'].isin(TrueClusterCentroid['rank_uid'].unique())]
+
+
+#%%
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
+
+uids = sorted(TrueClusterCentroid['rank_uid'].unique())
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+axes = axes.flatten()
+
+for i, uid in enumerate(uids):
+    ax = axes[i]
+
+    # cloaking area
+    cloaking_geom_True[
+        cloaking_geom_True['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='black',
+        alpha=0.15,   
+        edgecolor='black'
+    )
+
+    # centroids
+    TrueClusterCentroid[
+        TrueClusterCentroid['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='red',
+        markersize=500   
+    )
+
+
+    # annotating
+    if not TrueClusterCentroid.empty:
+        point = TrueClusterCentroid.geometry.iloc[2] 
+
+        x, y = point.x, point.y
+
+        txt = ax.annotate(
+            text=f"Significant location\n of swapped trajectory",
+            xy=(x+10, y+10),
+            xytext=(x + 25, y + 150), 
+            arrowprops=dict(arrowstyle="-|>", color='black', linewidth=2, mutation_scale=45),
+            fontsize=24
+        )
+
+        txt.set_path_effects([
+            path_effects.Stroke(linewidth=4, foreground='white'),
+            path_effects.Normal()
+        ])
+
+        txt.arrow_patch.set_path_effects([
+            path_effects.Stroke(linewidth=6, foreground='white'),
+            path_effects.Normal()
+        ])
+
+    #ax.set_title(f"rank_uid = {uid}")
+    ax.set_axis_off()
+
+plt.tight_layout()
+plt.show()
+
+# have one plot for all swapping methods! (if there is only 4 within the cloakin ggeom)
