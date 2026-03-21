@@ -240,7 +240,7 @@ axes[0, 0].annotate(
     "shared\nedge",
     xy=(x1, y1),
     xytext=(tx, ty),
-    fontsize=16,
+    fontsize=18, 
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
 )
 
@@ -276,7 +276,7 @@ axes[0, 1].annotate(
     "first new\npoint of t$_B$",
     xy=(x1, y1),
     xytext=(x1 + 60, y1),
-    fontsize=16,
+    fontsize=18,
     color='#383a6b',
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#383a6b')
 )
@@ -285,7 +285,7 @@ axes[0, 1].annotate(
     "first new\npoint of t$_A$",
     xy=(x2, y2),
     xytext=(x2 - 200, y2),
-    fontsize=16,
+    fontsize=18,
     color='#ea6d3d',
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#ea6d3d')
 )
@@ -311,7 +311,7 @@ axes[1, 0].annotate(
     "shared\nintersection",
     xy=(x, y),
     xytext=(x - 80, y + 100),
-    fontsize=16,
+    fontsize=18,
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
 )
 
@@ -340,7 +340,7 @@ axes[1, 1].annotate(
     "first new\npoint of t$_B$",
     xy=(x1, y1),
     xytext=(x1, y1 + 60),
-    fontsize=16,
+    fontsize=18,
     color="#ea6d3d",
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#ea6d3d")
 )
@@ -349,7 +349,7 @@ axes[1, 1].annotate(
     "first new\npoint of t$_C$",
     xy=(x2, y2),
     xytext=(x2, y2 - 80),
-    fontsize=16,
+    fontsize=18,
     color="#cb1f73",
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#cb1f73")
 )
@@ -371,7 +371,7 @@ axes[1, 0].legend(handles=legend_elements_B, loc='upper left',
 
 plt.tight_layout()
 plt.subplots_adjust(hspace=0.1)
-plt.savefig(r"\\tsclient\R\paper3\Figures/DirectSwapping.svg", format="svg", dpi=300, bbox_inches="tight")
+#plt.savefig(r"\\tsclient\R\paper3\Figures/DirectSwapping.svg", format="svg", dpi=300, bbox_inches="tight")
 plt.show()
 
 
@@ -480,13 +480,60 @@ plt.tight_layout()
 plt.show()
 
 #%%
-# drop the midle one
+# drop the middle one
 synP_MainHeadToHelperTail = synP_MainHeadToHelperTail.drop(index=0)
 synP_MainHeadToHelperTail
 #%%
 synP_HelperHeadToMainTail.to_file(r"d:\paper3\Figures\SynP_HelperHeadToMainTail.gpkg")
 synP_MainHeadToHelperTail.to_file(r"d:\paper3\Figures\synP_MainHeadToHelperTail.gpkg")
 
+#%%
+synP_MainHeadToHelperTail = gpd.read_file(r"d:\paper3\Figures\synP_MainHeadToHelperTail.gpkg")
+
+
+#%% more syn points for B
+CEnd_edge = gpd.read_file(r"d:\paper3\Figures\mainC_edge.gpkg")
+
+synP_CEnd_edge = sample_points_weighted(CEnd_edge, n_points=7)
+synP_CEnd_edge_MainHeadToHelperTail = sample_points_weighted(edge_ForSyn_HelperHeadToMainTail, n_points=1)
+
+fig, ax = plt.subplots(figsize=(8, 8))
+
+# base layers
+CloakingArea.plot(ax=ax, color='grey', alpha=0.3, zorder=1)
+edges.plot(ax=ax, linewidth=1, color='grey', zorder=1)
+nodes.plot(ax=ax, color='grey', markersize=65, zorder=1)
+
+# fake points
+CollegeHill_c_p.plot(ax=ax, color='#0072B2', markersize=50, zorder=3, label="St Marys")
+
+# syn points
+synP_CEnd_edge.plot(ax=ax, color='red', markersize=50, zorder=3, label="St Marys")
+synP_CEnd_edge_MainHeadToHelperTail.plot(ax=ax, color='green', markersize=50, zorder=3, label="Selby Square") # want to delete one of these
+
+# add index labels
+for idx, row in synP_CEnd_edge.iterrows():
+    x, y = row.geometry.x, row.geometry.y
+    ax.text(x, y, str(idx), fontsize=18, ha='center', va='center')
+
+
+ax.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+
+#%% drop some points
+synP_CEnd_edge = synP_CEnd_edge.drop(index=3)
+synP_CEnd_edge = synP_CEnd_edge.drop(index=6)
+synP_CEnd_edge = synP_CEnd_edge.drop(index=5)
+synP_CEnd_edge = synP_CEnd_edge.drop(index=4)
+
+synP_CEnd_edge
+
+#%%
+synP_CEnd_edge.to_file(r"d:\paper3\Figures\synP_CEnd_edge.gpkg")
+synP_CEnd_edge_MainHeadToHelperTail.to_file(r"d:\paper3\Figures\synP_CEnd_edge_MainHeadToHelperTail.gpkg")
 
 
 #%% panel figure
@@ -540,12 +587,12 @@ legend_elements_A = [
            markerfacecolor='#ea6d3d', markeredgecolor='white', markersize=12)
 ]
 
-#legend_elements_B = [
-#    Line2D([0], [0], marker='o', color='w', label='Trajectory B',
-#           markerfacecolor='#ea6d3d', markeredgecolor='white', markersize=12),
-#    Line2D([0], [0], marker='o', color='w', label='Trajectory C',
-#           markerfacecolor='#cb1f73', markeredgecolor='white', markersize=12)
-#]
+legend_elements_B = [
+    Line2D([0], [0], marker='o', color='w', label='Helper t$_A$',
+           markerfacecolor='#383a6b', markeredgecolor='white', markersize=12),
+    Line2D([0], [0], marker='o', color='w', label='Main t$_C$',
+           markerfacecolor='#cb1f73', markeredgecolor='white', markersize=12)
+]
 
 # ===================
 # compute GLOBAL extent (AFTER CRS transform)
@@ -608,7 +655,7 @@ pt = boundary.interpolate(-0.0625, normalized=True)
 x, y = pt.x, pt.y
 
 axes[0, 0].annotate(
-    "Sensitive to t$_B$",
+    "sensitive to t$_B$",
     xy=(x, y),
     xytext=(x + 50, y),  
     fontsize=18,
@@ -632,7 +679,7 @@ axes[0, 0].annotate(
     "last point\nbefore cloaking",
     xy=(x1, y1),
     xytext=(x1-50, y1+50),
-    fontsize=16,
+    fontsize=18,
     color='#ea6d3d',
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#ea6d3d')
 )
@@ -643,7 +690,7 @@ axes[0, 0].annotate(
     "last point\nafter cloaking",
     xy=(x2, y2),
     xytext=(x2-150, y2-50),
-    fontsize=16,
+    fontsize=18,
     color='#ea6d3d',
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#ea6d3d')
 )
@@ -657,6 +704,7 @@ style_ax(axes[0, 0])
 # (A.2)
 # =========================
 draw_base(axes[0, 1])
+CloakingArea.plot(ax=axes[0, 1], facecolor='none', edgecolor='#ea6d3d', linewidth=2, zorder=1)
 
 Terrace_c_p_head.plot(ax=axes[0, 1], color='#ea6d3d', **point_style)
 synP_MainHeadToHelperTail.plot(ax=axes[0, 1], color='#ea6d3d', markersize=165, zorder=3, alpha=1, edgecolor='black', linewidth=3, label="synthetic point")
@@ -674,7 +722,7 @@ axes[0, 1].annotate(
     "synthetic points\nconnecting\nhead and tail",
     xy=(x3, y3),
     xytext=(x3-150, y3+50),
-    fontsize=16,
+    fontsize=18,
     color='black',
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
 )
@@ -683,7 +731,7 @@ axes[0, 1].annotate(
     "",
     xy=(x4, y4),
     xytext=(x4-50, y4),
-    fontsize=16,
+    fontsize=18,
     color='black',
     arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
 )
@@ -699,63 +747,83 @@ style_ax(axes[0, 1])
 # =========================
 draw_base(axes[1, 0])
 
-#CollegeHill_p2.plot(ax=axes[1, 0], color='#cb1f73', **point_style)
-#PonsonbyRoad_p2.plot(ax=axes[1, 0], color='#ea6d3d', **point_style)
+CollegeHill_c_p.plot(ax=axes[1, 0], color='#383a6b', **point_style)
+synP_CEnd_edge.plot(ax=axes[1, 0], color='#cb1f73', **point_style)
 
-#x, y = nodes_intersection.geometry.iloc[0].x, nodes_intersection.geometry.iloc[0].y
+# annotate sensitive locations
+CloakingArea.plot(ax=axes[1, 0], facecolor='none', edgecolor='#cb1f73', linewidth=2, zorder=1)
 
-#axes[1, 0].annotate(
-#    "shared\nintersection",
-#    xy=(x, y),
-#    xytext=(x - 80, y + 100),
-#    fontsize=16,
-#    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
-#)
+geom = CloakingArea.geometry.iloc[0]
+if geom.geom_type == "MultiPolygon":
+    geom = max(geom.geoms, key=lambda g: g.area)
+boundary = geom.exterior
+pt = boundary.interpolate(-0.0625, normalized=True)
+x, y = pt.x, pt.y
 
-#for text in axes[1, 0].texts:
-#    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
+axes[1, 0].annotate(
+    "sensitive to t$_C$",
+    xy=(x, y),
+    xytext=(x + 50, y),  
+    fontsize=18,
+    color='#cb1f73',
+    arrowprops=dict(
+        arrowstyle="-|>",
+        linewidth=2.5,
+        color='#cb1f73'
+    )
+)
 
-axes[1, 0].set_title("(B.1) ", loc='left', fontsize=20)
+x, y = synP_CEnd_edge.geometry.iloc[1].x, synP_CEnd_edge.geometry.iloc[1].y
+axes[1, 0].annotate(
+    "last point\nbefore cloaking",
+    xy=(x, y),
+    xytext=(x - 120, y - 80),
+    fontsize=18,
+    color='#cb1f73',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#cb1f73')
+)
+for text in axes[1, 0].texts:
+    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
+
+axes[1, 0].set_title("(B.1) Main Trajectory Ending at Sensitive Location", loc='left', fontsize=20)
 style_ax(axes[1, 0])
 
 # =========================
 # (B.2)
 # =========================
 draw_base(axes[1, 1])
-#nodes_intersection.plot(ax=axes[1, 1], color='grey', edgecolor='white', linewidth=2, markersize=65, zorder=4)
+CloakingArea.plot(ax=axes[1, 1], facecolor='none', edgecolor='#cb1f73', linewidth=2, zorder=1)
 
-#CollegeHill_p2_head.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
-#CollegeHill_p2_tail.plot(ax=axes[1, 1], color='#ea6d3d', **point_style)
+CollegeHill_c_p_head.plot(ax=axes[1, 1], color='#383a6b', **point_style)
 
-#PonsonbyRoad_p2_tail.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
-#PonsonbyRoad_p2_head.plot(ax=axes[1, 1], color='#ea6d3d', **point_style)
+synP_CEnd_edge.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
+synP_CEnd_edge_MainHeadToHelperTail.plot(ax=axes[1, 1], color='#cb1f73',  markersize=165, zorder=4, alpha=1, edgecolor='black', linewidth=3, label="synthetic point")
+CollegeHill_c_p_tail.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
 
-#x1, y1 = CollegeHill_p2_tail.geometry.iloc[1].x, CollegeHill_p2_tail.geometry.iloc[1].y
-#x2, y2 = PonsonbyRoad_p2_tail.geometry.iloc[1].x, PonsonbyRoad_p2_tail.geometry.iloc[1].y
+x5, y5 = synP_CEnd_edge_MainHeadToHelperTail.geometry.iloc[0].x, synP_CEnd_edge_MainHeadToHelperTail.geometry.iloc[0].y
+axes[1, 1].annotate(
+    "synthetic point\nconnecting\nhead and tail",
+    xy=(x5, y5),
+    xytext=(x5-200, y3-80),
+    fontsize=18,
+    color='black',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
+)
+x6, y6 = CollegeHill_c_p_head.geometry.iloc[0].x, CollegeHill_c_p_head.geometry.iloc[0].y
+axes[1, 1].annotate(
+    "helper t$_A$\nends here",
+    xy=(x6, y6),
+    xytext=(x6+80, y6),
+    fontsize=18,
+    color='#383a6b',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#383a6b')
+)
+for text in axes[1, 1].texts:
+    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
 
-#axes[1, 1].annotate(
-#    "first new\npoint of t$_B$",
-#    xy=(x1, y1),
-#    xytext=(x1, y1 + 60),
-#    fontsize=16,
-#    color="#ea6d3d",
-#    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#ea6d3d")
-#)
-
-#axes[1, 1].annotate(
-#    "first new\npoint of t$_C$",
-#    xy=(x2, y2),
-#    xytext=(x2, y2 - 80),
-#    fontsize=16,
-#    color="#cb1f73",
-#    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#cb1f73")
-#)
-
-#for text in axes[1, 1].texts:
-#    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
-
-axes[1, 1].set_title("(B.2) ", loc='left', fontsize=20)
+axes[1, 1].set_title("(B.2) Head and Tail Swapped at Cloaking Area", loc='left', fontsize=20)
 style_ax(axes[1, 1])
+
 
 # =========================
 # legend
@@ -768,6 +836,6 @@ axes[1, 0].legend(handles=legend_elements_B, loc='upper left',
 
 plt.tight_layout()
 plt.subplots_adjust(hspace=0.1)
-#plt.savefig(r"\\tsclient\R\paper3\Figures/CloakingSwapping.svg", format="svg", dpi=300, bbox_inches="tight")
+plt.savefig(r"\\tsclient\R\paper3\Figures/CloakingSwapping.svg", format="svg", dpi=300, bbox_inches="tight")
 plt.show()
 
