@@ -162,11 +162,18 @@ point_style = dict(
 # ===================
 # legend
 # ===================
-legend_elements = [
+legend_elements_A = [
     Line2D([0], [0], marker='o', color='w', label='Trajectory A',
            markerfacecolor='#383a6b', markeredgecolor='white', markersize=12),
     Line2D([0], [0], marker='o', color='w', label='Trajectory B',
            markerfacecolor='#ea6d3d', markeredgecolor='white', markersize=12)
+]
+
+legend_elements_B = [
+    Line2D([0], [0], marker='o', color='w', label='Trajectory B',
+           markerfacecolor='#ea6d3d', markeredgecolor='white', markersize=12),
+    Line2D([0], [0], marker='o', color='w', label='Trajectory C',
+           markerfacecolor='#cb1f73', markeredgecolor='white', markersize=12)
 ]
 
 # ===================
@@ -295,7 +302,7 @@ style_ax(axes[0, 1])
 draw_base(axes[1, 0])
 nodes_intersection.plot(ax=axes[1, 0], color='grey', edgecolor='white', linewidth=2, markersize=65, zorder=4)
 
-CollegeHill_p2.plot(ax=axes[1, 0], color='#383a6b', **point_style)
+CollegeHill_p2.plot(ax=axes[1, 0], color='#cb1f73', **point_style)
 PonsonbyRoad_p2.plot(ax=axes[1, 0], color='#ea6d3d', **point_style)
 
 x, y = nodes_intersection.geometry.iloc[0].x, nodes_intersection.geometry.iloc[0].y
@@ -320,10 +327,10 @@ style_ax(axes[1, 0])
 draw_base(axes[1, 1])
 nodes_intersection.plot(ax=axes[1, 1], color='grey', edgecolor='white', linewidth=2, markersize=65, zorder=4)
 
-CollegeHill_p2_head.plot(ax=axes[1, 1], color='#383a6b', **point_style)
+CollegeHill_p2_head.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
 CollegeHill_p2_tail.plot(ax=axes[1, 1], color='#ea6d3d', **point_style)
 
-PonsonbyRoad_p2_tail.plot(ax=axes[1, 1], color='#383a6b', **point_style)
+PonsonbyRoad_p2_tail.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
 PonsonbyRoad_p2_head.plot(ax=axes[1, 1], color='#ea6d3d', **point_style)
 
 x1, y1 = CollegeHill_p2_tail.geometry.iloc[1].x, CollegeHill_p2_tail.geometry.iloc[1].y
@@ -339,12 +346,12 @@ axes[1, 1].annotate(
 )
 
 axes[1, 1].annotate(
-    "first new\npoint of t$_A$",
+    "first new\npoint of t$_C$",
     xy=(x2, y2),
     xytext=(x2, y2 - 80),
     fontsize=16,
-    color="#383a6b",
-    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#383a6b")
+    color="#cb1f73",
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#cb1f73")
 )
 
 for text in axes[1, 1].texts:
@@ -356,10 +363,10 @@ style_ax(axes[1, 1])
 # =========================
 # legend
 # =========================
-axes[0, 0].legend(handles=legend_elements, loc='upper left',
+axes[0, 0].legend(handles=legend_elements_A, loc='upper left',
                   bbox_to_anchor=(-0.05, 1), frameon=False, fontsize=18)
 
-axes[1, 0].legend(handles=legend_elements, loc='upper left',
+axes[1, 0].legend(handles=legend_elements_B, loc='upper left',
                   bbox_to_anchor=(-0.05, 1), frameon=False, fontsize=18)
 
 plt.tight_layout()
