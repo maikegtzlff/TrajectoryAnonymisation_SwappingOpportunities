@@ -370,5 +370,404 @@ axes[1, 0].legend(handles=legend_elements_B, loc='upper left',
                   bbox_to_anchor=(-0.05, 1), frameon=False, fontsize=18)
 
 plt.tight_layout()
+plt.subplots_adjust(hspace=0.1)
 plt.savefig(r"\\tsclient\R\paper3\Figures/DirectSwapping.svg", format="svg", dpi=300, bbox_inches="tight")
 plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%% CLOAKING SWAPPING FIGURE
+CloakingArea = gpd.read_file(r"d:\paper3\Figures\CloakingArea.gpkg")
+CollegeHill_c = gpd.read_file(r"d:\paper3\Figures\CollegeHillStMarys_CloakingArea.gpkg")
+Terrace_c = gpd.read_file(r"d:\paper3\Figures\DedwiidTerrace_Cloaking.gpkg")
+#%%
+CollegeHill_c = CollegeHill_c.to_crs(2193)
+Terrace_c = Terrace_c.to_crs(2193)
+CloakingArea = CloakingArea.to_crs(2193)
+
+#%%
+# add points to these segments
+#CollegeHill_c_p = sample_points_weighted(CollegeHill_c, n_points=8)
+#Terrace_c_p = sample_points_weighted(Terrace_c, n_points=14)
+
+ 
+#%% export to Q to split into head and tail
+CollegeHill_c_p.to_file(r"d:\paper3\Figures\CollegeHill_c_p.gpkg")
+Terrace_c_p.to_file(r"d:\paper3\Figures\Terrace_c_p.gpkg")
+
+
+#%%
+Terrace_c_p = gpd.read_file(r"d:\paper3\Figures\terrace_c_p_red.gpkg")
+
+CollegeHill_c_p_head = gpd.read_file(r"d:\paper3\Figures\CollegeHill_c_p_head.gpkg")
+CollegeHill_c_p_tail = gpd.read_file(r"d:\paper3\Figures\CollegeHill_c_p_tail.gpkg")
+
+Terrace_c_p_head = gpd.read_file(r"d:\paper3\Figures\terrace_c_p_red_head.gpkg")
+Terrace_c_p_tail = gpd.read_file(r"d:\paper3\Figures\terrace_c_p_red_tail.gpkg")
+
+  
+
+#%% plot fake points
+fig, ax = plt.subplots(figsize=(8, 8))
+
+# base layers
+CloakingArea.plot(ax=ax, color='grey', alpha=0.3, zorder=1)
+edges.plot(ax=ax, linewidth=1, color='grey', zorder=1)
+nodes.plot(ax=ax, color='grey', markersize=65, zorder=1)
+
+# fake points
+CollegeHill_c_p.plot(ax=ax, color='#0072B2', markersize=50, zorder=3, label="St Marys")
+Terrace_c_p.plot(ax=ax, color='#E69F00', markersize=50, zorder=3, label="Selby Square")
+
+ax.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+
+#%% need one point on here for as synthetic point for to connect tA head to tb tail
+#edge_ForSyn_HelperHeadToMainTail = gpd.read_file(r"d:\paper3\Figures\edge_ForSyn_HelperHeadToMainTail.gpkg") # only needs 1 point
+#edge_ForSyn_MainHeadToHelperTail = gpd.read_file(r"d:\paper3\Figures\edge_ForSyn_MainHeadToHelperTail.gpkg")
+
+#synP_HelperHeadToMainTail = sample_points_weighted(edge_ForSyn_HelperHeadToMainTail, n_points=1)
+#synP_MainHeadToHelperTail = sample_points_weighted(edge_ForSyn_MainHeadToHelperTail, n_points=4)
+
+fig, ax = plt.subplots(figsize=(8, 8))
+
+# base layers
+CloakingArea.plot(ax=ax, color='grey', alpha=0.3, zorder=1)
+edges.plot(ax=ax, linewidth=1, color='grey', zorder=1)
+nodes.plot(ax=ax, color='grey', markersize=65, zorder=1)
+
+# fake points
+CollegeHill_c_p.plot(ax=ax, color='#0072B2', markersize=50, zorder=3, label="St Marys")
+Terrace_c_p.plot(ax=ax, color='#E69F00', markersize=50, zorder=3, label="Selby Square")
+
+# syn points
+synP_HelperHeadToMainTail.plot(ax=ax, color='red', markersize=50, zorder=3, label="St Marys")
+synP_MainHeadToHelperTail.plot(ax=ax, color='green', markersize=50, zorder=3, label="Selby Square") # want to delete one of these
+
+# add index labels
+for idx, row in synP_MainHeadToHelperTail.iterrows():
+    x, y = row.geometry.x, row.geometry.y
+    ax.text(x, y, str(idx), fontsize=18, ha='center', va='center')
+
+
+ax.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+#%%
+# drop the midle one
+synP_MainHeadToHelperTail = synP_MainHeadToHelperTail.drop(index=0)
+synP_MainHeadToHelperTail
+#%%
+synP_HelperHeadToMainTail.to_file(r"d:\paper3\Figures\SynP_HelperHeadToMainTail.gpkg")
+synP_MainHeadToHelperTail.to_file(r"d:\paper3\Figures\synP_MainHeadToHelperTail.gpkg")
+
+
+
+#%% panel figure
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import matplotlib.patheffects as pe
+
+# ===================
+# transform all layers to NZTM (EPSG:2193)
+# ===================
+layers = [
+    edges, nodes, CloakingArea,
+    Terrace_c_p, Terrace_c_p_head, Terrace_c_p_tail,
+    CollegeHill_c_p, CollegeHill_c_p_head,CollegeHill_c_p_tail  
+]
+
+layers = [layer.to_crs(2193) for layer in layers]
+
+(
+    edges, nodes, CloakingArea,
+    Terrace_c_p, Terrace_c_p_head, Terrace_c_p_tail,
+    CollegeHill_c_p, CollegeHill_c_p_head,CollegeHill_c_p_tail 
+) = layers
+
+
+
+
+
+
+#%%
+fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+
+# ===================
+# shared trajectory style
+# ===================
+point_style = dict(
+    alpha=1,
+    edgecolor='white',
+    linewidth=1,
+    markersize=165,
+    zorder=3
+)
+
+# ===================
+# legend
+# ===================
+legend_elements_A = [
+    Line2D([0], [0], marker='o', color='w', label='Helper t$_A$',
+           markerfacecolor='#383a6b', markeredgecolor='white', markersize=12),
+    Line2D([0], [0], marker='o', color='w', label='Main t$_B$',
+           markerfacecolor='#ea6d3d', markeredgecolor='white', markersize=12)
+]
+
+#legend_elements_B = [
+#    Line2D([0], [0], marker='o', color='w', label='Trajectory B',
+#           markerfacecolor='#ea6d3d', markeredgecolor='white', markersize=12),
+#    Line2D([0], [0], marker='o', color='w', label='Trajectory C',
+#           markerfacecolor='#cb1f73', markeredgecolor='white', markersize=12)
+#]
+
+# ===================
+# compute GLOBAL extent (AFTER CRS transform)
+# ===================
+all_layers = [
+    edges, nodes, CloakingArea,
+    Terrace_c_p, Terrace_c_p_head, Terrace_c_p_tail,
+    CollegeHill_c_p, CollegeHill_c_p_head,CollegeHill_c_p_tail
+]
+
+minx = min(layer.total_bounds[0] for layer in all_layers)
+miny = min(layer.total_bounds[1] for layer in all_layers)
+maxx = max(layer.total_bounds[2] for layer in all_layers)
+maxy = max(layer.total_bounds[3] for layer in all_layers)
+
+pad_x = (maxx - minx) * 0.05
+pad_y = (maxy - miny) * 0.05
+
+minx -= pad_x
+maxx += pad_x
+miny -= pad_y
+maxy += pad_y
+
+# ===================
+# helpers
+# ===================
+def style_ax(ax):
+    ax.axis('off')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid(False)
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
+    ax.set_aspect('equal') 
+
+
+def draw_base(ax):
+    edges.plot(ax=ax, linewidth=1, color='grey', zorder=1)
+    nodes.plot(ax=ax, color='grey', markersize=65, zorder=1)
+    CloakingArea.plot(ax=ax, color='grey', alpha=0.3, zorder=1)
+
+# =========================
+# (A.1)
+# =========================
+draw_base(axes[0, 0])
+
+CloakingArea.plot(ax=axes[0, 0], facecolor='none', edgecolor='#ea6d3d', linewidth=2, zorder=1)
+
+Terrace_c_p.plot(ax=axes[0, 0], color='#ea6d3d', **point_style)
+CollegeHill_c_p.plot(ax=axes[0, 0], color='#383a6b', **point_style)
+
+axes[0, 0].set_title("(A.1) Helper Trajectory Crossing a Sensitive Location", loc='left', fontsize=20, pad=20)
+
+# annotate sensitive locations
+geom = CloakingArea.geometry.iloc[0]
+if geom.geom_type == "MultiPolygon":
+    geom = max(geom.geoms, key=lambda g: g.area)
+boundary = geom.exterior
+pt = boundary.interpolate(-0.0625, normalized=True)
+x, y = pt.x, pt.y
+
+axes[0, 0].annotate(
+    "Sensitive to t$_B$",
+    xy=(x, y),
+    xytext=(x + 50, y),  
+    fontsize=18,
+    color='#ea6d3d',
+    arrowprops=dict(
+        arrowstyle="-|>",
+        linewidth=2.5,
+        color='#ea6d3d'
+    )
+)
+
+
+for text in ax.texts:
+    text.set_path_effects([
+        pe.withStroke(linewidth=4, foreground="white")
+    ])
+
+# annotate last point of sensitive head - index 0
+x1, y1 = Terrace_c_p_head.geometry.iloc[0].x, Terrace_c_p_head.geometry.iloc[0].y
+axes[0, 0].annotate(
+    "last point\nbefore cloaking",
+    xy=(x1, y1),
+    xytext=(x1-50, y1+50),
+    fontsize=16,
+    color='#ea6d3d',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#ea6d3d')
+)
+
+# annotate first point of tail - index 2
+x2, y2 = Terrace_c_p_tail.geometry.iloc[2].x, Terrace_c_p_tail.geometry.iloc[2].y
+axes[0, 0].annotate(
+    "last point\nafter cloaking",
+    xy=(x2, y2),
+    xytext=(x2-150, y2-50),
+    fontsize=16,
+    color='#ea6d3d',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='#ea6d3d')
+)
+
+for text in axes[0, 0].texts:
+    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
+
+style_ax(axes[0, 0])
+
+# =========================
+# (A.2)
+# =========================
+draw_base(axes[0, 1])
+
+Terrace_c_p_head.plot(ax=axes[0, 1], color='#ea6d3d', **point_style)
+synP_MainHeadToHelperTail.plot(ax=axes[0, 1], color='#ea6d3d', markersize=165, zorder=3, alpha=1, edgecolor='black', linewidth=3, label="synthetic point")
+CollegeHill_c_p_tail.plot(ax=axes[0, 1], color='#ea6d3d', **point_style)
+
+Terrace_c_p_tail.plot(ax=axes[0, 1], color='#383a6b', **point_style)
+synP_HelperHeadToMainTail.plot(ax=axes[0, 1], color='#383a6b',  markersize=165, zorder=4, alpha=1, edgecolor='black', linewidth=3, label="synthetic point")
+CollegeHill_c_p_head.plot(ax=axes[0, 1], color='#383a6b', **point_style)
+
+
+x3, y3 = synP_MainHeadToHelperTail.geometry.iloc[0].x, synP_MainHeadToHelperTail.geometry.iloc[0].y
+x4, y4 = synP_MainHeadToHelperTail.geometry.iloc[2].x, synP_MainHeadToHelperTail.geometry.iloc[2].y
+
+axes[0, 1].annotate(
+    "synthetic points\nconnecting\nhead and tail",
+    xy=(x3, y3),
+    xytext=(x3-150, y3+50),
+    fontsize=16,
+    color='black',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
+)
+
+axes[0, 1].annotate(
+    "",
+    xy=(x4, y4),
+    xytext=(x4-50, y4),
+    fontsize=16,
+    color='black',
+    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
+)
+
+for text in axes[0, 1].texts:
+    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
+
+axes[0, 1].set_title("(A.2) Head and Tail Swapped at Cloaking Area", loc='left', fontsize=20, pad=20)
+style_ax(axes[0, 1])
+
+# =========================
+# (B.1)
+# =========================
+draw_base(axes[1, 0])
+
+#CollegeHill_p2.plot(ax=axes[1, 0], color='#cb1f73', **point_style)
+#PonsonbyRoad_p2.plot(ax=axes[1, 0], color='#ea6d3d', **point_style)
+
+#x, y = nodes_intersection.geometry.iloc[0].x, nodes_intersection.geometry.iloc[0].y
+
+#axes[1, 0].annotate(
+#    "shared\nintersection",
+#    xy=(x, y),
+#    xytext=(x - 80, y + 100),
+#    fontsize=16,
+#    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color='black')
+#)
+
+#for text in axes[1, 0].texts:
+#    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
+
+axes[1, 0].set_title("(B.1) ", loc='left', fontsize=20)
+style_ax(axes[1, 0])
+
+# =========================
+# (B.2)
+# =========================
+draw_base(axes[1, 1])
+#nodes_intersection.plot(ax=axes[1, 1], color='grey', edgecolor='white', linewidth=2, markersize=65, zorder=4)
+
+#CollegeHill_p2_head.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
+#CollegeHill_p2_tail.plot(ax=axes[1, 1], color='#ea6d3d', **point_style)
+
+#PonsonbyRoad_p2_tail.plot(ax=axes[1, 1], color='#cb1f73', **point_style)
+#PonsonbyRoad_p2_head.plot(ax=axes[1, 1], color='#ea6d3d', **point_style)
+
+#x1, y1 = CollegeHill_p2_tail.geometry.iloc[1].x, CollegeHill_p2_tail.geometry.iloc[1].y
+#x2, y2 = PonsonbyRoad_p2_tail.geometry.iloc[1].x, PonsonbyRoad_p2_tail.geometry.iloc[1].y
+
+#axes[1, 1].annotate(
+#    "first new\npoint of t$_B$",
+#    xy=(x1, y1),
+#    xytext=(x1, y1 + 60),
+#    fontsize=16,
+#    color="#ea6d3d",
+#    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#ea6d3d")
+#)
+
+#axes[1, 1].annotate(
+#    "first new\npoint of t$_C$",
+#    xy=(x2, y2),
+#    xytext=(x2, y2 - 80),
+#    fontsize=16,
+#    color="#cb1f73",
+#    arrowprops=dict(arrowstyle="-|>", linewidth=2.5, color="#cb1f73")
+#)
+
+#for text in axes[1, 1].texts:
+#    text.set_path_effects([pe.withStroke(linewidth=4, foreground="white")])
+
+axes[1, 1].set_title("(B.2) ", loc='left', fontsize=20)
+style_ax(axes[1, 1])
+
+# =========================
+# legend
+# =========================
+axes[0, 0].legend(handles=legend_elements_A, loc='upper left',
+                  bbox_to_anchor=(-0.05, 1), frameon=False, fontsize=18)
+
+axes[1, 0].legend(handles=legend_elements_B, loc='upper left',
+                  bbox_to_anchor=(-0.05, 1), frameon=False, fontsize=18)
+
+plt.tight_layout()
+plt.subplots_adjust(hspace=0.1)
+#plt.savefig(r"\\tsclient\R\paper3\Figures/CloakingSwapping.svg", format="svg", dpi=300, bbox_inches="tight")
+plt.show()
+
