@@ -167,9 +167,6 @@ median_e_nContributors_values
 
 #%% need the sig loc after swapping: on VM131
 import pandas as pd
-
-#ranked_clusters_nodes_top2.to_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodesSwappingStopPointsClusters_rankedTop2.parquet")
-
 StpPntsClstered_edges = gpd.read_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/StpPntsClstered_edges_top2.parquet")
 StpPntsClstered_edges.head()
 # uid is container_uid, aka new uid
@@ -276,7 +273,122 @@ e_reidentified_sorted[['contributor_rank_uid', 'container_rank_uid', 'container_
 
 
 
+#%% ##################################################################################
+#%% same for nodes based swapping
+gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\filled_trajectories_list\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet")
+
+#StpPntsClstered_nodes = pd.read_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\StopPoints\clusteringStopPointsPostSwapping/NodesSwappingStopPointsClusters_rankedTop2.parquet")
+#StpPntsClstered_nodes # doesn't have geometry
+
 #%%
+StpPntsClstered_nodes = gpd.read_parquet(r"\\tsclient\R\paper3\Data\swappedtrajs\HomeDetection\stop_points_nodes_clustered_centroids_top2.parquet")
+StpPntsClstered_nodes
+
+
+
+#%% need the contributing orig uid to each new user, i.e. container_uid
+NcontainerUID_to_contributorUID_dict = gdf_nodess_swppd.groupby('container_uid')['orig_uid'].unique().to_dict()
+NcontainerUID_to_contributorUID_dict
+
+#%%
+n_nContributors = {k: len(v) for k, v in NcontainerUID_to_contributorUID_dict.items()}
+n_nContributors_sorted = dict(sorted(n_nContributors.items(), key=lambda x: x[1]))
+n_nContributors_sorted # minimum 67 users contributing to one final container_uid 
+# --> each user thas participated in edge swapping
+
+#%% median number of contributing users to new swapped user
+import numpy as np
+n_nContributors_values = list(n_nContributors.values())
+median_n_nContributors_values = np.median(n_nContributors_values)
+median_n_nContributors_values
+
+
+#%% prep data
+# ensure crs is the same for both
+print(StpPntsClstered_nodes.crs)
+StpPntsClstered_nodes = StpPntsClstered_nodes.set_crs(2193)
+print(StpPntsClstered_nodes.crs)
+
+# rename columns for clarity
+StpPntsClstered_nodes = StpPntsClstered_nodes.rename(columns={'uid': 'container_uid', 'rank_uid': 'container_rank_uid'})
+
+#%% group geometryies by uid (becuase we have 2 sig per user)
+n_container_points = StpPntsClstered_nodes.groupby('container_uid').apply(lambda df: df[['container_rank_uid', 'geometry']].to_dict('records'))
+
+# compute intersections
+rows = []
+
+for container_uid, contributor_list in NcontainerUID_to_contributorUID_dict.items():
+    
+    points = n_container_points.get(container_uid, [])
+    
+    for contributor_uid in contributor_list:
+        polys = contributor_polys.get(contributor_uid, [])
+        
+        for p in points:
+            for poly in polys:
+                
+                rows.append({
+                    'container_uid': container_uid,
+                    'contributor_uid': contributor_uid,
+                    'container_rank_uid': p['container_rank_uid'],
+                    'contributor_rank_uid': poly['contributor_rank_uid'],
+                    'intersects': p['geometry'].intersects(poly['geometry'])
+                })
+
+nSwppd_intersections = pd.DataFrame(rows)
+print(nSwppd_intersections.intersects.value_counts())
+#intersects
+#False    35449
+#True        63 # more than edge swapping (45)
+nSwppd_intersections
+
+
+#%% look at the True intersect one - how many different container_uid are involved?
+print(nSwppd_intersections[nSwppd_intersections['intersects']==True]['container_uid'].nunique()) # 47
+# 47 out of 97 users have at least one significant location intersecting with one of their contributor's significant locations
+# less than half..
+
+nSwppd_reidentified = nSwppd_intersections[nSwppd_intersections['intersects']==True]
+print(len(nSwppd_reidentified)) #63
+
+print(nSwppd_reidentified.contributor_rank_uid.nunique()) # 6 THIS IS THE IMPORTANT ONE: number of significant locations "re-identified"
+print(nSwppd_reidentified.contributor_rank_uid.nunique()) # 6 how many new frequent locations "expose" these signfiicant locations? i.e., how often is a sig loc epxosed?
+
+
+
+
+
+
+#%% how often are specific original significant locations re-identified?
+nSwppd_reidentified.groupby(['contributor_rank_uid']).size().sort_values(ascending=False)
+
+# shows the 6 significant locations
+#contributor_rank_uid
+
+# re-identified by more than one new users "signficant locatoin"
+#1_a0ac0ba30aa04f38f0dfa6bc8f289fa924f6f543    22
+#2_d8e1b548c25df0c24d8d8d493d4e6db0ad25c792    13
+#1_0d5010abd3d6f0bcd8cee8c66cb58784af4357a1    12
+#2_39cefe17d9a11d21fd520cbd981ad1aa6c06073c     9
+#1_0d105d8c884c653542c76c25aee0bcf4dd040e7e     6
+#2_c8389cd193495fafe0d3e2545f280b4bd552d6e4     1   # only one only once
+# sum is 63
+
+#%% look at these manually
+n_freq = nSwppd_reidentified['contributor_rank_uid'].value_counts()
+n_reidentified_sorted = nSwppd_reidentified.set_index('contributor_rank_uid').loc[n_freq.index].reset_index()
+n_reidentified_sorted[['contributor_rank_uid', 'container_rank_uid', 'container_uid']] 
+# same user, both new sig loc reidentiy the SAME ONE ORIG location (not always, but one scenario)
+# --> "significant locations" of "new" user must be close together, if they both "re-identify" the same original signficant location
+
+
+
+######################################################################################
+
+
+
+#%% HISTOGRAM
 e_counts = (
     eSwppd_reidentified.groupby('contributor_rank_uid')
     .size()
@@ -287,29 +399,49 @@ e_counts = (
 )
 e_counts
 
+#%%
+n_counts = (
+    nSwppd_reidentified.groupby('contributor_rank_uid')
+    .size()
+    .value_counts()
+    .reset_index(name='frequency')
+    .rename(columns={'index': 'NrOfReidentifications'})
+    .sort_values('NrOfReidentifications')
+)
+n_counts
+
 #%% a histogram of "re-identification risk of specific significant locations"
 plt.style.use('ggplot')
-fig, ax = plt.subplots(figsize=(4, 3))
+import numpy as np
 
-# remove grey background
+x1 = e_counts['NrOfReidentifications']
+y1 = e_counts['frequency']
+
+x2 = n_counts['NrOfReidentifications']
+y2 = n_counts['frequency']
+
+width = 0.5
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+# background
 fig.patch.set_facecolor('white')
 ax.set_facecolor('white')
 
-# bar plot with label for legend
-ax.bar(
-    e_counts['NrOfReidentifications'],
-    e_counts['frequency'],
-    color='#FDD45F',
-    label='Edge-swapping'
-)
+# shift bars slightly left/right
+ax.bar(x1 - width/2, y1, width=width, color='#FDD45F', edgecolor='white', linewidth=0.5, label='Edge-swapping')
+ax.bar(x2 + width/2, y2, width=width, color='#F3B503', edgecolor='white', linewidth=0.5, label='Intersection-swapping')
 
 # labels
 ax.set_xlabel('Significant location:\nnumber of times "re-identified"', color='#555555')
 ax.set_ylabel('Frequency', color='#555555')
 
-# ticks
-ax.set_xticks(e_counts['NrOfReidentifications'])
+# ticks (combine all x values)
+all_x = sorted(set(x1).union(set(x2)))
+ax.set_xticks(all_x)
+
 ax.tick_params(axis='x', colors='#555555')
+ax.set_xticklabels(ax.get_xticks(), rotation=45, ha='right')
 ax.tick_params(axis='y', colors='#555555')
 
 # spines
@@ -335,17 +467,25 @@ plt.show()
 
 
 
-
 #%% MAPS
 #%% plot them all at once?
 get_E_newsigloc_geom = eSwppd_reidentified['container_rank_uid'].unique()
 get_E_origsigloc_geom = eSwppd_reidentified['contributor_rank_uid'].unique()
+
+
+get_N_newsigloc_geom = nSwppd_reidentified['container_rank_uid'].unique()
+get_N_origsigloc_geom = nSwppd_reidentified['contributor_rank_uid'].unique()
+
 
 #%% plot these significant locations
 print(StpPntsClstered_edges.crs)
 print(cloaking_geom.crs)
 StpPntsClstered_edges = StpPntsClstered_edges.to_crs(cloaking_geom.crs)
 print(StpPntsClstered_edges.crs)
+
+
+#%%
+print(StpPntsClstered_nodes.crs)
 
 #%%
 #StpPntsClstered_edges
@@ -359,34 +499,63 @@ cloaking_geom_riE = cloaking_geom[cloaking_geom['contributor_rank_uid'].isin(get
 print(len(cloaking_geom_riE))
 
 
+# for nodes
+print(len(StpPntsClstered_nodes))
+StpPntsClstered_nodes_ri = StpPntsClstered_nodes[StpPntsClstered_nodes['container_rank_uid'].isin(get_N_newsigloc_geom)]
+print(len(StpPntsClstered_nodes_ri))
+
+#cloaking_geom
+print(len(cloaking_geom))
+cloaking_geom_riN = cloaking_geom[cloaking_geom['contributor_rank_uid'].isin(get_N_origsigloc_geom)]
+print(len(cloaking_geom_riN))
+
+#%% combine the cloaking_geom
+cloaking_geom_ri = pd.concat([cloaking_geom_riE, cloaking_geom_riN])
+print(len(cloaking_geom_ri))
+cloaking_geom_ri = cloaking_geom_ri.drop_duplicates(subset='contributor_rank_uid')
+print(len(cloaking_geom_ri)) # dropped the 2nd occurence of sig locs
+cloaking_geom_ri
 
 #%% interactive map of TRUE intersections
 import folium
 
 StpPntsClstered_edges_ri_4326 = StpPntsClstered_edges_ri.to_crs(epsg=4326)
-cloaking_geom_ri_4326 = cloaking_geom_riE.to_crs(epsg=4326)
+StpPntsClstered_nodes_ri_4326 = StpPntsClstered_nodes_ri.to_crs(epsg=4326)
+
+cloaking_geom_ri_4326 = cloaking_geom_ri.to_crs(epsg=4326)
 
 # get center of your data
 center = [
-    StpPntsClstered_edges_ri_4326.geometry.centroid.y.mean(),
-    StpPntsClstered_edges_ri_4326.geometry.centroid.x.mean()
+    cloaking_geom_ri_4326.geometry.centroid.y.mean(),
+    cloaking_geom_ri_4326.geometry.centroid.x.mean()
 ]
 
 m = folium.Map(location=center, zoom_start=13)
 
-# add first layer
+# add sig loc layer of contributors
 folium.GeoJson(
-    StpPntsClstered_edges_ri_4326,
-    name="after swapping",
-    style_function=lambda x: {"color": "blue", "weight": 3}
+    cloaking_geom_ri_4326,
+    name="sensitive location",
+    style_function=lambda x: {"color": "black", "weight": 3}
 ).add_to(m)
 
-# add second layer
-folium.GeoJson(
-    cloaking_geom_riE,
-    name="sensitive location",
-    style_function=lambda x: {"color": "red", "weight": 3}
-).add_to(m)
+for _, row in StpPntsClstered_edges_ri_4326.iterrows():
+    folium.CircleMarker(
+        location=[row.geometry.y, row.geometry.x],
+        radius=5,
+        color="blue",
+        fill=True,
+        fill_color="blue"
+    ).add_to(m)
+
+for _, row in StpPntsClstered_nodes_ri_4326.iterrows():
+    folium.CircleMarker(
+        location=[row.geometry.y, row.geometry.x],
+        radius=5,
+        color="red",
+        fill=True,
+        fill_color="red"
+    ).add_to(m)
 
 # layer control toggle
 folium.LayerControl().add_to(m)
@@ -407,8 +576,10 @@ import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots()
 
-StpPntsClstered_edges_ri.plot(ax=ax, color='blue', label='after swapping')
-cloaking_geom_riE.plot(ax=ax, color='red', label='sensitive location')
+cloaking_geom_ri.plot(ax=ax, color='black', label='sensitive location')
+
+StpPntsClstered_nodes_ri.plot(ax=ax, color='red', alpha =0.3,  label='after node-swapping')
+StpPntsClstered_edges_ri.plot(ax=ax, color='blue',  alpha =0.3, label='after edge-swapping')
 
 ax.legend()
 plt.show()
