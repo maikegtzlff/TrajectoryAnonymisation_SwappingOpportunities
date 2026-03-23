@@ -20,12 +20,13 @@ gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\filled_trajectories_list\tr
 #gdf_nodess_swppd.rename(columns={'conteiner_uid': 'container_uid'}, inplace=True)
 
 # (3) cloaking geometry swapped
-t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid.parquet")
+#t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid.parquet")
 #t_cswappingl_origsynf_headtailsynf['container_uid'] = t_cswappingl_origsynf_headtailsynf['final_tid_origsynfilled'].str.split('_').str[1]
 #print(t_cswappingl_origsynf_headtailsynf['container_uid'].nunique()) # 97, same as before
 #print(t_cswappingl_origsynf_headtailsynf.final_tid_origsynfilled.nunique()) # same as before swapping, 19,189
 
-
+#final with alll attributes is 
+t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid_length_timestamps_FINAL.parquet")
 
 
 
@@ -113,7 +114,8 @@ if t_cswappingl_origsynf_headtailsynf.crs.to_epsg() != 2193:
     print("ransforming to EPSG:2193")
     t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.to_crs(epsg=2193)
 
-t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.sort_values(['final_tid_origsynfilled', 'point_id_global_synfilled'])
+# t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.sort_values(['final_tid_origsynfilled', 'point_id_global_synfilled'])
+t_cswappingl_origsynf_headtailsynf = t_cswappingl_origsynf_headtailsynf.sort_values(['final_tid_origsynfilled', 'point_id_global'])
 
 t_cswappingl_origsynf_headtailsynf['prev_geom'] = t_cswappingl_origsynf_headtailsynf.groupby('final_tid_origsynfilled')['match_geometry'].shift(1)
 
@@ -199,22 +201,26 @@ melted = combined.melt(var_name="Dataset", value_name="Length_km")
 
 
 
-# %%
+#%% boxplot for traj length of all 6 df
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as path_effects
-
 
 plt.style.use("ggplot")
 
 #prep df
 melted_clean = melted.dropna(subset=['Length_km'])
-datasets = melted_clean['Dataset'].unique()
+#datasets = melted_clean['Dataset'].unique()
+datasets = ['Baseline', 
+            'Edge swapped', 'Split edge swapped', 
+            'Intersection swapped', 'Split intersection swapped',
+            'Cloaking area swapped']
+
 box_data = [melted_clean.loc[melted_clean['Dataset']==ds, 'Length_km'].values for ds in datasets]
 
 positions = np.arange(len(datasets))
 
-colors = ['#383a6b','#FDD45F','#FDD45F','#F3B503', '#F3B503','#C09003']
+colors = ['#383a6b', '#FDD45F','#FDD45F','#F3B503', '#F3B503','#C09003']
 
 # boxplot
 fig, ax = plt.subplots(figsize=(10,6))
@@ -251,7 +257,7 @@ for i, medline in enumerate(boxes['medians']):
     ])
 
 ax.set_xticks(positions)
-ax.set_xticklabels([r"$t_f$", r"$t_{si}$", r"$t_{si}$ split", r"$t_{se}$", r"$t_{se}$ split", r"$t_{sc}$"], fontsize=14)
+ax.set_xticklabels([r"$t_f$", r"$t_{se}$", r"$t_{se}$ split", r"$t_{si}$", r"$t_{si}$ split", r"$t_{sc}$"], fontsize=14)
 ax.set_xlabel("Trajectory swapping approach", fontsize=16, color='#555555')
 ax.set_ylabel("Trajectory length (km)", fontsize=16, color='#555555')
 
@@ -266,25 +272,129 @@ ax.spines['right'].set_visible(False)
 
 labels = [
     r"Baseline ($t_f$)",
-    r"Intersection-swapping ($t_{si}$ and $t_{si} split$)",
     r"Edge-swapping ($t_{se}$ and $t_{se}$ split)",
+    r"Intersection-swapping ($t_{si}$ and $t_{si} split$)",
     r"Cloaking Area-swapping ($t_{sc}$)"
 ]
 patches = [mpatches.Patch(color=colors[i], label=labels[i]) for i in range(len(labels))]
 hatch_patch = mpatches.Patch(facecolor='none', edgecolor='black', hatch='//', label='require splitting')
 patches.append(hatch_patch)
 
-ax.legend(handles=patches, fontsize=14, loc='upper right', frameon=False)
+ax.legend(handles=patches, fontsize=14, loc='upper left', frameon=False)
 
-plt.savefig(r"\\tsclient\R\paper3\Figures/TrajLengthSwapped_split.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/TrajLengthSwapped_all.svg", format="svg", bbox_inches="tight", dpi=300)
 
 plt.tight_layout()
 plt.show()
 
+#%% only show split ones on boxplot 
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.patheffects as path_effects
+import numpy as np
 
 
+#datasets_to_keep = ['Baseline',  'Split edge swapped', 'Split intersection swapped', 'Cloaking area swapped']
+
+#melted_split = melted[melted['Dataset'].isin(datasets_to_keep)].dropna(subset=['Length_km'])
+#datasets = melted_split['Dataset'].unique()
+datasets = ['Baseline',  'Split edge swapped', 'Split intersection swapped', 'Cloaking area swapped']
 
 
+box_data = [
+    melted_split.loc[melted_split['Dataset']==ds, 'Length_km'].values
+    for ds in datasets
+]
+
+positions = np.arange(len(datasets))
+
+# Colors for the boxes
+colors = ['#383a6b','#FDD45F','#F3B503','#C09003']
+
+# -------------------------
+# CREATE BOXPLOT
+# -------------------------
+fig, ax = plt.subplots(figsize=(10,6))
+
+boxes = ax.boxplot(
+    box_data,
+    patch_artist=True,
+    positions=positions,
+    widths=0.6,
+    showfliers=False
+)
+
+# Set box colors
+for i, b in enumerate(boxes['boxes']):
+    b.set_facecolor(colors[i])
+    b.set_edgecolor('black')
+    b.set_linewidth(1.2)
+
+# Median styling
+for median in boxes['medians']:
+    median.set_color('black')
+    median.set_linewidth(1.2)
+
+# Annotate medians
+for i, medline in enumerate(boxes['medians']):
+    median_val = medline.get_ydata()[0]
+    txt = ax.text(
+        x=positions[i],
+        y=median_val,
+        s=f"{median_val:.1f}",
+        ha='center',
+        va='bottom',
+        fontsize=12,
+        color='black',
+        alpha=0.7
+    )
+    txt.set_path_effects([
+        path_effects.Stroke(linewidth=3.5, foreground='white'), 
+        path_effects.Normal() 
+    ])
+
+# X-axis labels
+ax.set_xticks(positions)
+ax.set_xticklabels(
+    [r"$t_f$", r"$t_{se}$ split", r"$t_{si}$ split", r"$t_{sc}$"],
+    fontsize=14
+)
+ax.set_xlabel("Trajectory swapping approach", fontsize=16, color='#555555')
+ax.set_ylabel("Trajectory length (km)", fontsize=16, color='#555555')
+
+# Grid and spines
+ax.set_facecolor('white')
+ax.grid(False)
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Legend
+labels = [
+    r"Baseline ($t_f$)",
+    r"Edge-swapping ($t_{se}$ split)",
+    r"Intersection-swapping ($t_{si} split$)",
+    r"Cloaking Area-swapping ($t_{sc}$)"
+]
+patches = [mpatches.Patch(color=colors[i], label=labels[i]) for i in range(len(labels))]
+#ax.legend(handles=patches, fontsize=14, loc='upper right', frameon=False)
+ax.legend(
+    handles=patches,
+    fontsize=14,
+    loc='upper center',            # center horizontally
+    bbox_to_anchor=(0.5, -0.15),  # position below axes
+    ncol=2,                        # two columns → two rows
+    frameon=False
+)
+
+plt.tight_layout()
+
+plt.savefig(r"\\tsclient\R\paper3\Figures/TrajLengthSwapped_split.svg", format="svg", bbox_inches="tight", dpi=300)
+
+plt.show()
 
 
 ########################################################################
@@ -571,4 +681,4 @@ t_cswappingl_origsynf_headtailsynf_temporal['hour_debug_filled'] = (
 print(t_cswappingl_origsynf_headtailsynf_temporal.hour_debug_filled.isna().any()) #False
 
 #%% export df
-t_cswappingl_origsynf_headtailsynf_temporal.to_parquet(r'D:\paper3\Data\ClkSwpSynFilled_uid_length_timestamps_FINAL.parquet')
+#t_cswappingl_origsynf_headtailsynf_temporal.to_parquet(r'D:\paper3\Data\ClkSwpSynFilled_uid_length_timestamps_FINAL.parquet')

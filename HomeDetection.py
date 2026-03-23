@@ -394,3 +394,557 @@ stop_points_nodes.rename(columns={'container_uid': 'uid'}, inplace=True)
 prbl_u = stop_points_nodes[~stop_points_nodes['uid'].isin(u_clustered)].uid.unique()
 print('problematic user: ', prbl_u)
 # problematic user:  ['0d5010abd3d6f0bcd8cee8c66cb58784af4357a1']
+
+
+
+#%% ####################################################################
+#%% are clustered points of rank 1 and 2 within the cloaking geometries?
+import pandas as pd
+StpPntsClstered_intersection = pd.read_parquet(r"E:\paper3\data\HomeDetection\NodesSwappingStopPointsClusters_rankedTop2.parquet")
+StpPntsClstered_edges = pd.read_parquet(r"E:\paper3\data\HomeDetection\EdgeSwappingStopPointsClusters_rankedTop2.parquet")
+
+StpPntsClstered_edges.head() # rank and uid to match ranked location of each user to before swapping
+#%%
+StpPntsClstered_edges['rank_uid'] = StpPntsClstered_edges['rank'].astype(int).astype(str) + "_" + StpPntsClstered_edges['uid']
+StpPntsClstered_intersection['rank_uid'] = StpPntsClstered_intersection['rank'].astype(int).astype(str) + "_" + StpPntsClstered_intersection['uid']
+StpPntsClstered_intersection.head()
+#%% no geometry yet! tidy up and add geom back
+StpPntsClstered_edges = StpPntsClstered_edges[['rank_uid', 'uid', 'cluster_id', 'rank']].copy()
+StpPntsClstered_intersection = StpPntsClstered_intersection[['rank_uid', 'uid', 'cluster_id', 'rank']].copy()
+
+
+
+
+#%% get cluster geometry
+stop_points_nodes_clustered = pd.read_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters.parquet")
+stop_points_edges_clustered = pd.read_parquet(r"E:\paper3\data\HomeDetection/EdgeSwappingStopPointsClusters.parquet")
+
+#%%
+stop_points_edges_clustered = gpd.GeoDataFrame(
+    stop_points_edges_clustered,
+    geometry=gpd.points_from_xy(
+        stop_points_edges_clustered['lng'],
+        stop_points_edges_clustered['lat']
+    ),
+    crs="EPSG:2193"
+)
+
+# get centroid by cluster_id
+stop_points_edges_clustered_centroids = (
+    stop_points_edges_clustered.groupby('cluster_id')['geometry']
+    .apply(lambda x: x.unary_union.centroid)
+    .reset_index()
+)
+
+stop_points_edges_clustered_centroids = gpd.GeoDataFrame(stop_points_edges_clustered_centroids, geometry='geometry', crs=2193)
+stop_points_edges_clustered_centroids # calculated centroids for all, only needed them for ranks 1 to 2
+
+#%% join centroid to top 2
+StpPntsClstered_edges = StpPntsClstered_edges.merge(stop_points_edges_clustered_centroids, on = "cluster_id", how="left")
+print(type(StpPntsClstered_edges))
+StpPntsClstered_edges.head()
+
+#%%
+StpPntsClstered_edges = gpd.GeoDataFrame(StpPntsClstered_edges, geometry='geometry', crs="EPSG:2193")
+StpPntsClstered_edges.to_parquet(r"E:\paper3\data\HomeDetection/StpPntsClstered_edges_top2.parquet")
+
+#%%
+cloaking_geom = gpd.read_file(r"e:\paper3\data\HomeDetection\polys.gpkg")
+print(cloaking_geom.crs)
+cloaking_geom = cloaking_geom.to_crs(2193)
+print(cloaking_geom.crs)
+cloaking_geom.head() # rank_uid
+
+#%% merge on rank_uid
+print(cloaking_geom.crs)
+print(StpPntsClstered_edges.crs)
+
+if cloaking_geom.crs == StpPntsClstered_edges.crs:
+
+    StpPntsClstered_edges_cloakingGeom = StpPntsClstered_edges.merge(cloaking_geom[['rank_uid', 'geometry']], on='rank_uid', suffixes=('_point', '_polygon'))
+
+    # is "new" significant location inside old significant location?
+    StpPntsClstered_edges_cloakingGeom['intersects_sigLoc'] = StpPntsClstered_edges_cloakingGeom.apply(lambda row: row['geometry_point'].intersects(row['geometry_polygon']), axis=1)
+    print(StpPntsClstered_edges_cloakingGeom['intersects_sigLoc'].value_counts())
+    # 
+    #intersects_sigLoc
+    #False    188
+    #True       4
+
+    # this is a 1-1 approach: does rank 1 intersect with sig loc 1
+
+
+
+#%% but rank 1 should also not sintersect with sig loc 2 of user
+import pandas as pd
+
+results = []
+
+for uid in StpPntsClstered_edges['rank_uid'].unique():
+    pts = StpPntsClstered_edges[StpPntsClstered_edges['rank_uid'] == uid]
+    polys = cloaking_geom[cloaking_geom['rank_uid'] == uid]
+
+    # safety check
+    if pts.empty or polys.empty:
+        results.append((uid, False))
+        continue
+
+    # check all combinations within the uid
+    intersects = False
+
+    for p in pts['geometry']:
+        if polys['geometry'].intersects(p).any():
+            intersects = True
+            break
+
+    results.append((uid, intersects))
+
+result_df = pd.DataFrame(results, columns=['rank_uid', 'intersects'])
+print(result_df['intersects'].value_counts())
+#intersects
+#False    188
+#True       4
+
+#%%
+counts = result_df['intersects'].value_counts()
+percent = result_df['intersects'].value_counts(normalize=True) * 100
+
+summary = pd.DataFrame({
+    'count': counts,
+    'percentage': percent.round(1)
+})
+
+print(summary)
+# same as before, when comparing first rank to first rank
+
+#%% not sure how 4 can be within the cloaking geom...
+
+TrueClusterCentroid = StpPntsClstered_edges[StpPntsClstered_edges['rank_uid'].isin(result_df[result_df['intersects']==True]['rank_uid'].unique())]
+TrueClusterCentroid.to_parquet(r"E:\paper3\data\HomeDetection\testing/StpPntsClstered_edgesCentroidWithinCentroid.parquet")
+# all more towards the outside of the cloalking geometry (could provide figures?)
+# cloaking geometry is calculated with some randomness for each signifcant location (and cloak?) so this could be variable
+# cluster centroid?
+
+#%% look at all clustered stop points/
+stop_points_edges_clustered[stop_points_edges_clustered['cluster_id'].isin(TrueClusterCentroid['cluster_id'].unique())].to_parquet(r"E:\paper3\data\HomeDetection\testing/StpPntsClstered_edgesCentroidWithin.parquet")
+
+#%%
+#TrueClusterCentroid
+cloaking_geom_True = cloaking_geom[cloaking_geom['rank_uid'].isin(TrueClusterCentroid['rank_uid'].unique())]
+
+
+
+
+
+
+
+#%%##### intersections
+# StpPntsClstered_intersection has rank
+# stop_points_nodes_clustered needs to be a gdf, then find centroid
+stop_points_nodes_clustered = pd.read_parquet(r"E:\paper3\data\HomeDetection/NodeSwappingStopPointsClusters.parquet")
+
+stop_points_nodes_clustered = gpd.GeoDataFrame(
+    stop_points_nodes_clustered,
+    geometry=gpd.points_from_xy(
+        stop_points_nodes_clustered['lng'],
+        stop_points_nodes_clustered['lat']
+    ),
+    crs="EPSG:2193"
+)
+
+print(type(stop_points_nodes_clustered))
+print(stop_points_nodes_clustered.crs)
+stop_points_nodes_clustered.head()
+#%%
+# get centroid by cluster_id
+stop_points_nodes_clustered_centroids = (
+    stop_points_nodes_clustered.groupby('cluster_id')['geometry']
+    .apply(lambda x: x.unary_union.centroid)
+    .reset_index()
+)
+print(type(stop_points_nodes_clustered_centroids))
+print(stop_points_nodes_clustered_centroids.crs)
+
+#%%
+print(type(stop_points_nodes_clustered_centroids))
+print(stop_points_nodes_clustered_centroids.crs)
+stop_points_nodes_clustered_centroids.head() 
+
+#%% clusters had not been ranked yet?
+import os
+print(os.getcwd())
+os.chdir(r"E:\paper3")
+
+import s_clustering_final as cstp
+
+ranked_stop_points_nodes_clustered = cstp.rank_clusters(stop_points_nodes_clustered)
+ranked_stop_points_nodes_clustered
+
+#%% only interested in top 2 ranks per uid
+#%% reduce to the top 2 location by user
+ranked_stop_points_nodes_clustered_top2 = ranked_stop_points_nodes_clustered[ranked_stop_points_nodes_clustered['rank'] <= 2]
+ranked_stop_points_nodes_clustered_top2['HomeWork'] = ranked_stop_points_nodes_clustered['rank'].map({1: 'home', 2: 'work'})
+ranked_stop_points_nodes_clustered_top2 
+
+#%% add rank_uid
+ranked_stop_points_nodes_clustered_top2['rank_uid'] = ranked_stop_points_nodes_clustered_top2['rank'].astype(int).astype(str) + "_" + ranked_stop_points_nodes_clustered_top2['uid']
+ranked_stop_points_nodes_clustered_top2[['cluster_id', 'rank_uid']]
+
+#%%
+stop_points_nodes_clustered_centroids = stop_points_nodes_clustered_centroids.merge(ranked_stop_points_nodes_clustered_top2[['cluster_id', 'rank_uid']], on = "cluster_id", how="right")
+print(type(stop_points_nodes_clustered_centroids))
+stop_points_nodes_clustered_centroids
+
+#%%
+print(cloaking_geom.crs)
+print(stop_points_nodes_clustered_centroids.crs)
+
+if cloaking_geom.crs == stop_points_nodes_clustered_centroids.crs:
+
+    #stop_points_nodes_clustered_centroids_cloakingGeom = stop_points_nodes_clustered_centroids.merge(cloaking_geom[['rank_uid', 'geometry']], on='rank_uid', suffixes=('_point', '_polygon'))
+
+    # is "new" significant location inside old significant location?
+    results = []
+
+    for uid in stop_points_nodes_clustered_centroids['rank_uid'].unique():
+        pts = stop_points_nodes_clustered_centroids[stop_points_nodes_clustered_centroids['rank_uid'] == uid]
+        polys = cloaking_geom[cloaking_geom['rank_uid'] == uid]
+
+        # safety check
+        if pts.empty or polys.empty:
+            results.append((uid, False))
+            continue
+
+        # check all combinations within the uid
+        intersects = False
+
+        for p in pts['geometry']:
+            if polys['geometry'].intersects(p).any():
+                intersects = True
+                break
+
+        results.append((uid, intersects))
+
+    stop_points_nodes_clustered_centroids_SigLoc = pd.DataFrame(results, columns=['rank_uid', 'intersects'])
+    
+    counts = stop_points_nodes_clustered_centroids_SigLoc['intersects'].value_counts()
+    percent = stop_points_nodes_clustered_centroids_SigLoc['intersects'].value_counts(normalize=True) * 100
+
+    summary = pd.DataFrame({
+        'count': counts,
+        'percentage': percent.round(1)
+    })
+
+    print(summary)
+
+#            count  percentage
+#intersects                   
+#False         190        99.0
+#True            2         1.0
+
+#%% subset the true ones for plotting
+new_SigLoc_True_nodes = stop_points_nodes_clustered_centroids_SigLoc[stop_points_nodes_clustered_centroids_SigLoc['intersects']==True]
+# add geometry back
+new_SigLoc_True_nodes = stop_points_nodes_clustered_centroids[['rank_uid', 'geometry']].merge(new_SigLoc_True_nodes, on='rank_uid', how='right')
+print(type(new_SigLoc_True_nodes))
+
+new_SigLoc_True_cloakingGeom = stop_points_nodes_clustered_centroids_SigLoc[stop_points_nodes_clustered_centroids_SigLoc['intersects']==True]
+cloaking_geom_True_nodes = cloaking_geom[cloaking_geom['rank_uid'].isin(new_SigLoc_True_cloakingGeom['rank_uid'].unique())]
+
+
+#%% ######################### edges
+# stop_points_edges_clustered needs to be a gdf, then find centroid
+print(stop_points_edges_clustered.crs)
+# get centroid by cluster_id
+stop_points_edges_clustered_centroids = (
+    stop_points_edges_clustered.groupby('cluster_id')['geometry']
+    .apply(lambda x: x.unary_union.centroid)
+    .reset_index()
+)
+print(type(stop_points_edges_clustered_centroids))
+print(stop_points_edges_clustered_centroids.crs)
+stop_points_edges_clustered_centroids.head() 
+
+#%% get ranks
+import os
+print(os.getcwd())
+os.chdir(r"E:\paper3")
+
+import s_clustering_final as cstp
+
+ranked_stop_points_edges_clustered = cstp.rank_clusters(stop_points_edges_clustered)
+ranked_stop_points_edges_clustered
+
+#%% only interested in top 2 ranks per uid
+#%% reduce to the top 2 location by user
+ranked_stop_points_edges_clustered_top2 = ranked_stop_points_edges_clustered[ranked_stop_points_edges_clustered['rank'] <= 2]
+ranked_stop_points_edges_clustered_top2['HomeWork'] = ranked_stop_points_edges_clustered['rank'].map({1: 'home', 2: 'work'})
+# add rank_uid
+ranked_stop_points_edges_clustered_top2['rank_uid'] = ranked_stop_points_edges_clustered_top2['rank'].astype(int).astype(str) + "_" + ranked_stop_points_edges_clustered_top2['uid']
+ranked_stop_points_edges_clustered_top2[['cluster_id', 'rank_uid']]
+
+#%%
+stop_points_edges_clustered_centroids = stop_points_edges_clustered_centroids.merge(ranked_stop_points_edges_clustered_top2[['cluster_id', 'rank_uid']], on = "cluster_id", how="right")
+print(type(stop_points_edges_clustered_centroids))
+print(stop_points_edges_clustered_centroids.crs)
+stop_points_edges_clustered_centroids
+
+#%%
+stop_points_edges_clustered_centroids = stop_points_edges_clustered_centroids.set_crs(2193)
+#%%
+print(cloaking_geom.crs)
+print(stop_points_edges_clustered_centroids.crs)
+
+if cloaking_geom.crs == stop_points_edges_clustered_centroids.crs:
+
+    # is "new" significant location inside old significant location?
+    results = []
+
+    for uid in stop_points_edges_clustered_centroids['rank_uid'].unique():
+        pts = stop_points_edges_clustered_centroids[stop_points_edges_clustered_centroids['rank_uid'] == uid]
+        polys = cloaking_geom[cloaking_geom['rank_uid'] == uid]
+
+        # safety check
+        if pts.empty or polys.empty:
+            results.append((uid, False))
+            continue
+
+        # check all combinations within the uid
+        intersects = False
+
+        for p in pts['geometry']:
+            if polys['geometry'].intersects(p).any():
+                intersects = True
+                break
+
+        results.append((uid, intersects))
+
+    stop_points_edges_clustered_centroids_SigLoc = pd.DataFrame(results, columns=['rank_uid', 'intersects'])
+    
+    counts = stop_points_edges_clustered_centroids_SigLoc['intersects'].value_counts()
+    percent = stop_points_edges_clustered_centroids_SigLoc['intersects'].value_counts(normalize=True) * 100
+
+    summary = pd.DataFrame({
+        'count': counts,
+        'percentage': percent.round(1)
+    })
+
+    print(summary)
+else:
+    print('crs did not match')
+
+#            count  percentage
+#intersects                   
+#False         188        97.9
+#True            4         2.1
+
+#%%
+
+
+
+#%% subset the true ones for plotting
+new_SigLoc_True_edges = stop_points_edges_clustered_centroids_SigLoc[stop_points_edges_clustered_centroids_SigLoc['intersects']==True]
+# add geometry back
+stop_points_edges_clustered_centroids_SigLoc = stop_points_edges_clustered_centroids[['rank_uid', 'geometry']].merge(stop_points_edges_clustered_centroids_SigLoc, on='rank_uid', how='right')
+new_SigLoc_True_edges = stop_points_edges_clustered_centroids_SigLoc[['rank_uid', 'geometry']].merge(new_SigLoc_True_edges, on='rank_uid', how='right')
+print(type(new_SigLoc_True_edges))
+
+new_SigLoc_True_cloakingGeom_edges = stop_points_edges_clustered_centroids_SigLoc[stop_points_edges_clustered_centroids_SigLoc['intersects']==True]
+cloaking_geom_True_edges = cloaking_geom[cloaking_geom['rank_uid'].isin(new_SigLoc_True_cloakingGeom_edges['rank_uid'].unique())]
+
+
+
+
+#%%#####################################################################
+#%% individual plots: cloaking 
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
+
+uids = sorted(TrueClusterCentroid['rank_uid'].unique())
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+axes = axes.flatten()
+
+for i, uid in enumerate(uids):
+    ax = axes[i]
+
+    # cloaking area
+    cloaking_geom_True[
+        cloaking_geom_True['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='black',
+        alpha=0.15,   
+        edgecolor='black'
+    )
+
+    # centroids
+    TrueClusterCentroid[
+        TrueClusterCentroid['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='red',
+        markersize=500   
+    )
+
+
+    # annotating
+    if not TrueClusterCentroid.empty:
+        point = TrueClusterCentroid.geometry.iloc[2] 
+
+        x, y = point.x, point.y
+
+        txt = ax.annotate(
+            text=f"Significant location\n of swapped trajectory",
+            xy=(x+10, y+10),
+            xytext=(x + 25, y + 150), 
+            arrowprops=dict(arrowstyle="-|>", color='black', linewidth=2, mutation_scale=45),
+            fontsize=24
+        )
+
+        txt.set_path_effects([
+            path_effects.Stroke(linewidth=4, foreground='white'),
+            path_effects.Normal()
+        ])
+
+        txt.arrow_patch.set_path_effects([
+            path_effects.Stroke(linewidth=6, foreground='white'),
+            path_effects.Normal()
+        ])
+
+    #ax.set_title(f"rank_uid = {uid}")
+    ax.set_axis_off()
+
+plt.tight_layout()
+plt.show()
+
+
+
+#%% individual plots: intersection
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
+
+uids = sorted(new_SigLoc_True_nodes['rank_uid'].unique())
+
+fig, axes = plt.subplots(2,1, figsize=(6, 6))
+axes = axes.flatten()
+
+for i, uid in enumerate(uids):
+    ax = axes[i]
+
+    # cloaking area
+    cloaking_geom_True_nodes[
+        cloaking_geom_True_nodes['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='black',
+        alpha=0.15,   
+        edgecolor='black'
+    )
+
+    # centroids
+    new_SigLoc_True_nodes[
+        new_SigLoc_True_nodes['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='red',
+        markersize=500   
+    )
+
+
+    # annotating
+    if not new_SigLoc_True_nodes.empty:
+        point = new_SigLoc_True_nodes.geometry.iloc[1] 
+
+        x, y = point.x, point.y
+
+        txt = ax.annotate(
+            text=f"Significant location\n of swapped trajectory",
+            xy=(x+10, y+10),
+            xytext=(x + 25, y + 150), 
+            arrowprops=dict(arrowstyle="-|>", color='black', linewidth=2, mutation_scale=45),
+            fontsize=24
+        )
+
+        txt.set_path_effects([
+            path_effects.Stroke(linewidth=4, foreground='white'),
+            path_effects.Normal()
+        ])
+
+        txt.arrow_patch.set_path_effects([
+            path_effects.Stroke(linewidth=6, foreground='white'),
+            path_effects.Normal()
+        ])
+
+    #ax.set_title(f"rank_uid = {uid}")
+    ax.set_axis_off()
+
+plt.tight_layout()
+plt.show()
+
+
+#%% plot: edge
+# new_SigLoc_True_edges
+# cloaking_geom_True_edges 
+
+uids = sorted(new_SigLoc_True_edges['rank_uid'].unique())
+
+fig, axes = plt.subplots(2,2, figsize=(12, 12))
+axes = axes.flatten()
+
+for i, uid in enumerate(uids):
+    ax = axes[i]
+
+    # cloaking area
+    cloaking_geom_True_edges[
+        cloaking_geom_True_edges['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='black',
+        alpha=0.15,   
+        edgecolor='black'
+    )
+
+    # centroids
+    new_SigLoc_True_edges[
+        new_SigLoc_True_edges['rank_uid'] == uid
+    ].plot(
+        ax=ax,
+        color='red',
+        markersize=500   
+    )
+
+
+    # annotating
+    if not new_SigLoc_True_edges.empty:
+        point = new_SigLoc_True_edges.geometry.iloc[2] 
+
+        x, y = point.x, point.y
+
+        txt = ax.annotate(
+            text=f"Significant location\n of swapped trajectory",
+            xy=(x+10, y+10),
+            xytext=(x + 25, y + 150), 
+            arrowprops=dict(arrowstyle="-|>", color='black', linewidth=2, mutation_scale=45),
+            fontsize=24
+        )
+
+        txt.set_path_effects([
+            path_effects.Stroke(linewidth=4, foreground='white'),
+            path_effects.Normal()
+        ])
+
+        txt.arrow_patch.set_path_effects([
+            path_effects.Stroke(linewidth=6, foreground='white'),
+            path_effects.Normal()
+        ])
+
+    #ax.set_title(f"rank_uid = {uid}")
+    ax.set_axis_off()
+
+plt.tight_layout()
+plt.show()
+
+
+#%% have one plot for all swapping methods! (if there is only 4 within the cloakin ggeom)
+# problematic user:  ['0d5010abd3d6f0bcd8cee8c66cb58784af4357a1']
