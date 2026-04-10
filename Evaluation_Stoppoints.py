@@ -3,21 +3,18 @@ import geopandas as gpd
 import pandas as pd
 
 #%% load stop points
-
-stpts_i = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\nodesSwapped_split_StopPoints.parquet")
-stpts_e = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints.parquet")
-stpts_c = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\cloakedSwapped_StopPoints.parquet") 
-
 # baseline: not swapped, cloaked and filled
 stpts_cf = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/cloakedFilledReleaseP3_final_StopPoints.parquet")
-stpts_cf.head()
+#stpts_cf.head()
 
-#%% explore stop points
-stpts_e.head()
-#%% intersection stops
-stpts_i.head()
+#%% export as geopackage - for Arc
+stpts_cf.to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\cloakedFilledReleaseP3_final_StopPoints.gpkg", layer="cf_stp", driver="GPKG")
+
 #%%
-stpts_c.head()
+#stpts_i = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\nodesSwapped_split_StopPoints.parquet")
+#stpts_e = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints.parquet")
+#stpts_c = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\cloakedSwapped_StopPoints.parquet") 
+
 
 #%% number of stay points - same as table in doc?
 print('stpts_cf')
@@ -53,8 +50,596 @@ stpts_i.to_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\nodesSwapped
 stpts_e.to_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints_nodupl.parquet")
 stpts_c.to_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\cloakedSwapped_StopPoints_nodupl.parquet") 
 
+#%% to geopackage
+stpts_i = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\nodesSwapped_split_StopPoints_nodupl.parquet")
+stpts_i = stpts_i.set_crs(2193)
+stpts_i.to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\stpts_i.gpkg", layer="stpts_i", driver="GPKG")
+
+#%%
+stpts_e = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints_nodupl.parquet")
+stpts_e = stpts_e.set_crs(2193)
+stpts_e.to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\stpts_e.gpkg", layer="stpts_e", driver="GPKG")
 
 
+stpts_c = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\cloakedSwapped_StopPoints_nodupl.parquet") 
+stpts_c = stpts_c.set_crs(2193)
+stpts_c.to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\stpts_c.gpkg", layer="stpts_c", driver="GPKG")
+
+
+#%% road network to look at intersections
+edges = gpd.read_parquet(r"d:\Paper2\data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath\edges.parquet")
+nodes = gpd.read_parquet(r"d:\Paper2\data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath\nodes.parquet")
+
+edges.to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\edges.gpkg", layer="edges", driver="GPKG")
+nodes.to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\nodes.gpkg", layer="nodes", driver="GPKG")
+
+
+#%%get intersections
+from joblib import load
+G = load(r"D:\paper2\Data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath\graph.joblib")
+
+
+import networkx as nx
+import pandas as pd
+
+# Get degree of all nodes
+degrees = dict(G.degree()) # total degree of each node (in and out)
+# directed count
+#in_deg = dict(G.in_degree())
+#out_deg = dict(G.out_degree())
+
+
+# Convert to DataFrame
+df_degree = pd.DataFrame.from_dict(degrees, orient='index', columns=['street_count'])
+df_degree.reset_index(inplace=True)
+df_degree.rename(columns={'index': 'node_id'}, inplace=True)
+df_degree
+
+#%% label intersections
+import numpy as np
+df_degree['intersection'] = np.where(df_degree['street_count'] > 2, True, False)
+df_degree.head()
+
+#%% add this back to nodes
+print(len(nodes))
+nodes_intersection = nodes.merge(df_degree, left_on = 'id', right_on ='node_id', how='right')
+print(len(nodes_intersection))
+nodes_intersection.head()
+
+#%% only keep intersection = True
+len(nodes_intersection[nodes_intersection['intersection']==True])
+#%%
+nodes_intersection[nodes_intersection['intersection']==True].to_file(r"D:\paper3\Data\output\Evaluation_HomeDetection\nodes_intersections.gpkg", layer="nodes_intersections", driver="GPKG")
+
+
+
+##########################################################################################
+#%% differences in stop duration 
+import geopandas as gpd
+
+stpts_cf = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/cloakedFilledReleaseP3_final_StopPoints.parquet")
+stpts_i = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\nodesSwapped_split_StopPoints_nodupl.parquet")
+stpts_e = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints_nodupl.parquet")
+stpts_c = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\cloakedSwapped_StopPoints_nodupl.parquet") 
+
+
+#%%
+for df in [stpts_cf, stpts_i, stpts_e, stpts_c]:
+    df["duration_min"] = df["duration_s"] / 60
+
+baseline = stpts_cf["duration_min"]
+
+dfs = {
+    "baseline": stpts_cf,
+    "stpts_i": stpts_i,
+    "stpts_e": stpts_e,
+    "stpts_c": stpts_c
+}
+
+summary = {}
+
+for name, df in dfs.items():
+    s = df["duration_min"]
+    summary[name] = {
+        "mean": s.mean(),
+        "median": s.median(),
+        "std": s.std(),
+        "min": s.min(),
+        "max": s.max()
+    }
+
+import pandas as pd
+summary_df = pd.DataFrame(summary).T
+print(summary_df)
+
+#               mean     median         std  min          max
+#baseline  49.133042  12.083333  103.679263  3.0  1421.066667
+#stpts_i   33.195946  10.250000   91.465285  3.0  1847.233333
+#stpts_e   76.902802  12.283333  168.071408  3.0  1838.216667
+#stpts_c   70.207244  11.650000  159.248012  3.0  1840.500000
+
+#%% relative change to baseline
+#baseline_mean = stpts_cf["duration_min"].mean()
+baseline_median = stpts_cf["duration_min"].median()
+
+for name, df in dfs.items():
+    if name == "baseline":
+        continue
+    median_val = df["duration_min"].median()
+    change_pct = (median_val - baseline_median) / baseline_median * 100
+    print(f"{name}: {change_pct:.2f}% change vs baseline")
+
+# median
+#stpts_i: -15.17% change vs baseline
+#stpts_e: 1.66% change vs baseline
+#stpts_c: -3.59% change vs baseline
+
+# mean
+#stpts_i: -32.44% change vs baseline
+#stpts_e: 56.52% change vs baseline
+#stpts_c: 42.89% change vs baseline
+
+# increase/drease in mean
+
+#%% look at IQR and 90th percentile
+import pandas as pd
+import numpy as np
+
+dfs = {
+    "baseline": stpts_cf,
+    "stpts_i": stpts_i,
+    "stpts_e": stpts_e,
+    "stpts_c": stpts_c
+}
+
+results = {}
+
+for name, df in dfs.items():
+    data = df["duration_min"]
+
+    q1 = np.percentile(data, 25)
+    q3 = np.percentile(data, 75)
+    iqr = q3 - q1
+    p90 = np.percentile(data, 90)
+
+    results[name] = {
+        "Q1 (25%)": round(q1,2 ),
+        "Median": round(np.median(data), 2),
+        "Q3 (75%)": round(q3, 2),
+        "IQR": round(iqr,2),
+        "P90": round(p90,2)
+    }
+
+results_df = pd.DataFrame(results).T
+print(results_df)
+
+#          Q1 (25%)  Median  Q3 (75%)    IQR     P90
+#baseline      5.58   12.08     38.23  32.65  124.15
+#stpts_i       5.25   10.25     26.62  21.37   67.68
+#stpts_e       5.65   12.28     42.78  37.13  276.69
+#stpts_c       5.47   11.65     39.22  33.75  199.47
+
+
+#%%
+
+import numpy as np
+import pandas as pd
+
+dfs = {
+    "baseline": stpts_cf,
+    "stpts_i": stpts_i,
+    "stpts_e": stpts_e,
+    "stpts_c": stpts_c
+}
+
+results = {}
+
+for name, df in dfs.items():
+    data = df["duration_min"]
+
+    p95 = np.percentile(data, 95)
+    p90 = np.percentile(data, 90)
+    max_val = np.max(data)
+
+    prop_30 = np.mean(data > 30) * 100
+    prop_60 = np.mean(data > 60) * 100
+
+    results[name] = {
+        "P90 (min)": round(p90, 2),
+        "P95 (min)": round(p95, 2),
+        "Max (min)": round(max_val, 2),
+        ">%30 min (%)": round(prop_30, 2),
+        ">%60 min (%)": round(prop_60, 2)
+    }
+
+results_df = pd.DataFrame(results).T
+print(results_df)
+
+#          P90 (min)  P95 (min)  Max (min)  >%30 min (%)  >%60 min (%)
+#baseline     124.15     242.23    1421.07         29.31         18.00
+#stpts_i       67.68     117.23    1847.23         22.79         11.57
+#stpts_e      276.69     464.40    1838.22         30.78         20.78
+#stpts_c      199.47     441.90    1840.50         29.30         19.35
+
+
+#%% tail ration (95th precentile /median)
+import numpy as np
+import pandas as pd
+
+dfs = {
+    "baseline": stpts_cf,
+    "stpts_i": stpts_i,
+    "stpts_e": stpts_e,
+    "stpts_c": stpts_c
+}
+
+results = {}
+
+for name, df in dfs.items():
+    data = df["duration_min"]
+
+    median = np.median(data)
+    p95 = np.percentile(data, 95)
+
+    tail_ratio = p95 / median
+
+    results[name] = {
+        "Median (min)": round(median, 2),
+        "P95 (min)": round(p95, 2),
+        "Tail ratio (P95/median)": round(tail_ratio, 2)
+    }
+
+tail_ratio_df = pd.DataFrame(results).T
+print(tail_ratio_df)
+
+#          Median (min)  P95 (min)  Tail ratio (P95/median)
+#baseline         12.08     242.23                    20.05
+#stpts_i          10.25     117.23                    11.44
+#stpts_e          12.28     464.40                    37.81
+#stpts_c          11.65     441.90                    37.93
+
+#%% outliers
+results = {}
+
+for name, df in dfs.items():
+    data = df["duration_min"]
+
+    p90 = np.percentile(data, 90)
+    max_val = np.max(data)
+
+    inflation = max_val / p90 if p90 != 0 else np.nan
+
+    results[name] = {
+        "P90 (min)": round(p90, 2),
+        "Max (min)": round(max_val, 2),
+        "Max/P90 inflation": round(inflation, 2)
+    }
+
+inflation_df = pd.DataFrame(results).T
+print(inflation_df)
+
+#          P90 (min)  Max (min)  Max/P90 inflation
+#baseline     124.15    1421.07              11.45
+#stpts_i       67.68    1847.23              27.29
+#stpts_e      276.69    1838.22               6.64
+#stpts_c      199.47    1840.50               9.23
+
+#%% tail historgam
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.ticker import MultipleLocator, FuncFormatter
+
+# -------------------------
+# Data
+# -------------------------
+dfs = {
+    "Baseline": stpts_cf,
+    "Edge-swapping": stpts_e,
+    "Intersection-swapping": stpts_i,
+    "Cloaking": stpts_c
+}
+
+names = list(dfs.keys())
+data_list = [df["duration_min"] for df in dfs.values()]
+
+colors = ["#383a6b", "#FDD45F", "#F3B503", "#C09003"]
+
+# -------------------------
+# P90 values
+# -------------------------
+p90_list = [np.percentile(data, 95) for data in data_list]
+baseline_p90 = p90_list[0]
+p90_C = p90_list[2]
+
+# -------------------------
+# TAIL RANGE (minutes)
+# -------------------------
+xmin = 115
+xmax = max([data.max() for data in data_list])
+
+# FIX: upper limit = 24 hours
+xmax_plot = 24 * 60
+
+# -------------------------
+# Figure
+# -------------------------
+fig, axes = plt.subplots(1, 4, figsize=(16, 5), sharey=True)
+
+titles = [
+    "(A) Baseline\nt$_{cf}$",
+    "(B) Edge-swapping\nt$_{se} split$",
+    "(C) Intersection-swapping\nt$_{si} split$",
+    "(D) Cloaking Area-swapping\nt$_{sc}$"
+]
+
+# -------------------------
+# Plot
+# -------------------------
+for i, (ax, data, name, color, p90) in enumerate(
+    zip(axes, data_list, names, colors, p90_list)
+):
+
+    # -------------------------
+    # FILTER TO TAIL ONLY
+    # -------------------------
+    tail_data = data[data >= xmin]
+
+    # -------------------------
+    # bins (clipped to 24h)
+    # -------------------------
+    bins = np.arange(0, xmax_plot + 30, 30)  # 30 minute bins
+
+    ax.hist(
+        tail_data,
+        bins=bins,
+        color=color,
+        edgecolor="white",
+        alpha=0.9,
+        linewidth=0.6
+    )
+
+    # -------------------------
+    # P90 lines
+    # -------------------------
+    ax.axvline(
+        baseline_p90,
+        color="red",
+        linestyle="-",
+        linewidth=2,
+        label="Baseline\n95$^{\\mathrm{th}}$ percentile" if i == 3 else None
+    )
+
+    ax.axvline(
+        p90,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label="95$^{\\mathrm{th}}$ percentile\nafter swapping" if i == 3 else None
+    )
+
+    # label p95
+    # convert to hours + minutes
+    p95_hours = int(p90 // 60)
+    p95_mins = int(p90 % 60)
+
+    label_text = f"{p95_hours}h {p95_mins}m"
+
+    ax.text(
+        p90 + 35,  # small offset to the right of the line
+        ax.get_ylim()[1] * 0.9,  # near top of plot
+        label_text,
+        rotation=90,
+        color="red",
+        fontsize=14,
+        va="top"
+    )
+
+    
+
+    # -------------------------
+    # X LIMITS (FIXED TO 24 HOURS)
+    # -------------------------
+    ax.set_xlim(xmin, xmax_plot)
+
+    # -------------------------
+    # CLEAN HOUR AXIS
+    # -------------------------
+    ax.xaxis.set_major_locator(MultipleLocator(120))  # every 2 hours
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f"{x/60:.0f}"))
+    ax.tick_params(axis='both', labelsize=14, colors="#333333")
+
+
+
+    # -------------------------
+    # Y formatting
+    # -------------------------
+    ax.set_ylim(0, None)
+
+    if i == 0:
+        ax.set_ylabel("Frequency", fontsize=16, color="#555555")
+    else:
+        ax.tick_params(axis="y", left=False, labelleft=False)
+        ax.spines["left"].set_visible(False)
+
+    # -------------------------
+    # GRID
+    # -------------------------
+    ax.set_axisbelow(True)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.5)
+
+    # -------------------------
+    # Titles
+    # -------------------------
+    ax.set_title(titles[i], fontsize=18, color="#333333")
+
+for ax in axes:
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+
+# -------------------------
+# Shared x-label (hours)
+# -------------------------
+fig.supxlabel("Stop duration in hours", fontsize=16, color="#555555")
+
+# -------------------------
+# Legend only in last plot
+# -------------------------
+axes[-1].legend(frameon=False)
+
+plt.savefig(
+    r"\\tsclient\R\paper3\Figures\hist_duration_tails.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+#%% histogram: four separate plots (duration)
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Data
+data_list = [
+    stpts_cf["duration_min"],
+    stpts_e["duration_min"],
+    stpts_i["duration_min"],
+    stpts_c["duration_min"]
+]
+
+colors = ["#383a6b", "#FDD45F", "#F3B503", "#C09003"]
+
+# Create 4 side-by-side plots
+fig, axes = plt.subplots(1, 4, figsize=(16,5), sharey=True)
+
+# Define bins 
+bins = np.arange(0, 121, 5)  # e.g. 0–120 minutes in 5-min bins
+bins = np.arange(0, 31, 1)  # more precise bins
+
+# Precompute counts for consistent y-axis
+counts_list = []
+for data in data_list:
+    counts, _ = np.histogram(data, bins=bins)
+    counts_list.append(counts)
+
+global_max = max([c.max() for c in counts_list])
+
+for i, (ax, data, color, counts) in enumerate(zip(axes, data_list, colors, counts_list)):
+
+    bin_edges = bins
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_width = bin_edges[1] - bin_edges[0]
+
+    ax.bar(
+        bin_centers,
+        counts,
+        width=bin_width * 0.9,
+        color=color,
+        edgecolor="white",
+        alpha=0.9,
+        linewidth=0.6
+    )
+
+    # same y-scale
+    ax.set_ylim(0, global_max * 1.15)
+
+    # Median line
+    median_val = np.median(data)
+
+    # Convert to minutes + seconds
+    minutes = int(median_val)
+    seconds = int((median_val - minutes) * 60)
+
+    label = f"{minutes}m {seconds}s"
+
+    ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5)
+
+    ax.text(
+        #median_val + 6,
+        median_val + 2,
+        global_max * 0.9,
+        label,
+        color=color,
+        fontsize=11,
+        ha='center',
+        rotation=90
+    )
+
+    # Remove y-axis for all but first
+    if i > 0:
+        ax.spines['left'].set_visible(False)
+        ax.tick_params(axis='y', left=False, labelleft=False)
+
+    # Style
+    ax.set_facecolor("white")
+    ax.grid(False)
+    ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
+
+    ax.spines['bottom'].set_visible(True)
+    ax.spines['bottom'].set_color('black')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    #ax.set_xlim(0, 120)
+    ax.set_xlim(2, 30)
+
+
+# Axis labels
+axes[0].set_ylabel("Number of stay points", fontsize=14, color="#555555")
+fig.supxlabel("Stop duration in minutes", fontsize=14, color="#555555")
+
+# Titles
+titles = [
+    "(A) Baseline (t$_{cf}$)",
+    "(B) Edge-swapping (t$_{se} split$)",
+    "(C) Intersection-swapping (t$_{si} split$)",
+    "(D) Cloaking (t$_{sc}$)"
+]
+
+for ax, title in zip(axes, titles):
+    ax.set_title(title, fontsize=16, color="#333333")
+
+#plt.tight_layout(rect=[0,0.08,1,1])
+#plt.tight_layout(rect=[0,0.1,1,1])
+plt.tight_layout(rect=[0,0.005,1,1])
+
+plt.savefig(
+    r"\\tsclient\R\paper3\Figures\hist_duration_fourPanels.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+
+plt.show()
+
+#%% Kolmogorov-Smirnov test
+from scipy.stats import ks_2samp
+
+for name, df in dfs.items():
+    if name == "baseline":
+        continue
+    stat, p = ks_2samp(stpts_cf["duration_s"], df["duration_s"])
+    print(f"{name}: KS p-value = {p}")
+
+#stpts_i: KS p-value = 4.37905737183253e-214
+#stpts_e: KS p-value = 8.397494470389594e-179
+#stpts_c: KS p-value = 8.98417630204851e-112
+# all extremely small --> distributions are significanlty differnetly from the baseline
+
+
+###########################################################################################
+#%% CLIP DATA TO CENTRAL AUCKLAND FOR VIS
 
 
 #%% 
@@ -581,3 +1166,279 @@ print(results_df)
 #9   7.553428e-84   ***  
 #10  9.425320e-29   ***  
 #11  1.199081e-89   ***  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%% spatially exploring stop points
+print(len(stpts_cf))
+print(len(stpts_e))
+print(len(stpts_i))
+print(len(stpts_c))
+
+#117124
+#114895
+#104173
+#115002
+
+#%%
+stpts_c = stpts_c.set_crs(2193)
+stpts_e = stpts_e.set_crs(2193)
+stpts_i = stpts_i.set_crs(2193)
+
+#%%
+print(stpts_cf.crs)
+print(stpts_e.crs)
+print(stpts_i.crs)
+print(stpts_c.crs)
+
+
+#%%
+import numpy as np
+import geopandas as gpd
+import matplotlib.pyplot as plt
+from shapely.geometry import box
+from matplotlib.colors import BoundaryNorm
+import contextily as ctx  # optional, only if you want a basemap
+
+# --- Load your dataset ---
+gdf = stpts_cf.copy()  # replace with your GeoDataFrame
+if gdf.crs is None:
+    gdf = gdf.set_crs(epsg=4326)  # assume WGS84 if CRS unknown
+gdf = gdf.to_crs(epsg=3857)  # projected CRS in meters
+
+# --- Create 500 m grid ---
+cell_size = 500
+xmin, ymin, xmax, ymax = gdf.total_bounds
+
+# Snap bounds to grid
+xmin = np.floor(xmin / cell_size) * cell_size
+ymin = np.floor(ymin / cell_size) * cell_size
+xmax = np.ceil(xmax / cell_size) * cell_size
+ymax = np.ceil(ymax / cell_size) * cell_size
+
+grid_cells = [
+    box(x, y, x + cell_size, y + cell_size)
+    for x in np.arange(xmin, xmax, cell_size)
+    for y in np.arange(ymin, ymax, cell_size)
+]
+
+grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
+
+# --- Count points per cell ---
+joined = gpd.sjoin(grid, gdf, how='left', predicate='contains')
+counts = joined.groupby(joined.index).size()
+grid["count"] = counts
+grid["count"] = grid["count"].fillna(0)
+
+# --- Mask cells below threshold (e.g., counts < 3) ---
+threshold = 3
+grid["count_masked"] = grid["count"].where(grid["count"] >= threshold)
+
+# --- Define bins starting at threshold ---
+max_val = grid["count_masked"].max()
+bins = [threshold, 5, 10, 20, 50, 100, max_val]
+norm = BoundaryNorm(bins, ncolors=256, clip=False)
+
+# --- Colormap: NaNs are transparent ---
+cmap = plt.cm.Reds.copy()
+cmap.set_bad(color='none')  # cells below threshold invisible
+
+# --- Plot ---
+fig, ax = plt.subplots(figsize=(10, 10))
+
+grid.plot(
+    column="count_masked",
+    cmap=cmap,
+    norm=norm,
+    linewidth=0,
+    legend=True,
+    ax=ax
+)
+
+# --- Optional basemap ---
+# ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
+
+ax.set_title(f"Point Density (500 m grid, counts ≥ {threshold})")
+ax.axis('off')
+plt.tight_layout()
+plt.show()
+
+#%% jenks
+import numpy as np
+import geopandas as gpd
+import matplotlib.pyplot as plt
+from shapely.geometry import box
+from matplotlib.colors import BoundaryNorm
+import mapclassify as mc
+import contextily as ctx
+
+# --- Load dataset ---
+gdf = stpts_cf.copy()  # replace with your GeoDataFrame
+if gdf.crs is None:
+    gdf = gdf.set_crs(epsg=4326)
+gdf = gdf.to_crs(epsg=3857)  # projected CRS in meters
+
+# --- Create 500 m grid ---
+cell_size = 500
+xmin, ymin, xmax, ymax = gdf.total_bounds
+xmin = np.floor(xmin / cell_size) * cell_size
+ymin = np.floor(ymin / cell_size) * cell_size
+xmax = np.ceil(xmax / cell_size) * cell_size
+ymax = np.ceil(ymax / cell_size) * cell_size
+
+grid_cells = [
+    box(x, y, x + cell_size, y + cell_size)
+    for x in np.arange(xmin, xmax, cell_size)
+    for y in np.arange(ymin, ymax, cell_size)
+]
+grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
+
+# --- Count points per cell ---
+joined = gpd.sjoin(grid, gdf, how='left', predicate='contains')
+counts = joined.groupby(joined.index).size()
+grid["count"] = counts.fillna(0)
+
+# --- Mask counts below threshold ---
+threshold = 3
+grid["count_masked"] = grid["count"].where(grid["count"] >= threshold)
+
+# --- Prepare data for classification ---
+data = grid["count_masked"].dropna().values  # all counts ≥ threshold
+
+# --- 1️⃣ Jenks Natural Breaks ---
+jenks = mc.NaturalBreaks(y=data, k=6)
+grid["jenks_class"] = np.nan
+grid.loc[~grid["count_masked"].isna(), "jenks_class"] = jenks.yb
+
+# --- 2️⃣ Quantiles ---
+quantiles = mc.Quantiles(y=data, k=6)
+grid["quantile_class"] = np.nan
+grid.loc[~grid["count_masked"].isna(), "quantile_class"] = quantiles.yb
+
+# --- Plotting function with real count bins ---
+def plot_grid(grid, column, classifier, title):
+    # Use classifier bins for legend
+    bins = classifier.bins
+    boundaries = np.insert(bins, 0, threshold)  # add threshold as lower bound
+
+    cmap = plt.cm.Reds.copy()
+    cmap.set_bad(color='none')  # masked cells invisible
+    norm = BoundaryNorm(boundaries=boundaries, ncolors=cmap.N)
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+    grid.plot(
+        column="count_masked",
+        cmap=cmap,
+        norm=norm,
+        linewidth=0,
+        legend=True,
+        ax=ax
+    )
+
+    # Add basemap
+    ctx.add_basemap(
+        ax,
+        source=ctx.providers.CartoDB.Positron,
+        crs=grid.crs.to_string()
+    )
+
+    ax.set_title(title, fontsize=14)
+    ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+# --- Plot Jenks ---
+plot_grid(grid, "count_masked", jenks, f"Point Density (Jenks, counts ≥ {threshold})")
+
+# --- Plot Quantiles ---
+plot_grid(grid, "count_masked", quantiles, f"Point Density (Quantiles, counts ≥ {threshold})")
+
+
+
+#%% panel figure
+
+
+
+
+
+
+# %%
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+import contextily as ctx
+import matplotlib as mpl
+import numpy as np
+
+# --- Assuming your grid and gdfs are already defined ---
+
+# Baseline and other columns
+baseline_col = 'Baseline_count_masked'
+other_cols = ['Edge-swapping_count_masked', 'Intersection-swapping_count_masked', 'Cloaking area_count_masked']
+
+# --- Compute percentage change relative to baseline ---
+for col in other_cols:
+    pct_col = col.replace('_count_masked', '_pct_change')
+    grid[pct_col] = ((grid[col] - grid[baseline_col]) / grid[baseline_col]) * 100
+    grid[pct_col] = grid[pct_col].clip(-100, 100)  # cap at ±100%
+
+pct_cols = [c.replace('_count_masked', '_pct_change') for c in other_cols]
+
+# --- Color maps ---
+baseline_cmap = plt.cm.Reds
+div_cmap = plt.cm.RdBu_r  # diverging for percent change
+
+# --- Plot setup ---
+fig, axes = plt.subplots(1, 4, figsize=(18, 6))
+titles = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n% change',
+    '(C) Intersection-swapping\n% change',
+    '(D) Cloaking area-swapping\n% change'
+]
+
+# --- Plot Baseline on first axis ---
+grid.plot(column=baseline_col, cmap=baseline_cmap, linewidth=0, ax=axes[0])
+ctx.add_basemap(axes[0], source=ctx.providers.CartoDB.Positron, crs=grid.crs.to_string(), attribution=False)
+axes[0].set_title(titles[0], fontsize=12, fontweight='bold')
+axes[0].axis('off')
+
+# --- Colorbar for baseline on the left of A ---
+sm_base = mpl.cm.ScalarMappable(cmap=baseline_cmap,
+                                norm=Normalize(vmin=grid[baseline_col].min(),
+                                               vmax=grid[baseline_col].max()))
+sm_base.set_array([])
+
+# attach colorbar to axes[0] and place it on the left
+cbar_left = fig.colorbar(sm_base, ax=axes[0], fraction=0.046, pad=0.02, location='left')
+cbar_left.set_label("Stay Point Count", fontsize=12)
+
+# --- Plot percentage change maps (B–D) ---
+for ax, col, title in zip(axes[1:], pct_cols, titles[1:]):
+    plot_data = grid[col].fillna(0)
+    
+    grid.plot(column=col, cmap=div_cmap, linewidth=0, ax=ax, vmin=-100, vmax=100)
+    ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, crs=grid.crs.to_string(), attribution=False)
+    ax.set_title(title, fontsize=12, fontweight='bold')
+    ax.axis('off')
+
+# --- Diverging colorbar on the right of the last map (D) ---
+sm_div = mpl.cm.ScalarMappable(cmap=div_cmap, norm=Normalize(vmin=-100, vmax=100))
+sm_div.set_array([])
+cbar_right = fig.colorbar(sm_div, ax=axes[-1], fraction=0.046, pad=0.02)
+cbar_right.set_label("% Change vs Baseline", fontsize=12)
+
+plt.tight_layout()
+plt.show()
