@@ -1173,12 +1173,74 @@ print(results_df)
 
 
 
+#%% export by time bin
+import geopandas as gpd
+
+stpts_cf = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/cloakedFilledReleaseP3_final_StopPoints.parquet")
+stpts_i = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\nodesSwapped_split_StopPoints_nodupl.parquet")
+stpts_e = gpd.read_parquet(r"D:\paper3\Data\output\Evaluation_HomeDetection/edgeSwapped_split_StopPoints_nodupl.parquet")
+stpts_c = gpd.read_parquet(r"d:\paper3\Data\output\Evaluation_HomeDetection\cloakedSwapped_StopPoints_nodupl.parquet") 
+
+#%% must add time bins to all
+import pandas as pd
+
+for df in [stpts_cf, stpts_i, stpts_e, stpts_c]:
+    df['start_time'] = pd.to_datetime(df['start_time'])
+
+def time_bin(hour):
+    if 7 <= hour < 9:
+        return 'Morning (7–9)'
+    elif 9 <= hour < 16:
+        return 'Flat Peak (9–16)'
+    elif 16 <= hour < 20:
+        return 'Evening (16–20)'
+    else:
+        return 'Night (20–7)'
+
+for df in [stpts_cf, stpts_i, stpts_e, stpts_c]:
+    df['time_bin'] = df['start_time'].dt.hour.apply(time_bin)
+
+stpts_cf.head()
 
 
+#%% check crs
+for i in [stpts_cf, stpts_i, stpts_e, stpts_c]:
+    print(i.crs)
 
+stpts_i = stpts_i.set_crs(2193)
+stpts_e = stpts_e.set_crs(2193)
+stpts_c = stpts_c.set_crs(2193)
 
+for i in [stpts_cf, stpts_i, stpts_e, stpts_c]:
+    print(i.crs)
 
+#%% export to geopackage
+import os
+out_dir = r"D:\paper3\StopsKDE_Arc\stops_byTimeBin"
 
+gdfs = {
+    "stpts_cf": stpts_cf,
+    "stpts_i": stpts_i,
+    "stpts_e": stpts_e,
+    "stpts_c": stpts_c
+}
+
+for name, gdf in gdfs.items():
+    
+    # make sure time_bin exists
+    if "time_bin" not in gdf.columns:
+        print(f"{name} has no time_bin column")
+        continue
+    
+    # loop through each unique time_bin
+    for tbin, subset in gdf.groupby("time_bin"):
+        
+        # clean filename (important if time_bin is datetime)
+        tbin_str = str(tbin).replace(":", "-").replace(" ", "_")
+        
+        out_path = os.path.join(out_dir, f"{name}_timebin_{tbin_str}.gpkg")
+        
+        subset.to_file(out_path, driver="GPKG")
 
 
 ##############################################################################
@@ -1254,8 +1316,22 @@ print(wKDE_c.rio.crs)
 
 
 
+#%% load data for second row
+m_wKDE_baseline = rxr.open_rasterio(r"", masked=True)
+m_wKDE_baseline = m_wKDE_baseline.rio.reproject(3857)
+print(m_wKDE_baseline.rio.crs)
 
+m_wKDE_e = rxr.open_rasterio(r"", masked=True)
+m_wKDE_e = m_wKDE_e.rio.reproject(3857)
+print(m_wKDE_e.rio.crs)
 
+m_wKDE_i = rxr.open_rasterio(r"", masked=True)
+m_wKDE_i = m_wKDE_i.rio.reproject(3857)
+print(m_wKDE_i.rio.crs)
+
+m_wKDE_c = rxr.open_rasterio(r"", masked=True)
+m_wKDE_c = m_wKDE_c.rio.reproject(3857)
+print(m_wKDE_c.rio.crs)
 
 
 #%% panel figure
@@ -1267,8 +1343,14 @@ import matplotlib.ticker as ticker
 import contextily as ctx
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-rasters = [wKDE_baseline, wKDE_e, wKDE_i, wKDE_c]
+wKDE_baseline_hours = wKDE_baseline / 3600
+wKDE_e_hours = wKDE_e / 3600
+wKDE_i_hours = wKDE_i / 3600
+wKDE_c_hours = wKDE_c / 3600
 
+rasters = [wKDE_baseline_hours, wKDE_e_hours, wKDE_i_hours, wKDE_c_hours, # row 1
+           #m_wKDE_baseline, m_wKDE_e, m_wKDE_i, m_wKDE_c] # 2nd row
+]
 # -----------------------
 # shared scaling
 # -----------------------
@@ -1287,7 +1369,8 @@ labels = [
 # figure (NO GridSpec)
 # -----------------------
 fig, axes = plt.subplots(1, 4, figsize=(20, 5), constrained_layout=True)
-
+#fig, axes = plt.subplots(2, 4, figsize=(20, 10), constrained_layout=True) # adding second row
+axes = axes.flatten()
 # -----------------------
 # plotting
 # -----------------------
@@ -1330,7 +1413,7 @@ axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color 
 # COLORBAR (correct height binding)
 # -----------------------
 cax = inset_axes(
-    axes[-1],
+    axes[3],
     width="5%",
     height="100%",
     loc="lower left",
@@ -1350,7 +1433,8 @@ cbar.ax.yaxis.set_major_formatter(
 )
 cbar.ax.tick_params(labelsize=14, color="#333333")
 
-cbar.set_label("Density of stay points per km²", fontsize=16, color="#333333")
+#cbar.set_label("Density of stay points per km$^2$", fontsize=16, color="#333333")
+cbar.set_label("Stay duration density\n(hours/km$^2$)", fontsize=16, color="#333333")
 
 plt.show()
 
