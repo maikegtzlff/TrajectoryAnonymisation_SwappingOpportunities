@@ -366,7 +366,7 @@ xmax_plot = 24 * 60
 fig, axes = plt.subplots(1, 4, figsize=(16, 5), sharey=True)
 
 titles = [
-    "(A) Baseline\nt$_{cf}$",
+    "(A) Baseline\nt$_{f}$",
     "(B) Edge-swapping\nt$_{se} split$",
     "(C) Intersection-swapping\nt$_{si} split$",
     "(D) Cloaking Area-swapping\nt$_{sc}$"
@@ -1181,8 +1181,190 @@ print(results_df)
 
 
 
-
+##############################################################################
+##############################################################################
 #%% spatially exploring stop points
+##############################################################################
+##############################################################################
+import geopandas as gpd
+
+import rioxarray as rxr
+
+raster = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_cf_central_weighted.tif", masked=True)
+
+print(raster)
+
+
+#%%
+print(raster.rio.crs)
+raster_3857 = raster.rio.reproject("EPSG:3857")
+print(raster_3857.rio.crs)
+
+#%%
+#import contextily as ctx
+
+fig, ax = plt.subplots(figsize=(10, 10))
+
+raster_3857.plot(ax=ax, 
+    cmap="inferno",
+    alpha=0.8,
+    robust=True) # to exlcude outliers from the colour ramp - 98th percentile only
+
+ctx.add_basemap(
+    ax, 
+    crs="EPSG:3857",
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False  
+)
+ax.set_aspect("equal")  
+
+ax.set_xticks([])
+ax.set_yticks([])
+ax.set_xlabel("")
+ax.set_ylabel("")
+for spine in ax.spines.values():
+    spine.set_visible(True)
+    spine.set_linewidth(1.2)
+    spine.set_color("black")
+ax.set_title("")
+
+plt.show()
+
+
+
+
+
+
+#%% data for panel figure
+wKDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_cf_central_weighted.tif", masked=True)
+wKDE_baseline = wKDE_baseline.rio.reproject(3857)
+print(wKDE_baseline.rio.crs)
+
+wKDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_e_central_weighted.tif", masked=True)
+wKDE_e = wKDE_e.rio.reproject(3857)
+print(wKDE_e.rio.crs)
+
+wKDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_i_central_weighted.tif", masked=True)
+wKDE_i = wKDE_i.rio.reproject(3857)
+print(wKDE_i.rio.crs)
+
+wKDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_cloaked_central_weighted.tif", masked=True)
+wKDE_c = wKDE_c.rio.reproject(3857)
+print(wKDE_c.rio.crs)
+
+
+
+
+
+
+
+#%% panel figure
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+rasters = [wKDE_baseline, wKDE_e, wKDE_i, wKDE_c]
+
+# -----------------------
+# shared scaling
+# -----------------------
+all_values = np.concatenate([r.values.flatten() for r in rasters])
+vmin = np.nanpercentile(all_values, 2)
+vmax = np.nanpercentile(all_values, 98)
+
+labels = [
+    '(A) Baseline\n(t$_{f}$)', 
+    '(B) Edge-swapping\n(t$_{se}$ split)', 
+    '(C) Intersection-swapping\n(t$_{si}$ split)', 
+    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# figure (NO GridSpec)
+# -----------------------
+fig, axes = plt.subplots(1, 4, figsize=(20, 5), constrained_layout=True)
+
+# -----------------------
+# plotting
+# -----------------------
+for ax, r, lab in zip(axes, rasters, labels):
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.8,
+        add_colorbar=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    # FIXED aspect (prevents D shrinking differently)
+    ax.set_aspect("equal", adjustable="box")
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_title(lab, fontsize=22, color="#333333")
+
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(1.2)
+        spine.set_color("black")
+
+axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
+
+# -----------------------
+# COLORBAR (correct height binding)
+# -----------------------
+cax = inset_axes(
+    axes[-1],
+    width="5%",
+    height="100%",
+    loc="lower left",
+    bbox_to_anchor=(1.05, 0., 1, 1),
+    bbox_transform=axes[-1].transAxes,
+    borderpad=0
+)
+
+norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+sm = mpl.cm.ScalarMappable(cmap="inferno", norm=norm)
+sm.set_array([])
+
+cbar = fig.colorbar(sm, cax=cax)
+
+cbar.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+cbar.ax.tick_params(labelsize=14, color="#333333")
+
+cbar.set_label("Density of stay points per km²", fontsize=16, color="#333333")
+
+plt.show()
+
+
+
+
+
+
+
+
+
+
+##############################################################################
+#%% counts by rgid
 print(len(stpts_cf))
 print(len(stpts_e))
 print(len(stpts_i))
@@ -1402,6 +1584,8 @@ div_cmap = plt.cm.RdBu_r  # diverging for percent change
 
 # --- Plot setup ---
 fig, axes = plt.subplots(1, 4, figsize=(18, 6))
+
+
 titles = [
     '(A) Baseline\n(t$_{f}$)',
     '(B) Edge-swapping\n% change',
@@ -1439,6 +1623,8 @@ sm_div = mpl.cm.ScalarMappable(cmap=div_cmap, norm=Normalize(vmin=-100, vmax=100
 sm_div.set_array([])
 cbar_right = fig.colorbar(sm_div, ax=axes[-1], fraction=0.046, pad=0.02)
 cbar_right.set_label("% Change vs Baseline", fontsize=12)
+
+
 
 plt.tight_layout()
 plt.show()
