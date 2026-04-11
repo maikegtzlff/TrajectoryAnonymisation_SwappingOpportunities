@@ -1317,25 +1317,46 @@ print(wKDE_c.rio.crs)
 
 
 #%% load data for second row
-m_wKDE_baseline = rxr.open_rasterio(r"", masked=True)
+m_wKDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\morning\wKernel_morning_cf.tif", masked=True)
 m_wKDE_baseline = m_wKDE_baseline.rio.reproject(3857)
 print(m_wKDE_baseline.rio.crs)
 
-m_wKDE_e = rxr.open_rasterio(r"", masked=True)
+m_wKDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\morning\wKernel_morning_e.tif", masked=True)
 m_wKDE_e = m_wKDE_e.rio.reproject(3857)
 print(m_wKDE_e.rio.crs)
 
-m_wKDE_i = rxr.open_rasterio(r"", masked=True)
+m_wKDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\morning\wKernel_morning_i.tif", masked=True)
 m_wKDE_i = m_wKDE_i.rio.reproject(3857)
 print(m_wKDE_i.rio.crs)
 
-m_wKDE_c = rxr.open_rasterio(r"", masked=True)
+m_wKDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\morning\wKernel_morning_c.tif", masked=True)
 m_wKDE_c = m_wKDE_c.rio.reproject(3857)
 print(m_wKDE_c.rio.crs)
 
 
 #%% panel figure
 # %%
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+wKDE_baseline_hours = wKDE_baseline / 3600
+wKDE_e_hours = wKDE_e / 3600
+wKDE_i_hours = wKDE_i / 3600
+wKDE_c_hours = wKDE_c / 3600
+
+m_wKDE_baseline_hours = m_wKDE_baseline / 3600
+m_wKDE_e_hours = m_wKDE_e / 3600
+m_wKDE_i_hours = m_wKDE_i / 3600
+m_wKDE_c_hours = m_wKDE_c / 3600
+
+#rasters = [wKDE_baseline_hours, wKDE_e_hours, wKDE_i_hours, wKDE_c_hours, # ] row 1
+#           m_wKDE_baseline_hours, m_wKDE_e_hours, m_wKDE_i_hours, m_wKDE_c_hours] # 2nd row
+
+#%% add code from one row panel
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -1436,6 +1457,180 @@ cbar.ax.tick_params(labelsize=14, color="#333333")
 #cbar.set_label("Density of stay points per km$^2$", fontsize=16, color="#333333")
 cbar.set_label("Stay duration density\n(hours/km$^2$)", fontsize=16, color="#333333")
 
+plt.show()
+
+
+
+
+
+#%% add second row t o panel
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+# -----------------------
+# DATA
+# -----------------------
+row1 = [
+    wKDE_baseline_hours,
+    wKDE_e_hours,
+    wKDE_i_hours,
+    wKDE_c_hours
+]
+
+row2 = [
+    m_wKDE_baseline_hours,
+    m_wKDE_e_hours,
+    m_wKDE_i_hours,
+    m_wKDE_c_hours
+]
+
+rasters = row1 + row2
+
+labels_row1 = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n(t$_{se}$ split)',
+    '(C) Intersection-swapping\n(t$_{si}$ split)',
+    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# SCALING
+# -----------------------
+def get_scale(rs):
+    vals = np.concatenate([np.asarray(r.values).ravel() for r in rs])
+    return np.nanpercentile(vals, 2), np.nanpercentile(vals, 98)
+
+vmin1, vmax1 = get_scale(row1)
+vmin2, vmax2 = get_scale(row2)
+
+# -----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(
+    2, 4,
+    figsize=(20, 7),
+    constrained_layout=False
+)
+
+axes = axes.flatten()
+
+fig.subplots_adjust(
+    hspace=0,
+    wspace=0.025,
+    top=0.998,
+    bottom=0.02,
+    left=0.04,
+    right=0.96
+)
+
+# -----------------------
+# PLOTTING
+# -----------------------
+for i, (ax, r) in enumerate(zip(axes, rasters)):
+
+    # row-specific scaling
+    if i < 4:
+        vmin, vmax = vmin1, vmax1
+    else:
+        vmin, vmax = vmin2, vmax2
+
+    r = r.squeeze()
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.85,
+        add_colorbar=False,
+        add_labels=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_anchor("C")
+    ax.margins(0)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    # Row 1 titles only
+    if i < 4:
+        ax.set_title(labels_row1[i], fontsize=18, color="#333333", pad=6)
+
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+        spine.set_color("black")
+
+# -----------------------
+# ROW LABELS
+# -----------------------
+axes[0].set_ylabel("(1) Full day", fontsize=16, labelpad=6, color="#333333")
+axes[4].set_ylabel("(2) Morning (7-9)", fontsize=16, labelpad=6, color="#333333")
+
+# -----------------------
+# COLORBAR FUNCTION
+# -----------------------
+def add_cbar(ax, vmin, vmax, label):
+
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = mpl.cm.ScalarMappable(cmap="inferno", norm=norm)
+    sm.set_array([])
+
+    cax = inset_axes(
+        ax,
+        width="4%",
+        height="100%",
+        loc="lower left",
+        bbox_to_anchor=(1.02, 0., 1, 1),
+        bbox_transform=ax.transAxes,
+        borderpad=0
+    )
+
+    cbar = fig.colorbar(sm, cax=cax)
+
+    cbar.ax.yaxis.set_major_formatter(
+        ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+    )
+
+    # TICK LABELS 
+    cbar.ax.tick_params(
+        labelsize=14,
+        colors="#333333"
+    )
+
+    # LABEL 
+    cbar.set_label(
+        label,
+        fontsize=16,
+        color="#333333"
+    )
+
+# -----------------------
+# COLORBARS
+# -----------------------
+add_cbar(axes[3], vmin1, vmax1, "Stay duration density\n(hours/km$^2$)")
+add_cbar(axes[7], vmin2, vmax2, "Stay duration density\n(hours/km$^2$)")
+
+# -----------------------
+# SHOW
+# -----------------------
 plt.show()
 
 
