@@ -3113,23 +3113,23 @@ split_by_time["cf"]["m"]
 
 
 #%% counts classed as jenks
-# %%
-# %%
-# %%
+
+
+#%%
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from shapely.geometry import box
-import mapclassify as mc
 import contextily as ctx
-from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap, TwoSlopeNorm
 
 # -----------------------
 # DATA
 # -----------------------
 gdf_b = stpts_cf_akl.copy().to_crs(epsg=3857)
-gdf_e = stpts_e_akl.copy().to_crs(epsg=3857)
+gdf_i = stpts_i_akl.copy().to_crs(epsg=3857)
+gdf_c = stpts_c_akl.copy().to_crs(epsg=3857)
+
 akl_poly = akl.copy().to_crs(epsg=3857)
 
 # -----------------------
@@ -3153,35 +3153,29 @@ grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
 grid = gpd.clip(grid, akl_poly)
 
 # -----------------------
-# COUNT BASELINE
+# COUNTS
 # -----------------------
-joined_b = gpd.sjoin(grid, gdf_b, how="left", predicate="contains")
-counts_b = joined_b.groupby(joined_b.index)["index_right"].count()
-grid["count_b"] = counts_b.reindex(grid.index, fill_value=0)
+def compute_counts(grid, gdf, col_name):
+    joined = gpd.sjoin(grid, gdf, how="left", predicate="contains")
+    counts = joined.groupby(joined.index)["index_right"].count()
+    grid[col_name] = counts.reindex(grid.index, fill_value=0)
+
+compute_counts(grid, gdf_b, "count_b")
+compute_counts(grid, gdf_i, "count_i")
+compute_counts(grid, gdf_c, "count_c")
 
 # -----------------------
-# COUNT EXPERIMENT
+# % CHANGE (all relative to baseline)
 # -----------------------
-joined_e = gpd.sjoin(grid, gdf_e, how="left", predicate="contains")
-counts_e = joined_e.groupby(joined_e.index)["index_right"].count()
-grid["count_e"] = counts_e.reindex(grid.index, fill_value=0)
+for col in ["i", "c"]:
+    grid[f"pct_change_{col}"] = np.where(
+        grid["count_b"] == 0,
+        np.nan,
+        (grid[f"count_{col}"] - grid["count_b"]) / grid["count_b"] * 100
+    )
 
-# -----------------------
-# % CHANGE
-# -----------------------
-grid["pct_change"] = np.where(
-    grid["count_b"] == 0,
-    np.nan,
-    (grid["count_e"] - grid["count_b"]) / grid["count_b"] * 100
-)
-
-grid["pct_change_clipped"] = grid["pct_change"].clip(-200, 200)
-
-# -----------------------
-# CLASSIFICATION
-# -----------------------
-jenks_b = mc.NaturalBreaks(grid["count_b"], k=6)
-jenks_c = mc.NaturalBreaks(grid["pct_change_clipped"].dropna(), k=6)
+grid["pct_change_i_clip"] = grid["pct_change_i"].clip(-100, 100)
+grid["pct_change_c_clip"] = grid["pct_change_c"].clip(-100, 100)
 
 # -----------------------
 # COLOURMAPS
@@ -3192,25 +3186,23 @@ cmap_base = LinearSegmentedColormap.from_list(
 )
 
 cmap_change = "PRGn"
+norm_change = TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
+
+
+
 
 #%%-----------------------
-# %%
+# FIGURE
 # -----------------------
-# FIGURE (SIDE BY SIDE)
-# -----------------------
-fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+fig, axes = plt.subplots(1, 4, figsize=(28, 10))
+ax0, ax1, ax2, ax3 = axes
 
-ax0, ax1 = axes
-
-# =====================================================
-# SHARED EXTENT (CRITICAL FIX)
-# =====================================================
 xmin, ymin, xmax, ymax = grid.total_bounds
 
 # =====================================================
-# (A) BASELINE
+# (A) BASELINE (HAS COLORBAR)
 # =====================================================
-bounds_b = np.insert(jenks_b.bins, 0, 0)
+bounds_b = np.linspace(0, grid["count_b"].max(), 7)
 norm_b = BoundaryNorm(bounds_b, ncolors=256)
 
 grid.plot(
@@ -3225,40 +3217,32 @@ ax0.set_xlim(xmin, xmax)
 ax0.set_ylim(ymin, ymax)
 ax0.set_aspect("equal", adjustable="box")
 
-ctx.add_basemap(
-    ax0,
+ctx.add_basemap(ax0,
     source=ctx.providers.CartoDB.PositronNoLabels,
     attribution=False,
     crs=grid.crs.to_string()
 )
 
-sm_b = plt.cm.ScalarMappable(cmap=cmap_base, norm=norm_b)
-sm_b.set_array([])
-
 cax0 = ax0.inset_axes([-0.05, 0.0, 0.03, 1.0])
-cbar0 = fig.colorbar(sm_b, cax=cax0)
-cbar0.set_label("Stay point count", fontsize=12)
+cbar0 = fig.colorbar(
+    plt.cm.ScalarMappable(cmap=cmap_base, norm=norm_b),
+    cax=cax0
+)
+cbar0.set_label("Stay point count", fontsize=16)
 cbar0.ax.yaxis.set_label_position("left")
 cbar0.ax.yaxis.tick_left()
 
-ax0.set_title("(A) Baseline", fontsize=18)
+ax0.set_title("(A) Baseline (t$_{f}$)", fontsize=20, color="#333333")
 ax0.set_xticks([])
 ax0.set_yticks([])
 
 # =====================================================
-# (B) % CHANGE
+# (B) CF (NO COLORBAR)
 # =====================================================
-from matplotlib.colors import TwoSlopeNorm
-
-limit = np.nanpercentile(np.abs(grid["pct_change"]), 99.9)
-vmin, vmax = -limit, limit
-
-norm_c = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-
 grid.plot(
-    column="pct_change_clipped",
+    column="pct_change_i_clip",
     cmap=cmap_change,
-    norm=norm_c,
+    norm=norm_change,
     linewidth=0,
     ax=ax1
 )
@@ -3267,26 +3251,75 @@ ax1.set_xlim(xmin, xmax)
 ax1.set_ylim(ymin, ymax)
 ax1.set_aspect("equal", adjustable="box")
 
-ctx.add_basemap(
-    ax1,
+ctx.add_basemap(ax1,
     source=ctx.providers.CartoDB.PositronNoLabels,
     attribution=False,
     crs=grid.crs.to_string()
 )
 
-sm_c = plt.cm.ScalarMappable(cmap=cmap_change, norm=norm_c)
-sm_c.set_array([])
-
-cax1 = ax1.inset_axes([1.02, 0.0, 0.03, 1.0])
-cbar1 = fig.colorbar(sm_c, cax=cax1)
-cbar1.set_label("% change in stay points", fontsize=12)
-
-ax1.set_title("(B) Edge-swapping\n% change in stay point count", fontsize=18)
+ax1.set_title("(B) Edge-swapping (t$_{se}$ split)", fontsize=20, color="#333333")
 ax1.set_xticks([])
 ax1.set_yticks([])
 
 # =====================================================
-# FINAL LAYOUT (STABLE + CLEAN)
+# (C) I (NO COLORBAR)
 # =====================================================
-plt.subplots_adjust(wspace=0.15)
+grid.plot(
+    column="pct_change_i_clip",
+    cmap=cmap_change,
+    norm=norm_change,
+    linewidth=0,
+    ax=ax2
+)
+
+ax2.set_xlim(xmin, xmax)
+ax2.set_ylim(ymin, ymax)
+ax2.set_aspect("equal", adjustable="box")
+
+ctx.add_basemap(ax2,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
+
+ax2.set_title("(C) Intersection-swapping (t$_{si}$ split)", fontsize=20, color="#333333")
+ax2.set_xticks([])
+ax2.set_yticks([])
+
+# =====================================================
+# (D) C (HAS COLORBAR)
+# =====================================================
+grid.plot(
+    column="pct_change_c_clip",
+    cmap=cmap_change,
+    norm=norm_change,
+    linewidth=0,
+    ax=ax3
+)
+
+ax3.set_xlim(xmin, xmax)
+ax3.set_ylim(ymin, ymax)
+ax3.set_aspect("equal", adjustable="box")
+
+ctx.add_basemap(ax3,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
+
+cax3 = ax3.inset_axes([1.02, 0.0, 0.03, 1.0])
+cbar3 = fig.colorbar(
+    plt.cm.ScalarMappable(cmap=cmap_change, norm=norm_change),
+    cax=cax3
+)
+cbar3.set_label("Change (%) in\nstay point count", fontsize=18, color="#333333")
+
+ax3.set_title("(D) Cloaking area-swapping (t$_{sc}$)", fontsize=20, color="#333333")
+ax3.set_xticks([])
+ax3.set_yticks([])
+
+# -----------------------
+# FINAL LAYOUT
+# -----------------------
+plt.subplots_adjust(wspace=0.05)
 plt.show()
