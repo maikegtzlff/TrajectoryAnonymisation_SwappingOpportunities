@@ -3062,96 +3062,82 @@ print(stpts_e.crs)
 print(stpts_i.crs)
 print(stpts_c.crs)
 
+#%% clip to central Auckland
+akl = gpd.read_file(r"D:\paper3\StopsKDE_Arc\akl_isthmus_suburbs_dissolved_clipped.gpkg")
+print(akl.crs)
+
+# clip points to akl
+stpts_cf_akl = gpd.clip(stpts_cf, akl)
+stpts_e_akl  = gpd.clip(stpts_e, akl)
+stpts_i_akl  = gpd.clip(stpts_i, akl)
+stpts_c_akl  = gpd.clip(stpts_c, akl)
+
+
+#%%split gdf by time of day
+# combine all into one (optional but usually helpful)
+all_gdfs = {
+    "cf": stpts_cf_akl,
+    "e": stpts_e_akl,
+    "i": stpts_i_akl,
+    "c": stpts_c_akl
+}
+
+# split by time_bin
+def simplify_time_bin(x):
+    if pd.isna(x):
+        return None
+    first = str(x)[0].lower()
+    return "fp" if first == "f" else first
+
+
+for gdf in [stpts_cf_akl, stpts_e_akl, stpts_i_akl, stpts_c_akl]:
+    gdf["time_bin_"] = gdf["time_bin"].apply(simplify_time_bin)
+
+split_by_time = {}
+
+for name, gdf in all_gdfs.items():
+    split_by_time[name] = {
+        tb: subset.copy()
+        for tb, subset in gdf.groupby("time_bin_")
+    }
+#%% accessing those dfs
+# cf, r, i, c - swapping method
+# m, fp, e, n - time bin
+split_by_time["cf"]["m"]
 
 #%%
+
+
+
+
+
+
+#%% counts classed as jenks
+# %%
+# %%
+# %%
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from shapely.geometry import box
-from matplotlib.colors import BoundaryNorm
-import contextily as ctx  # optional, only if you want a basemap
-
-# --- Load your dataset ---
-gdf = stpts_cf.copy()  # replace with your GeoDataFrame
-if gdf.crs is None:
-    gdf = gdf.set_crs(epsg=4326)  # assume WGS84 if CRS unknown
-gdf = gdf.to_crs(epsg=3857)  # projected CRS in meters
-
-# --- Create 500 m grid ---
-cell_size = 500
-xmin, ymin, xmax, ymax = gdf.total_bounds
-
-# Snap bounds to grid
-xmin = np.floor(xmin / cell_size) * cell_size
-ymin = np.floor(ymin / cell_size) * cell_size
-xmax = np.ceil(xmax / cell_size) * cell_size
-ymax = np.ceil(ymax / cell_size) * cell_size
-
-grid_cells = [
-    box(x, y, x + cell_size, y + cell_size)
-    for x in np.arange(xmin, xmax, cell_size)
-    for y in np.arange(ymin, ymax, cell_size)
-]
-
-grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
-
-# --- Count points per cell ---
-joined = gpd.sjoin(grid, gdf, how='left', predicate='contains')
-counts = joined.groupby(joined.index).size()
-grid["count"] = counts
-grid["count"] = grid["count"].fillna(0)
-
-# --- Mask cells below threshold (e.g., counts < 3) ---
-threshold = 3
-grid["count_masked"] = grid["count"].where(grid["count"] >= threshold)
-
-# --- Define bins starting at threshold ---
-max_val = grid["count_masked"].max()
-bins = [threshold, 5, 10, 20, 50, 100, max_val]
-norm = BoundaryNorm(bins, ncolors=256, clip=False)
-
-# --- Colormap: NaNs are transparent ---
-cmap = plt.cm.Reds.copy()
-cmap.set_bad(color='none')  # cells below threshold invisible
-
-# --- Plot ---
-fig, ax = plt.subplots(figsize=(10, 10))
-
-grid.plot(
-    column="count_masked",
-    cmap=cmap,
-    norm=norm,
-    linewidth=0,
-    legend=True,
-    ax=ax
-)
-
-# --- Optional basemap ---
-# ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
-
-ax.set_title(f"Point Density (500 m grid, counts ≥ {threshold})")
-ax.axis('off')
-plt.tight_layout()
-plt.show()
-
-#%% jenks
-import numpy as np
-import geopandas as gpd
-import matplotlib.pyplot as plt
-from shapely.geometry import box
-from matplotlib.colors import BoundaryNorm
 import mapclassify as mc
 import contextily as ctx
+from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-# --- Load dataset ---
-gdf = stpts_cf.copy()  # replace with your GeoDataFrame
-if gdf.crs is None:
-    gdf = gdf.set_crs(epsg=4326)
-gdf = gdf.to_crs(epsg=3857)  # projected CRS in meters
+# -----------------------
+# DATA
+# -----------------------
+gdf_b = stpts_cf_akl.copy().to_crs(epsg=3857)
+gdf_e = stpts_e_akl.copy().to_crs(epsg=3857)
+akl_poly = akl.copy().to_crs(epsg=3857)
 
-# --- Create 500 m grid ---
+# -----------------------
+# GRID
+# -----------------------
 cell_size = 500
-xmin, ymin, xmax, ymax = gdf.total_bounds
+
+xmin, ymin, xmax, ymax = akl_poly.total_bounds
 xmin = np.floor(xmin / cell_size) * cell_size
 ymin = np.floor(ymin / cell_size) * cell_size
 xmax = np.ceil(xmax / cell_size) * cell_size
@@ -3162,145 +3148,145 @@ grid_cells = [
     for x in np.arange(xmin, xmax, cell_size)
     for y in np.arange(ymin, ymax, cell_size)
 ]
+
 grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
+grid = gpd.clip(grid, akl_poly)
 
-# --- Count points per cell ---
-joined = gpd.sjoin(grid, gdf, how='left', predicate='contains')
-counts = joined.groupby(joined.index).size()
-grid["count"] = counts.fillna(0)
+# -----------------------
+# COUNT BASELINE
+# -----------------------
+joined_b = gpd.sjoin(grid, gdf_b, how="left", predicate="contains")
+counts_b = joined_b.groupby(joined_b.index)["index_right"].count()
+grid["count_b"] = counts_b.reindex(grid.index, fill_value=0)
 
-# --- Mask counts below threshold ---
-threshold = 3
-grid["count_masked"] = grid["count"].where(grid["count"] >= threshold)
+# -----------------------
+# COUNT EXPERIMENT
+# -----------------------
+joined_e = gpd.sjoin(grid, gdf_e, how="left", predicate="contains")
+counts_e = joined_e.groupby(joined_e.index)["index_right"].count()
+grid["count_e"] = counts_e.reindex(grid.index, fill_value=0)
 
-# --- Prepare data for classification ---
-data = grid["count_masked"].dropna().values  # all counts ≥ threshold
+# -----------------------
+# % CHANGE
+# -----------------------
+grid["pct_change"] = np.where(
+    grid["count_b"] == 0,
+    np.nan,
+    (grid["count_e"] - grid["count_b"]) / grid["count_b"] * 100
+)
 
-# --- 1️⃣ Jenks Natural Breaks ---
-jenks = mc.NaturalBreaks(y=data, k=6)
-grid["jenks_class"] = np.nan
-grid.loc[~grid["count_masked"].isna(), "jenks_class"] = jenks.yb
+grid["pct_change_clipped"] = grid["pct_change"].clip(-200, 200)
 
-# --- 2️⃣ Quantiles ---
-quantiles = mc.Quantiles(y=data, k=6)
-grid["quantile_class"] = np.nan
-grid.loc[~grid["count_masked"].isna(), "quantile_class"] = quantiles.yb
+# -----------------------
+# CLASSIFICATION
+# -----------------------
+jenks_b = mc.NaturalBreaks(grid["count_b"], k=6)
+jenks_c = mc.NaturalBreaks(grid["pct_change_clipped"].dropna(), k=6)
 
-# --- Plotting function with real count bins ---
-def plot_grid(grid, column, classifier, title):
-    # Use classifier bins for legend
-    bins = classifier.bins
-    boundaries = np.insert(bins, 0, threshold)  # add threshold as lower bound
+# -----------------------
+# COLOURMAPS
+# -----------------------
+cmap_base = LinearSegmentedColormap.from_list(
+    "base",
+    ["#ffffff", "#383a6b"]
+)
 
-    cmap = plt.cm.Reds.copy()
-    cmap.set_bad(color='none')  # masked cells invisible
-    norm = BoundaryNorm(boundaries=boundaries, ncolors=cmap.N)
+cmap_change = "PRGn"
 
-    fig, ax = plt.subplots(figsize=(12, 12))
-    grid.plot(
-        column="count_masked",
-        cmap=cmap,
-        norm=norm,
-        linewidth=0,
-        legend=True,
-        ax=ax
-    )
-
-    # Add basemap
-    ctx.add_basemap(
-        ax,
-        source=ctx.providers.CartoDB.Positron,
-        crs=grid.crs.to_string()
-    )
-
-    ax.set_title(title, fontsize=14)
-    ax.axis('off')
-    plt.tight_layout()
-    plt.show()
-
-# --- Plot Jenks ---
-plot_grid(grid, "count_masked", jenks, f"Point Density (Jenks, counts ≥ {threshold})")
-
-# --- Plot Quantiles ---
-plot_grid(grid, "count_masked", quantiles, f"Point Density (Quantiles, counts ≥ {threshold})")
-
-
-
-#%% panel figure
-
-
-
-
-
-
+#%%-----------------------
 # %%
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
-import contextily as ctx
-import matplotlib as mpl
-import numpy as np
+# -----------------------
+# FIGURE (SIDE BY SIDE)
+# -----------------------
+fig, axes = plt.subplots(1, 2, figsize=(20, 10))
 
-# --- Assuming your grid and gdfs are already defined ---
+ax0, ax1 = axes
 
-# Baseline and other columns
-baseline_col = 'Baseline_count_masked'
-other_cols = ['Edge-swapping_count_masked', 'Intersection-swapping_count_masked', 'Cloaking area_count_masked']
+# =====================================================
+# SHARED EXTENT (CRITICAL FIX)
+# =====================================================
+xmin, ymin, xmax, ymax = grid.total_bounds
 
-# --- Compute percentage change relative to baseline ---
-for col in other_cols:
-    pct_col = col.replace('_count_masked', '_pct_change')
-    grid[pct_col] = ((grid[col] - grid[baseline_col]) / grid[baseline_col]) * 100
-    grid[pct_col] = grid[pct_col].clip(-100, 100)  # cap at ±100%
+# =====================================================
+# (A) BASELINE
+# =====================================================
+bounds_b = np.insert(jenks_b.bins, 0, 0)
+norm_b = BoundaryNorm(bounds_b, ncolors=256)
 
-pct_cols = [c.replace('_count_masked', '_pct_change') for c in other_cols]
+grid.plot(
+    column="count_b",
+    cmap=cmap_base,
+    norm=norm_b,
+    linewidth=0,
+    ax=ax0
+)
 
-# --- Color maps ---
-baseline_cmap = plt.cm.Reds
-div_cmap = plt.cm.RdBu_r  # diverging for percent change
+ax0.set_xlim(xmin, xmax)
+ax0.set_ylim(ymin, ymax)
+ax0.set_aspect("equal", adjustable="box")
 
-# --- Plot setup ---
-fig, axes = plt.subplots(1, 4, figsize=(18, 6))
+ctx.add_basemap(
+    ax0,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
 
+sm_b = plt.cm.ScalarMappable(cmap=cmap_base, norm=norm_b)
+sm_b.set_array([])
 
-titles = [
-    '(A) Baseline\n(t$_{f}$)',
-    '(B) Edge-swapping\n% change',
-    '(C) Intersection-swapping\n% change',
-    '(D) Cloaking area-swapping\n% change'
-]
+cax0 = ax0.inset_axes([-0.05, 0.0, 0.03, 1.0])
+cbar0 = fig.colorbar(sm_b, cax=cax0)
+cbar0.set_label("Stay point count", fontsize=12)
+cbar0.ax.yaxis.set_label_position("left")
+cbar0.ax.yaxis.tick_left()
 
-# --- Plot Baseline on first axis ---
-grid.plot(column=baseline_col, cmap=baseline_cmap, linewidth=0, ax=axes[0])
-ctx.add_basemap(axes[0], source=ctx.providers.CartoDB.Positron, crs=grid.crs.to_string(), attribution=False)
-axes[0].set_title(titles[0], fontsize=12, fontweight='bold')
-axes[0].axis('off')
+ax0.set_title("(A) Baseline", fontsize=18)
+ax0.set_xticks([])
+ax0.set_yticks([])
 
-# --- Colorbar for baseline on the left of A ---
-sm_base = mpl.cm.ScalarMappable(cmap=baseline_cmap,
-                                norm=Normalize(vmin=grid[baseline_col].min(),
-                                               vmax=grid[baseline_col].max()))
-sm_base.set_array([])
+# =====================================================
+# (B) % CHANGE
+# =====================================================
+from matplotlib.colors import TwoSlopeNorm
 
-# attach colorbar to axes[0] and place it on the left
-cbar_left = fig.colorbar(sm_base, ax=axes[0], fraction=0.046, pad=0.02, location='left')
-cbar_left.set_label("Stay Point Count", fontsize=12)
+limit = np.nanpercentile(np.abs(grid["pct_change"]), 99.9)
+vmin, vmax = -limit, limit
 
-# --- Plot percentage change maps (B–D) ---
-for ax, col, title in zip(axes[1:], pct_cols, titles[1:]):
-    plot_data = grid[col].fillna(0)
-    
-    grid.plot(column=col, cmap=div_cmap, linewidth=0, ax=ax, vmin=-100, vmax=100)
-    ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, crs=grid.crs.to_string(), attribution=False)
-    ax.set_title(title, fontsize=12, fontweight='bold')
-    ax.axis('off')
+norm_c = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
-# --- Diverging colorbar on the right of the last map (D) ---
-sm_div = mpl.cm.ScalarMappable(cmap=div_cmap, norm=Normalize(vmin=-100, vmax=100))
-sm_div.set_array([])
-cbar_right = fig.colorbar(sm_div, ax=axes[-1], fraction=0.046, pad=0.02)
-cbar_right.set_label("% Change vs Baseline", fontsize=12)
+grid.plot(
+    column="pct_change_clipped",
+    cmap=cmap_change,
+    norm=norm_c,
+    linewidth=0,
+    ax=ax1
+)
 
+ax1.set_xlim(xmin, xmax)
+ax1.set_ylim(ymin, ymax)
+ax1.set_aspect("equal", adjustable="box")
 
+ctx.add_basemap(
+    ax1,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
 
-plt.tight_layout()
+sm_c = plt.cm.ScalarMappable(cmap=cmap_change, norm=norm_c)
+sm_c.set_array([])
+
+cax1 = ax1.inset_axes([1.02, 0.0, 0.03, 1.0])
+cbar1 = fig.colorbar(sm_c, cax=cax1)
+cbar1.set_label("% change in stay points", fontsize=12)
+
+ax1.set_title("(B) Edge-swapping\n% change in stay point count", fontsize=18)
+ax1.set_xticks([])
+ax1.set_yticks([])
+
+# =====================================================
+# FINAL LAYOUT (STABLE + CLEAN)
+# =====================================================
+plt.subplots_adjust(wspace=0.15)
 plt.show()
