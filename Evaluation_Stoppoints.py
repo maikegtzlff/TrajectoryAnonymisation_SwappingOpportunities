@@ -1262,40 +1262,6 @@ print(raster.rio.crs)
 raster_3857 = raster.rio.reproject("EPSG:3857")
 print(raster_3857.rio.crs)
 
-#%%
-#import contextily as ctx
-
-fig, ax = plt.subplots(figsize=(10, 10))
-
-raster_3857.plot(ax=ax, 
-    cmap="inferno",
-    alpha=0.8,
-    robust=True) # to exlcude outliers from the colour ramp - 98th percentile only
-
-ctx.add_basemap(
-    ax, 
-    crs="EPSG:3857",
-    source=ctx.providers.CartoDB.PositronNoLabels,
-    attribution=False  
-)
-ax.set_aspect("equal")  
-
-ax.set_xticks([])
-ax.set_yticks([])
-ax.set_xlabel("")
-ax.set_ylabel("")
-for spine in ax.spines.values():
-    spine.set_visible(True)
-    spine.set_linewidth(1.2)
-    spine.set_color("black")
-ax.set_title("")
-
-plt.show()
-
-
-
-
-
 
 #%% data for panel figure
 wKDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_cf_central_weighted.tif", masked=True)
@@ -1436,8 +1402,8 @@ vmax = np.nanpercentile(all_values, 98)
 
 labels = [
     '(A) Baseline\n(t$_{f}$)', 
-    '(B) Edge-swapping\n(t$_{se}$ split)', 
-    '(C) Intersection-swapping\n(t$_{si}$ split)', 
+    '(B) Edge-swapping\n(t$_{se}split$)', 
+    '(C) Intersection-swapping\n(t$_{si}split$)', 
     '(D) Cloaking area-swapping\n(t$_{sc}$)'
 ]
 
@@ -1476,14 +1442,14 @@ for ax, r, lab in zip(axes, rasters, labels):
     ax.set_yticks([])
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title(lab, fontsize=22, color="#333333")
+    ax.set_title(lab, fontsize=22, color="#333333", fontweight='bold')
 
     for spine in ax.spines.values():
         spine.set_visible(True)
         spine.set_linewidth(1.2)
         spine.set_color("black")
 
-axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
+#axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
 
 # -----------------------
 # COLORBAR (correct height binding)
@@ -1957,9 +1923,6 @@ plt.show()
 
 
 #%% shared coluor ramp title
-
-# %%
-# %%
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -2296,8 +2259,8 @@ vmax = np.nanpercentile(all_values, 98)
 
 labels = [
     '(A) Baseline\n(t$_{f}$)', 
-    '(B) Edge-swapping\n(t$_{se}$ split)', 
-    '(C) Intersection-swapping\n(t$_{si}$ split)', 
+    '(B) Edge-swapping\n(t$_{se}split$)', 
+    '(C) Intersection-swapping\n(t$_{si}split$)', 
     '(D) Cloaking area-swapping\n(t$_{sc}$)'
 ]
 
@@ -2336,14 +2299,14 @@ for ax, r, lab in zip(axes, rasters, labels):
     ax.set_yticks([])
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title(lab, fontsize=22, color="#333333")
+    ax.set_title(lab, fontsize=22, color="#333333", fontweight='bold')
 
     for spine in ax.spines.values():
         spine.set_visible(True)
         spine.set_linewidth(1.2)
         spine.set_color("black")
 
-axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
+#axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
 
 # -----------------------
 # COLORBAR (correct height binding)
@@ -3232,7 +3195,7 @@ cbar0.set_label("Stay point count", fontsize=16)
 cbar0.ax.yaxis.set_label_position("left")
 cbar0.ax.yaxis.tick_left()
 
-ax0.set_title("(A) Baseline (t$_{f}$)", fontsize=20, color="#333333")
+ax0.set_title("(A) Baseline (t$_{f}$)", fontsize=20, color="#333333", fontweight= 'bold')
 ax0.set_xticks([])
 ax0.set_yticks([])
 
@@ -3257,7 +3220,7 @@ ctx.add_basemap(ax1,
     crs=grid.crs.to_string()
 )
 
-ax1.set_title("(B) Edge-swapping (t$_{se}$ split)", fontsize=20, color="#333333")
+ax1.set_title("(B) Edge-swapping (t$_{se}split$)", fontsize=20, color="#333333", fontweight= 'bold')
 ax1.set_xticks([])
 ax1.set_yticks([])
 
@@ -3282,7 +3245,7 @@ ctx.add_basemap(ax2,
     crs=grid.crs.to_string()
 )
 
-ax2.set_title("(C) Intersection-swapping (t$_{si}$ split)", fontsize=20, color="#333333")
+ax2.set_title("(C) Intersection-swapping (t$_{si}split$)", fontsize=20, color="#333333", fontweight= 'bold')
 ax2.set_xticks([])
 ax2.set_yticks([])
 
@@ -3314,7 +3277,7 @@ cbar3 = fig.colorbar(
 )
 cbar3.set_label("Change (%) in\nstay point count", fontsize=18, color="#333333")
 
-ax3.set_title("(D) Cloaking area-swapping (t$_{sc}$)", fontsize=20, color="#333333")
+ax3.set_title("(D) Cloaking area-swapping (t$_{sc}$)", fontsize=20, color="#333333", fontweight= 'bold')
 ax3.set_xticks([])
 ax3.set_yticks([])
 
@@ -3322,4 +3285,22 @@ ax3.set_yticks([])
 # FINAL LAYOUT
 # -----------------------
 plt.subplots_adjust(wspace=0.05)
+
+#fig.text(
+#    0.08, 0.5,
+#    "(1) Full day",
+#    fontsize=20,
+#    rotation=90,
+#    va="center",
+#    ha="center",
+#    color="#333333", 
+#    fontweight= 'bold'
+#)
+
+plt.savefig(r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\ChangeInStayPointCount.svg",
+    format="svg", bbox_inches="tight", dpi=300)
+
+
+
 plt.show()
+# %%
