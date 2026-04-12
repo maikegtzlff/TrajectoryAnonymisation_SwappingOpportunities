@@ -3,18 +3,623 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-
-gdf_edges_swppd = gpd.read_parquet(r"e:\paper3\data\final_points_edgeSwap_FINAL_ContainerDatetime.parquet ")
+#%%
+#gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\output\EdgeSwapping\final_points_edgeSwap.parquet")
+#gdf_edges_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap_tidLength.parquet")
+gdf_edges_swppd = gpd.read_parquet(r"D:\paper3\Data\output/final_points_edgeSwap_FINAL.parquet")
 #  'sub_container_id' because split
 
-gdf_nodess_swppd = gpd.read_parquet(r"e:\paper3\data\trajectories_swapped_nodes_FINAL_ContainerDatetime.parquet")
+#gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable.parquet")
+#gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\output\FinalSwappingForEvaluationFigures\trajectories_swapped_nodes_NoKeySetReadable_length.parquet")
+gdf_nodess_swppd = gpd.read_parquet(r"d:\paper3\Data\filled_trajectories_list\trajectories_swapped_nodes_FINAL.parquet")
 
-t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"e:\paper3\data\ClkSwpSynFilled_uid_length_timestamps_FINAL_ContainerDatetime.parquet")
+
+#t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid.parquet")
+t_cswappingl_origsynf_headtailsynf = gpd.read_parquet(r"D:\paper3\Data\ClkSwpSynFilled_uid_length_timestamps_FINAL.parquet")
+
+t_cswappingl_origsynf_headtailsynf['container_id'] = t_cswappingl_origsynf_headtailsynf['final_tid_origsynfilled']
+t_cswappingl_origsynf_headtailsynf['orig_uid'] = t_cswappingl_origsynf_headtailsynf['original_tid'].str.split('_').str[1]
+#t_cswappingl_origsynf_headtailsynf.orig_uid.unique() # how to handle synthetic ones> 
+t_cswappingl_origsynf_headtailsynf['orig_uid'] = np.where(
+    t_cswappingl_origsynf_headtailsynf['orig_uid'] == 'orig',
+    t_cswappingl_origsynf_headtailsynf['original_tid'],
+    t_cswappingl_origsynf_headtailsynf['orig_uid']
+)
+
+#%%
+gdf_edges_swppd.columns # osmid_best
+# gdf_edges_swppd[['osmid_best', 'osmid_uv', 'osmid_edge']]
+gdf_nodess_swppd.columns # no osmid - but u and v and point_id_global, point_id
+t_cswappingl_origsynf_headtailsynf.columns # point_id_global, point_id_global_beforeFilling, point_id_unique
+
+#%% cloaked and filled
+t_cf = gpd.read_parquet(r"d:\paper3\Data\trajectories\traj_filled_baseline_ShiftedTimestamps_gapAware_CloakingGeomID_AllCloakingAreas_clean.parquet")
+t_cf.columns # point_id, point_id_t, point_id_t_final
+
+#%% ROAD NETWORK COVERAGE - load cloaked data
+import joblib
+
+G = joblib.load(r"d:\Paper2\data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath\graph.joblib")
+G.graph['crs']
 
 
+#%%
+import osmnx as ox
 
+G = ox.project_graph(G, to_crs="EPSG:2193")
+G.graph['crs']
+
+#%% clip graph to central auckland
+akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\akl_isthmus.gpkg")
+print(akl.crs)
+akl_buffered = akl.buffer(2)
+
+#%%
+G_clip = ox.truncate.truncate_graph_polygon(
+    G,
+    akl_buffered.geometry.iloc[0],
+    retain_all=True
+)
+
+#%%
+import geopandas as gpd
+
+t_cf_baseline_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\t_cf_akl.gpkg")
+t_s_e_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\ts_e_akl.gpkg")
+t_s_i_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\ts_i_akl.gpkg")
+t_s_c_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\ts_c_akl.gpkg")
+
+print(t_cf_baseline_akl.crs)
+print(t_s_e_akl.crs)
+print(t_s_i_akl.crs)
+print(t_s_c_akl.crs)
+
+
+#%%
+import geopandas as gpd
+import osmnx as ox
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------
+# 1. ATTACH EDGE IDs TO POINTS
+# ---------------------------------------------------
+t_cf_baseline_akl["u"] = [e[0] for e in t_cf_baseline_akl_nearest_edges]
+t_cf_baseline_akl["v"] = [e[1] for e in t_cf_baseline_akl_nearest_edges]
+t_cf_baseline_akl["key"] = [e[2] for e in t_cf_baseline_akl_nearest_edges]
+
+# undirected edge ID
+t_cf_baseline_akl["u_norm"] = t_cf_baseline_akl[["u", "v"]].min(axis=1)
+t_cf_baseline_akl["v_norm"] = t_cf_baseline_akl[["u", "v"]].max(axis=1)
+
+# ---------------------------------------------------
+# 2. COUNT POINTS PER EDGE
+# ---------------------------------------------------
+baseline_edge_count = (
+    t_cf_baseline_akl
+    .groupby(["u_norm", "v_norm", "key"])
+    .size()
+    .reset_index(name="n_points")
+)
+
+# ---------------------------------------------------
+# 3. GET GRAPH EDGES
+# ---------------------------------------------------
+nodes, edges = ox.graph_to_gdfs(G_clip)
+edges = edges.reset_index()
+
+# ---------------------------------------------------
+# 4. FILTER UNWANTED ROAD TYPES
+# ---------------------------------------------------
+drop_types = {
+    "pedestrian",
+    "steps",
+    "footway",
+    "raceway",
+    "track",
+    "construction",
+    "corridor",
+    "service",
+    "services"
+}
+
+edges_filtered = edges[
+    ~edges["highway"].apply(
+        lambda x: any(h in drop_types for h in ([x] if isinstance(x, str) else x))
+    )
+].copy()
+
+# ---------------------------------------------------
+# 5. CREATE MATCHING EDGE KEYS
+# ---------------------------------------------------
+edges_filtered["u_norm"] = edges_filtered[["u", "v"]].min(axis=1)
+edges_filtered["v_norm"] = edges_filtered[["u", "v"]].max(axis=1)
+
+# ---------------------------------------------------
+# 6. MERGE POINT COUNTS WITH GEOMETRY
+# ---------------------------------------------------
+edges_plot = edges_filtered.merge(
+    baseline_edge_count,
+    on=["u_norm", "v_norm", "key"],
+    how="left"
+)
+
+edges_plot["n_points"] = edges_plot["n_points"].fillna(0)
+
+# ---------------------------------------------------
+# 7. HANDLE STREET NAMES (KEEP GEOMETRY!)
+# ---------------------------------------------------
+edges_plot["name"] = edges_plot["name"].fillna("unnamed")
+
+# ---------------------------------------------------
+# 8. AGGREGATE TO STREET LEVEL (KEEP GEOMETRY)
+# ---------------------------------------------------
+street_map = (
+    edges_plot
+    .dissolve(
+        by="name",
+        aggfunc={"n_points": "sum"}
+    )
+    .reset_index()
+)
+
+#%% ---------------------------------------------------
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import mapclassify as mc
+
+# ---------------------------------------------------
+# 1. FILTER LOW-SIGNAL STREETS
+# ---------------------------------------------------
+street_map_filtered = street_map[
+    street_map["n_points"] >= 10
+].copy()
+
+# ---------------------------------------------------
+# 2. JENKS CLASSIFICATION
+# ---------------------------------------------------
+k = 6
+
+jenks = mc.NaturalBreaks(
+    street_map_filtered["n_points"].values,
+    k=k
+)
+
+street_map_filtered["jenks_class"] = jenks.yb
+
+# ---------------------------------------------------
+# 3. PLOT MAP
+# ---------------------------------------------------
+cmap = plt.cm.cividis
+
+fig, ax = plt.subplots(figsize=(12, 12))
+
+street_map_filtered.plot(
+    column="jenks_class",
+    cmap=cmap,
+    linewidth=1,
+    ax=ax,
+    categorical=True
+)
+
+# ---------------------------------------------------
+# 4. AXIS STYLE (even though axis is off, we style ticks if needed later)
+# ---------------------------------------------------
+ax.set_axis_off()
+
+# ---------------------------------------------------
+# 5. COLORBAR (LEFT SIDE + FULL CONTROL)
+# ---------------------------------------------------
+bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
+
+norm = mpl.colors.BoundaryNorm(
+    boundaries=bounds,
+    ncolors=cmap.N
+)
+
+sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+sm._A = []
+
+cbar = fig.colorbar(
+    sm,
+    ax=ax,
+    fraction=0.03,
+    pad=0.02,
+    location="left"  
+)
+
+# ---------------------------------------------------
+# 6. COLORBAR TEXT + TICKS (IMPORTANT FIX)
+# ---------------------------------------------------
+cbar.set_label(
+    "Number of points per road",
+    fontsize=20,
+    labelpad=15
+)
+
+cbar.ax.tick_params(labelsize=16)  
+
+# ---------------------------------------------------
+# CLEAN HUMAN-READABLE TICKS
+# ---------------------------------------------------
+bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
+
+cbar.set_ticks(bounds)
+
+cbar.set_ticklabels([
+    "10",
+    "5,000",
+    "15,000",
+    "30,000",
+    "60,000",
+    "90,000",
+    "170,000"
+])
+
+cbar.ax.tick_params(labelsize=16)
+
+# ---------------------------------------------------
+# 7. TITLE WITH SUBSCRIPT
+# ---------------------------------------------------
+ax.set_title(
+    r"(A) Baseline ($t_{f}$)",
+    fontsize=24,
+    pad=20
+)
+
+# ---------------------------------------------------
+# 8. FINAL LAYOUT
+# ---------------------------------------------------
+plt.tight_layout()
+plt.show()
+
+
+#%% panel figure
+
+# %%
+import geopandas as gpd
+import osmnx as ox
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+# ===================================================
+# 0. ENSURE CRS CONSISTENCY (2193)
+# ===================================================
+t_cf_baseline_akl = t_cf_baseline_akl.to_crs(2193)
+t_s_e_akl = t_s_e_akl.to_crs(2193)
+t_s_i_akl = t_s_i_akl.to_crs(2193)
+t_s_c_akl = t_s_c_akl.to_crs(2193)
+
+# ===================================================
+# 1. LOAD GRAPH (2193)
+# ===================================================
+nodes, edges = ox.graph_to_gdfs(G_clip)
+edges = edges.to_crs(2193).reset_index()
+
+drop_types = {
+    "pedestrian", "steps", "footway", "raceway", "track",
+    "construction", "corridor", "service", "services"
+}
+
+edges = edges[
+    ~edges["highway"].apply(
+        lambda x: any(h in drop_types for h in ([x] if isinstance(x, str) else x))
+    )
+].copy()
+
+edges["u_norm"] = edges[["u", "v"]].min(axis=1)
+edges["v_norm"] = edges[["u", "v"]].max(axis=1)
+
+# ===================================================
+# 2. FUNCTION: POINTS → STREET MAP
+# ===================================================
+def build_street_map(points, edges_gdf, G):
+
+    # ---------------------------------------------------
+    # nearest edge assignment
+    # ---------------------------------------------------
+    nearest = ox.distance.nearest_edges(
+        G,
+        X=points.geometry.x,
+        Y=points.geometry.y
+    )
+
+    df = points.copy()
+    df["u"] = [e[0] for e in nearest]
+    df["v"] = [e[1] for e in nearest]
+    df["key"] = [e[2] for e in nearest]
+
+    df["u_norm"] = df[["u", "v"]].min(axis=1)
+    df["v_norm"] = df[["u", "v"]].max(axis=1)
+
+    # ---------------------------------------------------
+    # edge counts
+    # ---------------------------------------------------
+    edge_counts = (
+        df.groupby(["u_norm", "v_norm", "key"])
+        .size()
+        .reset_index(name="n_points")
+    )
+
+    # ---------------------------------------------------
+    # merge with edges
+    # ---------------------------------------------------
+    merged = edges_gdf.merge(
+        edge_counts,
+        on=["u_norm", "v_norm", "key"],
+        how="left"
+    )
+
+    merged["n_points"] = merged["n_points"].fillna(0)
+    merged["name"] = merged["name"].fillna("unnamed")
+
+    # ---------------------------------------------------
+    # street aggregation
+    # ---------------------------------------------------
+    street = (
+        merged
+        .dissolve(by="name", aggfunc={"n_points": "sum"})
+        .reset_index()
+    )
+
+    return street
+
+# ===================================================
+# 3. BUILD ALL SCENARIOS
+# ===================================================
+street_A = build_street_map(t_cf_baseline_akl, edges, G_clip)
+street_B = build_street_map(t_s_e_akl, edges, G_clip)
+street_C = build_street_map(t_s_i_akl, edges, G_clip)
+street_D = build_street_map(t_s_c_akl, edges, G_clip)
+
+# ===================================================
+# 4. % CHANGE VS BASELINE
+# ===================================================
+def pct_change(df, base):
+
+    m = df.merge(
+        base[["name", "n_points"]],
+        on="name",
+        how="left",
+        suffixes=("", "_base")
+    )
+
+    m["n_points_base"] = m["n_points_base"].fillna(0)
+
+    m["pct_change"] = (
+        (m["n_points"] - m["n_points_base"]) /
+        (m["n_points_base"] + 1e-6)
+    ) * 100
+
+    return m
+
+
+street_Bp = pct_change(street_B, street_A)
+street_Cp = pct_change(street_C, street_A)
+street_Dp = pct_change(street_D, street_A)
+
+street_Ap = street_A.copy()
+street_Ap["pct_change"] = 0
+
+#%% ===================================================
+# 5. PLOT A–D (2x2)
+# ===================================================
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
+import mapclassify as mc
+from matplotlib.colors import TwoSlopeNorm, LinearSegmentedColormap
+
+# ===================================================
+# GLOBAL TITLE POSITION (CONSISTENT ALIGNMENT)
+# ===================================================
+TITLE_Y = 1.02
+
+# ===================================================
+# 0. MAP EXTENT + ASPECT
+# ===================================================
+minx, miny, maxx, maxy = street_map_filtered.total_bounds
+
+dx = maxx - minx
+dy = maxy - miny
+map_ratio = dx / dy
+
+fig = plt.figure(figsize=(11, 11 / map_ratio))
+
+# ===================================================
+# 1. MANUAL LAYOUT
+# ===================================================
+left = 0.05
+width = 0.42
+row_height = 0.43
+row_gap = 0.06
+
+bottom_row = 0.06
+top_row = bottom_row + row_height + row_gap
+
+axA = fig.add_axes([left, top_row, width, row_height])
+axD = fig.add_axes([0.52, top_row, width, row_height])
+axB = fig.add_axes([left, bottom_row, width, row_height])
+axC = fig.add_axes([0.52, bottom_row, width, row_height])
+
+axes = [axA, axB, axC, axD]
+
+# ===================================================
+# 2. FIX EXTENT + ASPECT
+# ===================================================
+for ax in axes:
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_axis_off()
+
+# ===================================================
+# 3. (A) JENKS CLASSIFICATION
+# ===================================================
+k = 6
+
+jenks = mc.NaturalBreaks(
+    street_map_filtered["n_points"].values,
+    k=k
+)
+
+street_map_filtered["jenks_class"] = jenks.yb
+
+cmap_A = plt.cm.cividis
+
+street_map_filtered.plot(
+    column="jenks_class",
+    cmap=cmap_A,
+    linewidth=1,
+    ax=axA,
+    categorical=True
+)
+
+axA.set_title(
+    r"(A) Baseline ($t_{f}$)",
+    fontsize=18,
+    color="#555555",
+    fontweight="bold",
+    y=TITLE_Y
+)
+
+# ===================================================
+# 4. JENKS COLORBAR (LEFT OF A)
+# ===================================================
+bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
+
+norm_A = mpl.colors.Normalize(
+    vmin=bounds.min(),
+    vmax=bounds.max()
+)
+
+sm_A = mpl.cm.ScalarMappable(cmap=cmap_A, norm=norm_A)
+sm_A._A = []
+
+cbar_ax_A = fig.add_axes([
+    axA.get_position().x0 - 0.03,
+    axA.get_position().y0,
+    0.015,
+    axA.get_position().height
+])
+
+cbar_A = fig.colorbar(sm_A, cax=cbar_ax_A)
+
+cbar_A.set_label("Number of points on road", fontsize=14, color="#555555",)
+
+ticks = bounds[1:]
+cbar_A.set_ticks(ticks)
+cbar_A.set_ticklabels([
+    "5,000",
+    "15,000",
+    "30,000",
+    "60,000",
+    "90,000",
+    "170,000"
+])
+
+cbar_A.ax.yaxis.set_ticks_position("left")
+cbar_A.ax.yaxis.set_label_position("left")
+cbar_A.ax.tick_params(labelsize=12, labelcolor="#555555")
+
+# ===================================================
+# 5. (B–D) % CHANGE MAPS
+# ===================================================
+cmap_B = LinearSegmentedColormap.from_list(
+    "green_grey_purple",
+    [
+        "#00441b",
+        "#1b7837",
+        "#a6dba0",
+        "#d9f0d3",
+        "#bdbdbd",
+        "#e7d4e8",
+        "#c2a5cf",
+        "#762a83",
+        "#40004b"
+    ],
+    N=256
+)
+
+vmin, vmax = -100, 100
+norm_B = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+
+plot_map = [
+    (axB, street_Bp, "(B) Edge-swapping (t$_{se}split$)"),
+    (axD, street_Dp, "(D) Intersection-swapping (t$_{si}split$)"),
+    (axC, street_Cp, "(C) Cloaking Area-swapping (t$_{sc}$)")
+]
+
+for ax, gdf, title in plot_map:
+    gdf.plot(
+        column="pct_change",
+        cmap=cmap_B,
+        norm=norm_B,
+        linewidth=1,
+        ax=ax
+    )
+    ax.set_title(
+        title,
+        fontsize=18,
+        color="#555555",
+        fontweight="bold",
+        y=TITLE_Y
+    )
+
+# ===================================================
+# 6. SHARED COLORBAR FOR B–D (FULL HEIGHT)
+# ===================================================
+fig.canvas.draw()
+
+sm_B = mpl.cm.ScalarMappable(cmap=cmap_B, norm=norm_B)
+sm_B._A = []
+
+top = max(axB.get_position().y1, axD.get_position().y1)
+bottom = min(axC.get_position().y0, axB.get_position().y0)
+height = top - bottom
+
+cbar_ax_B = fig.add_axes([
+    axD.get_position().x1 + 0.02,
+    bottom,
+    0.015,
+    height
+])
+
+cbar_B = fig.colorbar(sm_B, cax=cbar_ax_B)
+
+cbar_B.set_label(
+    "Change in number of points on road (%)",
+    fontsize=14,
+    labelpad=10, 
+    color="#555555"
+)
+
+cbar_B.ax.tick_params(labelsize=12, labelcolor="#555555")
+
+# ===================================================
+# 7. FINAL LAYOUT
+# ===================================================
+plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
+
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\RoadNetworkCoverage_AfterSwapping.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+plt.show()
+
+####################################################################
 #%% EVALUATION FIGURES
-#(1) CDF - number of pseudonyms per trajectory (split or unsplit input)
+#(1) CDF
+
+#%% add 3rd data df
+####################
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -63,7 +668,7 @@ ax.set_ylim(0, 105)
 ax.set_yticks([0, 25, 50, 75, 100])
 
 # Axis labels
-ax.set_xlabel("Number of pseudonyms per container", fontsize=14, color='#555555')
+ax.set_xlabel("Number of pseudonyms per trajectory", fontsize=14, color='#555555')
 ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
 
 # Tick labels and tick lines (ggplot-style gray)
@@ -113,375 +718,149 @@ for text in leg.get_texts():
     text.set_color(tick_color)
 
 #plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
-#plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
 
 plt.show()
 
 
 
-#%% CFD but number of non-original pseudonyms per trajectory instead of number of pseudonyms
-# number of pseudonyms covers fragmentation
-# number of unique non-original pseudonyms takes swapping into account
-
-# prepping data for CDF plot
-gdf_edges_swppd['is_swap'] = gdf_edges_swppd['orig_uid'] != gdf_edges_swppd['container_uid']
-
-unique_swaps_per_container = (
-    gdf_edges_swppd[gdf_edges_swppd['is_swap']]  
-    .groupby('container_id')['orig_uid']
-    .nunique()
-    .reset_index(name='n_unique_non_original')
-)
-data1 = unique_swaps_per_container['n_unique_non_original'].values
-
-data1_sorted = np.sort(data1)
-cdf1 = np.arange(1, len(data1_sorted) + 1) / len(data1_sorted) * 100
-# split container
-unique_swaps_per_container = (
-    gdf_edges_swppd[gdf_edges_swppd['is_swap']]  
-    .groupby('sub_container_id')['orig_uid']
-    .nunique()
-    .reset_index(name='n_unique_non_original')
-)
-data1 = unique_swaps_per_container['n_unique_non_original'].values
-
-data1_sorted_split = np.sort(data1)
-cdf1_split = np.arange(1, len(data1_sorted_split) + 1) / len(data1_sorted_split) * 100
-color1 = "#FDD45F"
-
-
-# NODE BASED SWAPPING
-# full container
-gdf_nodess_swppd['is_swap'] = gdf_nodess_swppd['orig_uid'] != gdf_nodess_swppd['container_uid']
-
-unique_swaps_per_container = (
-    gdf_nodess_swppd[gdf_nodess_swppd['is_swap']]  
-    .groupby('container_id')['orig_uid']
-    .nunique()
-    .reset_index(name='n_unique_non_original')
-)
-data2 = unique_swaps_per_container['n_unique_non_original'].values
-
-data2_sorted = np.sort(data2)
-cdf2 = np.arange(1, len(data2_sorted) + 1) / len(data2_sorted) * 100
-# split container
-unique_swaps_per_container = (
-    gdf_nodess_swppd[gdf_nodess_swppd['is_swap']]  
-    .groupby('sub_container_id')['orig_uid']
-    .nunique()
-    .reset_index(name='n_unique_non_original')
-)
-data2 = unique_swaps_per_container['n_unique_non_original'].values
-
-data2_sorted_split = np.sort(data2)
-cdf2_split = np.arange(1, len(data2_sorted_split) + 1) / len(data2_sorted_split) * 100
-color2 = "#F3B503"
-
-# CLOAKING BASED SWAPS
-t_cswappingl_origsynf_headtailsynf['is_swap'] = t_cswappingl_origsynf_headtailsynf['orig_uid'] != t_cswappingl_origsynf_headtailsynf['container_uid']
-
-unique_swaps_per_container = (
-    t_cswappingl_origsynf_headtailsynf[t_cswappingl_origsynf_headtailsynf['is_swap']]  
-    .groupby('container_id')['orig_uid']
-    .nunique()
-    .reset_index(name='n_unique_non_original')
-)
-data3 = unique_swaps_per_container['n_unique_non_original'].values
-
-data3_sorted = np.sort(data3)
-cdf3 = np.arange(1, len(data3_sorted) + 1) / len(data3_sorted) * 100
-color3 = "#C09003"  
-
-
-
-
-
-#%% CDF for trajectories with changed pseudonyms
-fig, ax = plt.subplots(figsize=(8, 5))
-ax.set_facecolor('white')
-
-# Plot CDF lines
-ax.plot(data1_sorted, cdf1, color=color1, linewidth=2, label="Edge")
-ax.plot(data2_sorted, cdf2, color=color2, linewidth=2, label="Intersection")
-ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
-
-# Limits and ticks
-ax.set_xlim(left=0)
-ax.set_ylim(0, 105)
-ax.set_yticks([0, 25, 50, 75, 100])
-
-# Axis labels
-ax.set_xlabel("Number of non-original pseudonyms per trajectory", fontsize=14, color='#555555')
-ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
-
-# Tick labels and tick lines (ggplot-style gray)
-tick_color = '#555555'
-for tick, label in zip(ax.yaxis.get_major_ticks(), ax.get_yticklabels()):
-    if label.get_text() == "50":  # 50% special case
-        tick.tick1line.set_color('red')
-        tick.tick2line.set_color('red')
-        label.set_color('red')
-    else:
-        tick.tick1line.set_color(tick_color)
-        tick.tick2line.set_color(tick_color)
-        label.set_color(tick_color)
-
-for tick, label in zip(ax.xaxis.get_major_ticks(), ax.get_xticklabels()):
-    tick.tick1line.set_color(tick_color)
-    tick.tick2line.set_color(tick_color)
-    label.set_color(tick_color)
-
-ax.tick_params(axis='x', labelsize=12)
-ax.tick_params(axis='y', labelsize=12)
-
-# Solid axes
-ax.spines['left'].set_visible(True)
-ax.spines['left'].set_color(tick_color)
-ax.spines['left'].set_linewidth(0.8)
-ax.spines['bottom'].set_visible(True)
-ax.spines['bottom'].set_color(tick_color)
-ax.spines['bottom'].set_linewidth(0.8)
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-
-# Horizontal lines at 25, 50, 75, 100 (skip 0)
-for y in [25, 50, 75, 100]:
-    if y == 50:
-        ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
-    else:
-        ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
-
-ax.set_axisbelow(True)
-
-# Legend with title and ggplot-style text color
-leg = ax.legend(title="Swapping Opportunity", fontsize=12, loc='lower right', frameon=False)
-leg.get_title().set_fontsize(12)
-leg.get_title().set_color(tick_color)
-for text in leg.get_texts():
-    text.set_color(tick_color)
-
-#plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
-plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
-
-
-plt.show()
-
-
-#%% CDF for trajectories with changed pseudonyms - split trajectory
-fig, ax = plt.subplots(figsize=(8, 5))
-ax.set_facecolor('white')
-
-# Plot CDF lines
-ax.plot(data1_sorted_split, cdf1_split, color=color1, linewidth=2, label="Edge")
-ax.plot(data2_sorted_split, cdf2_split, color=color2, linewidth=2, label="Intersection")
-ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
-
-# Limits and ticks
-ax.set_xlim(left=0)
-ax.set_ylim(0, 105)
-ax.set_yticks([0, 25, 50, 75, 100])
-
-# Axis labels
-ax.set_xlabel("Number of non-original pseudonyms per trajectory", fontsize=14, color='#555555')
-ax.set_ylabel("CDF (%)", fontsize=14, color='#555555')
-
-# Tick labels and tick lines (ggplot-style gray)
-tick_color = '#555555'
-for tick, label in zip(ax.yaxis.get_major_ticks(), ax.get_yticklabels()):
-    if label.get_text() == "50":  # 50% special case
-        tick.tick1line.set_color('red')
-        tick.tick2line.set_color('red')
-        label.set_color('red')
-    else:
-        tick.tick1line.set_color(tick_color)
-        tick.tick2line.set_color(tick_color)
-        label.set_color(tick_color)
-
-for tick, label in zip(ax.xaxis.get_major_ticks(), ax.get_xticklabels()):
-    tick.tick1line.set_color(tick_color)
-    tick.tick2line.set_color(tick_color)
-    label.set_color(tick_color)
-
-ax.tick_params(axis='x', labelsize=12)
-ax.tick_params(axis='y', labelsize=12)
-
-# Solid axes
-ax.spines['left'].set_visible(True)
-ax.spines['left'].set_color(tick_color)
-ax.spines['left'].set_linewidth(0.8)
-ax.spines['bottom'].set_visible(True)
-ax.spines['bottom'].set_color(tick_color)
-ax.spines['bottom'].set_linewidth(0.8)
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-
-# Horizontal lines at 25, 50, 75, 100 (skip 0)
-for y in [25, 50, 75, 100]:
-    if y == 50:
-        ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
-    else:
-        ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
-
-ax.set_axisbelow(True)
-
-# Legend with title and ggplot-style text color
-leg = ax.legend(title="Swapping Opportunity", fontsize=12, loc='lower right', frameon=False)
-leg.get_title().set_fontsize(12)
-leg.get_title().set_color(tick_color)
-for text in leg.get_texts():
-    text.set_color(tick_color)
-
-plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_split.svg", format="svg", bbox_inches="tight", dpi=300)
-#plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom.svg", format="svg", bbox_inches="tight", dpi=300)
-
-plt.show()
-
-
-#%% CDFs next to each other (a and b)
-fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
-
-# Define colors (same as histograms)
-color1, color2, color3 = "#FDD45F", "#F3B503", "#C09003"
-
-# ---------------- LEFT PANEL ----------------
-ax = axes[0]
-ax.set_facecolor("white")
-ax.plot(data1_sorted, cdf1, color=color1, linewidth=2, label="Edge")
-ax.plot(data2_sorted, cdf2, color=color2, linewidth=2, label="Intersection")
-ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
-
-# ---------------- RIGHT PANEL ----------------
-ax = axes[1]
-ax.set_facecolor("white")
-ax.plot(data1_sorted_split, cdf1_split, color=color1, linewidth=2, label="Edge")
-ax.plot(data2_sorted_split, cdf2_split, color=color2, linewidth=2, label="Intersection")
-ax.plot(data3_sorted, cdf3, color=color3, linewidth=2, label="Cloaking Area")
-
-# ---------------- SHARED STYLING ----------------
-tick_color = "#555555"
-for i, ax in enumerate(axes):
-    ax.set_xlim(left=0)
-    ax.set_ylim(0, 105)
-    ax.set_yticks([0, 25, 50, 75, 100])
-    ax.tick_params(axis='x', labelsize=12, colors=tick_color)
-    ax.tick_params(axis='y', labelsize=12)
-
-    # Remove y-axis from right panel
-    if i > 0:
-        ax.spines['left'].set_visible(False)
-        ax.tick_params(axis='y', left=False, labelleft=False)
-    else:
-        ax.spines['left'].set_color(tick_color)
-
-    ax.spines['bottom'].set_color(tick_color)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    # Horizontal gridlines
-    for y in [25, 50, 75, 100]:
-        #color = 'red' if y == 50 else '#b0b0b0'  
-        #ax.axhline(y, color=color, linestyle=':', linewidth=1.2 if y==50 else 0.7, zorder=0)
-        if y == 50:
-            ax.axhline(y, color='red', linestyle=':', linewidth=1.2, zorder=0)
-        else:
-            ax.axhline(y, color='#b0b0b0', linestyle=':', alpha=0.7, zorder=0)
-    for i, ax in enumerate(axes):
-        ax.set_xlim(left=0)
-        ax.set_ylim(0, 105)
-        ax.set_yticks([0, 25, 50, 75, 100])
-
-
-        ax.set_axisbelow(True)
-
-
-# Labels & titles
-axes[0].set_ylabel("CDF (%)", fontsize=14, color=tick_color)
-axes[0].set_title("(A) Original trajectories", fontsize=16, color="#333333")
-axes[1].set_title("(B) Split trajectories", fontsize=16, color="#333333")
-fig.supxlabel("Number of non-original pseudonyms per trajectory", fontsize=14, color=tick_color)
-
-# Only set legend for the right panel (axes[1])
-leg = axes[1].legend(
-    title="Swapping Opportunity",
-    fontsize=14,
-    loc='lower right',
-    frameon=False
-)
-
-leg.get_title().set_fontsize(14)
-leg.get_title().set_color("#555555")
-leg.get_title().set_ha('left') 
-
-# Ensure title color and text color match ticks
-leg.get_title().set_color('#555555')
-for text in leg.get_texts():
-    text.set_color('#555555')
-
-
-plt.tight_layout(rect=[0, 0, 1, 0.95])
-
-plt.savefig(r"\\tsclient\R\paper3\Figures/CDF_NumberOfNonOriginalPseudonymsByTrajectory_EdgeIntersectionCloakinggeom_PanelSplitNosplit.svg", format="svg", bbox_inches="tight", dpi=300)
-
-plt.show()
 
 
 ################
+
+
+
 #%% look at containers with no swaps
 import pandas as pd
 import numpy as np
 
-# containers with no swap: orig_uid == container_uid for all points
-# give me the number of containers that meet this condition
-# also give me the number of total unique containers (container_id)
-# calcualte the persentage of containers with no swap
-
-no_swap_edges_split = (gdf_edges_swppd['orig_uid'] == gdf_edges_swppd['container_uid']).groupby(gdf_edges_swppd['sub_container_id']).all()
-# returns True and False
-#True (1): orig_uid == container_uid for all rows in container aka no swap
-#False (0): at least one row differs aka sawpped
-n_no_swap_edges_split = no_swap_edges_split.sum() # adds up all Trues (1)
-total_containers_n_no_swap_edges_split = len(no_swap_edges_split) # same length as gdf_edges_swppd['sub_container_id'].nunique()
-pct_no_swap_edges_split = n_no_swap_edges_split / total_containers_n_no_swap_edges_split * 100
-
-# intersection split
-no_swap_nodes_split = (gdf_nodess_swppd['orig_uid'] == gdf_nodess_swppd['container_uid']).groupby(gdf_nodess_swppd['sub_container_id']).all()
-# retursn True and False
-#True (1): orig_uid == container_uid for all rows in container aka no swap
-#False (0): at least one row differs aka sawpped
-n_no_swap_nodes_split = no_swap_nodes_split.sum() # adds up all Trues (1)
-total_containers = len(no_swap_nodes_split) # same length as gdf_nodess_swppd['sub_container_id'].nunique()
-pct_no_swap_nodes_split = n_no_swap_nodes_split / total_containers * 100
-
-# edges not split
+# -----------------------------
+# Dataset 1: Edge-swapping
+# -----------------------------
 data1 = gdf_edges_swppd.groupby('container_id')['orig_uid'].nunique().values
 n_single_e = np.sum(data1 == 1)
 n_total_e = len(data1)
 perc_single_e = n_single_e / n_total_e * 100
 
-# intersections not split
+# Points per container for single-uid containers
+uid_counts_e = gdf_edges_swppd.groupby('container_id')['orig_uid'].nunique()
+single_uid_containers_e = uid_counts_e[uid_counts_e == 1].index
+point_counts_e = gdf_edges_swppd.groupby('container_id').size()
+single_uid_point_counts_e = point_counts_e.loc[single_uid_containers_e]
+
+median_points_e = single_uid_point_counts_e.median()
+max_points_e = single_uid_point_counts_e.max()
+
+# -----------------------------
+# Dataset 2: Intersection-swapping
+# -----------------------------
 data2 = gdf_nodess_swppd.groupby('container_id')['orig_uid'].nunique().values
 n_single_i = np.sum(data2 == 1)
 n_total_i = len(data2)
 perc_single_i = n_single_i / n_total_i * 100
 
-# cloaking based (never split)
+# Points per container for single-uid containers
+uid_counts_i = gdf_nodess_swppd.groupby('container_id')['orig_uid'].nunique()
+single_uid_containers_i = uid_counts_i[uid_counts_i == 1].index
+point_counts_i = gdf_nodess_swppd.groupby('container_id').size()
+single_uid_point_counts_i = point_counts_i.loc[single_uid_containers_i]
+
+median_points_i = single_uid_point_counts_i.median()
+max_points_i = single_uid_point_counts_i.max()
+
+# -----------------------------
+# Dataset 3: cloaking based swapping
+# -----------------------------
 data3 = t_cswappingl_origsynf_headtailsynf.groupby('container_id')['orig_uid'].nunique().values
 n_single_c = np.sum(data3 == 1)
 n_total_c = len(data3)
 perc_single_c = n_single_c / n_total_c * 100
 
+# Points per container for single-uid containers
+uid_counts_c = t_cswappingl_origsynf_headtailsynf.groupby('container_id')['orig_uid'].nunique()
+single_uid_containers_c = uid_counts_c[uid_counts_c == 1].index
+point_counts_c = t_cswappingl_origsynf_headtailsynf.groupby('container_id').size()
+single_uid_point_counts_c = point_counts_c.loc[single_uid_containers_c]
 
+median_points_c = single_uid_point_counts_c.median()
+max_points_c = single_uid_point_counts_c.max()
+
+#%%
+#%% splitting: must find a new way to measure 'trajectories with no swaps'
+# split: only one orig_uid != not swapped
+#print(gdf_edges_swppd.columns)
+#gdf_edges_swppd[['container_id', 'sub_container_id', 'orig_uid']] # could assign each uid a number based on the original container?
+
+# compare orig_uid to container_uid and flag differences
+gdf_edges_swppd['uid_swapped_boolean'] = gdf_edges_swppd['container_uid'] != gdf_edges_swppd['orig_uid']
+gdf_edges_swppd[['container_id', 'sub_container_id', 'container_uid', 'orig_uid', 'uid_swapped_boolean']]
+
+
+#%%
+####
+# -----------------------------
+# Dataset 1: Edge-swapping SPLIT
+# -----------------------------
+#data1s = gdf_edges_swppd.groupby('sub_container_id')['orig_uid'].nunique().values
+#n_single_es = np.sum(data1s == 1)
+
+# all the points that have been swapped
+#gdf_edges_swppd[gdf_edges_swppd['uid_swapped_boolean']==True] 
+# but not by container yet
+
+n_total_es= len(data1s)
+perc_single_es = n_single_es / n_total_is * 100
+
+# Points per container for single-uid containers
+uid_counts_es = gdf_edges_swppd.groupby('sub_container_id')['orig_uid'].nunique()
+single_uid_containers_es = uid_counts_es[uid_counts_es == 1].index
+point_counts_es = gdf_edges_swppd.groupby('sub_container_id').size()
+single_uid_point_counts_es = point_counts_es.loc[single_uid_containers_es]
+
+median_points_es = single_uid_point_counts_es.median()
+max_points_es = single_uid_point_counts_es.max()
+
+# -----------------------------
+# Dataset 2: Intersection-swapping SPLIT
+# -----------------------------
+data2s = gdf_nodess_swppd.groupby('sub_container_id')['orig_uid'].nunique().values
+n_single_is = np.sum(data2s == 1)
+n_total_is = len(data2s)
+perc_single_is = n_single_is / n_total_is * 100
+
+# Points per container for single-uid containers
+uid_counts_is = gdf_nodess_swppd.groupby('sub_container_id')['orig_uid'].nunique()
+single_uid_containers_is = uid_counts_is[uid_counts_is == 1].index
+point_counts_is = gdf_nodess_swppd.groupby('sub_container_id').size()
+single_uid_point_counts_is = point_counts_is.loc[single_uid_containers_is]
+
+median_points_is = single_uid_point_counts_is.median()
+max_points_is = single_uid_point_counts_is.max()
+
+
+####
+#%%-----------------------------
+# Build summary table
+# -----------------------------
 summary_table = pd.DataFrame({
     "Swapping method": ["Edge-swapping", "Edge-swapping (split)", "Intersection-swapping", 'Intersection-swapping (split)', "Cloaking Area-swapping"],
     
+    #"Percentage (%)": [round(perc_single_e,2), round(perc_single_i,2), round(perc_single_c,2)],
+    #"Trajectories with no swaps": [n_single_e, n_single_i, n_single_c],
+    #"Total trajectories": [n_total_e, n_total_i, n_total_c],
+    
+    "Trajectories with no swaps": [f"{perc_single_e:.2f}% ({n_single_e})",
+                                    f"{perc_single_es:.2f}% ({n_single_es})",
+                                    f"{perc_single_i:.2f}% ({n_single_i})",
+                                    f"{perc_single_is:.2f}% ({n_single_is})",
+                                    f"{perc_single_c:.2f}% ({n_single_c})"],
 
-    "Trajectories with no swaps": [f"{perc_single_e:.2f}% ({n_single_e} out of {gdf_edges_swppd['container_id'].nunique()})",
-                                    f"{pct_no_swap_edges_split:.2f}% ({n_no_swap_edges_split} out of {gdf_edges_swppd['sub_container_id'].nunique()})",
-                                    f"{perc_single_i:.2f}% ({n_single_i} out of {gdf_nodess_swppd['container_id'].nunique()})",
-                                    f"{pct_no_swap_nodes_split:.2f}% ({n_no_swap_nodes_split} out of {gdf_nodess_swppd['sub_container_id'].nunique()})",
-                                    f"{perc_single_c:.2f}% ({n_single_c} out of {t_cswappingl_origsynf_headtailsynf['container_id'].nunique()})"],
 
-
+    "Median points": [f"{median_points_e:.0f}", f"{median_points_es:.0f}", 
+                      f"{median_points_i:.0f}", f"{median_points_is:.0f}",
+                      f"{median_points_c:.0f}"],
+    
+    #"Max points": [max_points_e, max_points_i, max_points_c]
 })
 
 from IPython.display import display, HTML
@@ -490,25 +869,95 @@ display(HTML(summary_table.to_html(index=False)))
 
 
 
+################################################
+#%% (2) pseudonym changes by point
+import matplotlib.pyplot as plt
+
+plt.tight_layout()
+plt.show()
+plt.style.use("ggplot")
+
+fig, ax = plt.subplots(figsize=(6, 4))
+
+changes = gdf_edges_swppd['swap_count']
+
+ax.boxplot(
+    changes,
+    patch_artist=True,
+    boxprops=dict(facecolor="#FDD45F", edgecolor="black"),
+    medianprops=dict(color="black", linewidth=2),
+    whiskerprops=dict(color="black"),
+    capprops=dict(color="black"),
+    flierprops=dict(
+        marker='o',
+        markerfacecolor='#FDD45F',
+        markeredgecolor='#FDD45F',
+        markersize=4,
+        alpha=0.01  
+    )
+)
+
+# White background
+ax.set_facecolor('white')
+
+# Hide the default grid
+ax.grid(False)
+# Add horizontal dotted grid lines at y-axis ticks
+ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
+
+# Solid y-axis line
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['left'].set_linewidth(0.8)
+
+# Hide top and right spines
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+ax.set_ylabel("Pseudonym changes")
+
+# Custom x-axis label
+ax.set_xticks([1])
+ax.set_xticklabels([r"$t_{se}$"])
+
+# Get the median from the data
+median_val = changes.median()
+
+# Annotate the median on top of the existing median line
+ax.text(
+    x=1,  # x-position aligned with the box
+    y=median_val,  # y-position exactly at the median
+    s=f"{int(median_val)}",  # text to display
+    color='black',  # same as median line
+    fontsize=10,
+    ha='center',  # horizontally centered over the box
+    va='bottom',   # place text just above the line
+    alpha=0.5
+)
+
+plt.tight_layout()
+plt.savefig(r"\\tsclient\R\paper3\Figures/PointsSwapped_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.show()
+
+
+
+
 #################################################
-#%% look for missing columns
-sorted(gdf_edges_swppd.columns)
 #%% Figrues on longest sub-segment
 container_counts = gdf_edges_swppd.groupby('container_id').agg(
-    n_tid_subid=('container_tid_subid', 'nunique'),
-    n_orig_tid_subid=('orig_tid_subid', 'nunique'), 
-    n_points=('container_uid', 'size')
+    n_tid_subid=('tid_subid', 'nunique'),
+    n_orig_tid_subid=('orig_tid_subid', 'nunique'),
+    n_orig_tid=('orig_tid', 'nunique'),
+    n_points=('uid', 'size')
 ).reset_index()
 
 print(container_counts.head())
 
-container_counts_split = gdf_edges_swppd.groupby('sub_container_id').agg(
-    n_tid_subid=('container_tid_subid', 'nunique'),
-    n_orig_tid_subid=('orig_tid_subid', 'nunique'), 
-    n_points=('container_uid', 'size')
-).reset_index()
 
-print(container_counts_split.head())
+
+
+
+
 
 #%% longest sub-segment based on points
 import pandas as pd
@@ -686,7 +1135,99 @@ data_percent_intersection_s = longest_segments_is['prop_longest_segment'] * 100
 
 data_percent_cloaked = longest_segments_c['prop_longest_segment'] * 100
 
-#%% histogram 2: three seperate plots
+#%% histogram
+#%% option1: grouped histogram
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Data
+data_list = [data_percent_edge, data_percent_intersection, data_percent_cloaked]
+colors = ["#FDD45F", "#F3B503", "#C09003"]
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)", "Cloaking Area-swapping (t$_{sc}$)"]
+
+fig, ax = plt.subplots(figsize=(8,5))
+
+bins = np.arange(0, 101, 5)
+
+# Compute shared bins
+all_data = np.concatenate(data_list)
+counts = []
+for data in data_list:
+    c, bin_edges = np.histogram(data, bins=bins, range=(all_data.min(), all_data.max()))
+    counts.append(c)
+
+bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+bin_width = bin_edges[1] - bin_edges[0]
+
+# Offset for grouped bars
+n = len(data_list)
+offset = bin_width / (n + 1)
+
+for i, (c, color) in enumerate(zip(counts, colors)):
+    ax.bar(
+        bin_centers + (i - (n-1)/2)*offset,
+        c,
+        width=offset,
+        color=color,
+        edgecolor="white",
+        alpha=0.9,
+        linewidth=0.6
+    )
+
+# Median lines
+for i, (data, color) in enumerate(zip(data_list, colors)):
+    median_val = np.median(data)
+    
+    ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5)
+    
+    # different offset for last label
+    if i == 2:   # last dataset
+        x_offset = -2.75
+    else:
+        x_offset = -1.5
+
+    ax.text(
+        median_val + x_offset,
+        ax.get_ylim()[1]*0.8,
+        f"{median_val:.0f}%",
+        color=color,
+        fontsize=12,
+        ha='center',
+        rotation=90
+    )
+
+# Background
+ax.set_facecolor("white")
+ax.grid(False)
+ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
+
+# Spines
+ax.spines['left'].set_visible(True)
+ax.spines['left'].set_color('black')
+ax.spines['bottom'].set_visible(True)
+ax.spines['bottom'].set_color('black')
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
+
+# Labels
+ax.set_xlabel("Trajectory points of longest segment (%)", fontsize=14, color="#555555")
+ax.set_ylabel("Swapped trajectories", fontsize=14, color="#555555")
+
+# Ticks
+tick_color = "#555555"
+ax.tick_params(axis='x', colors=tick_color, labelsize=12)
+ax.tick_params(axis='y', colors=tick_color, labelsize=12)
+
+# Legend
+handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
+ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False, fontsize=12)
+
+plt.tight_layout()
+plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_medianAnnotated.svg", format="svg", bbox_inches="tight", dpi=300)
+plt.show()
+
+
+#%% option 2: three seperate plots
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -764,10 +1305,10 @@ for i, (ax, data, color, counts) in enumerate(zip(axes, data_list, colors, count
     ax.set_xlim(0,100)
 
 # Axis labels
-axes[0].set_ylabel("Number of swapped trajectories", fontsize=14, color="#555555")
+axes[0].set_ylabel("Swapped trajectories", fontsize=14, color="#555555")
 #for ax in axes:
 #    ax.set_xlabel("Longest segment (%)", fontsize=13, color="#555555")
-axes[1].set_xlabel("Share of trajectory points by dominant user (%)", fontsize=13, color="#555555")
+axes[1].set_xlabel("Longest segment (%)", fontsize=13, color="#555555")
 #fig.supxlabel("Longest segment (%)", fontsize=14, color="#555555")
 
 titles = ["(A) Edge-swapping (t$_{se}$)", "(B) Intersection-swapping (t$_{si}$)", "(C) Cloaking Area-swapping (t$_{sc}$)"]
@@ -780,161 +1321,80 @@ plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_threePanels
 
 plt.show()
 
-#%% and for split trajectories
-# Data
-data_list = [data_percent_edge_s, data_percent_intersection_s, data_percent_cloaked]
-#colors = ["#fcc72d", "#F3B503", "#C09003"]
-colors = ["#FDD45F", "#F3B503", "#C09003"]
-
-# Create 3 side-by-side plots
-fig, axes = plt.subplots(1, 3, figsize=(12,5), sharey=True)
-
-bins = np.arange(0, 101, 5)
-
-counts_list = []
-for data in data_list:
-    counts, _ = np.histogram(data, bins=bins)
-    counts_list.append(counts)
-
-global_max = max([c.max() for c in counts_list])
-
-for i, (ax, data, color, counts) in enumerate(zip(axes, data_list, colors, counts_list)):
-
-    bin_edges = bins
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    bin_width = bin_edges[1] - bin_edges[0]
-
-    ax.bar(
-        bin_centers,
-        counts,
-        width=bin_width*0.9,
-        color=color,
-        edgecolor="white",
-        alpha=0.9,
-        linewidth=0.6
-    )
-
-    # force same y-scale for all plots
-    ax.set_ylim(0, global_max * 1.15)
-
-    # Median line
-    median_val = np.median(data)
-    ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5)
-    
-    median_offsets = [4, 4, 4]
-    median_y_pos = [0.9, 0.9, 0.9]   
-
-    ax.text(
-        median_val + median_offsets[i],
-        global_max * median_y_pos[i],
-        f"{median_val:.0f}%",
-        color=color,
-        fontsize=12,
-        ha='center',
-        rotation=90
-    )
 
 
-    
-    # Remove y-axis for plots 2 and 3
-    if i > 0:
-        ax.spines['left'].set_visible(False)
-        ax.tick_params(axis='y', left=False, labelleft=False)
-
-    # Background
-    ax.set_facecolor("white")
-    ax.grid(False)
-    ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
-
-    # Spines
-    ax.spines['bottom'].set_visible(True)
-    ax.spines['bottom'].set_color('black')
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    ax.set_xlim(0,100)
-
-# Axis labels
-axes[0].set_ylabel("Number of swapped trajectories", fontsize=14, color="#555555")
-#for ax in axes:
-#    ax.set_xlabel("Longest segment (%)", fontsize=13, color="#555555")
-axes[1].set_xlabel("Share of trajectory points by dominant user (%)", fontsize=13, color="#555555")
-#fig.supxlabel("Longest segment (%)", fontsize=14, color="#555555")
-
-titles = ["(A) Edge-swapping (t$_{se} split$)", "(B) Intersection-swapping (t$_{si} split$)", "(C) Cloaking Area-swapping (t$_{sc}$)"]
-for ax, title in zip(axes, titles):
-    ax.set_title(title, fontsize=13, color="#333333")
-
-plt.tight_layout(rect=[0,0.08,1,1])
-
-plt.savefig(r"\\tsclient\R\paper3\Figures/hist_segmentLengthNrPoints_splitTraj_threePanels.svg", format="svg", bbox_inches="tight", dpi=300)
-
-plt.show()
-
-
-
-
-
-
-
-#%% get duration of each segment in seconds
+#%% get length of each segment in seconds
 import pandas as pd
 
-def longest_segment(df, full_or_split_container_col, segment_col, unix_col):
+# get start and end timestamps
+segment_durations = gdf_edges_swppd.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min', 'max']).reset_index()
 
-    # get start and end timestamps per container & segment
-    seg_durations = df.groupby([full_or_split_container_col, segment_col])[unix_col].agg(['min','max']).reset_index()
+# duration in seconds
+segment_durations['duration_sec'] = segment_durations['max'] - segment_durations['min']
+
+# finding longest segment duration per container
+longest_segment = segment_durations.groupby('container_id')['duration_sec'].max().reset_index()
+longest_segment.rename(columns={'duration_sec': 'longest_segment_sec'}, inplace=True)
+
+# converting to minutes 
+longest_segment['longest_segment_min'] = longest_segment['longest_segment_sec'] / 60
+longest_segment
+
+
+
+#%% prep gdf_nodess_swppd df to calculate duration of segment
+gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'timestamp': 'unix_timestamp'})
+
+
+#%%
+import pandas as pd
+
+def longest_segment(df, segment_col):
+    """
+    Compute longest segment duration per container.
     
-    # calculate segment duration in seconds
+    df: GeoDataFrame
+    segment_col: column identifying segment ('tid_subid' or 'orig_tid')
+    """
+    # Start and end timestamps per container & segment
+    seg_durations = df.groupby(['container_id', segment_col])['unix_timestamp'].agg(['min','max']).reset_index()
+    
+    # Duration in seconds (ensure numeric)
     if np.issubdtype(seg_durations['min'].dtype, np.datetime64):
         seg_durations['duration_sec'] = (seg_durations['max'] - seg_durations['min']).dt.total_seconds()
     else:
         seg_durations['duration_sec'] = seg_durations['max'] - seg_durations['min']
     
-    # find longest segment per container
-    longest = seg_durations.groupby(full_or_split_container_col)['duration_sec'].max().reset_index()
+    # Longest segment per container
+    longest = seg_durations.groupby('container_id')['duration_sec'].max().reset_index()
+    
+    # Convert to hours
     longest['duration_hr'] = longest['duration_sec'] / 3600
     
     return longest
 
+# load different df version
+gdf_edges_swppd_unix = gpd.read_parquet(r'd:\paper3\Data\output\FinalSwappingForEvaluationFigures\final_points_edgeSwap.parquet')
+longest_edge = longest_segment(gdf_edges_swppd_unix, 'tid_subid')
+longest_intersection = longest_segment(gdf_nodess_swppd, 'orig_tid')
 
-longest_edge = longest_segment(gdf_edges_swppd, 'container_id', 'orig_tid_subid', 'unix_timestamp_afterCloaking')
-longest_edge_split = longest_segment(gdf_edges_swppd, 'sub_container_id', 'orig_tid_subid', 'unix_timestamp_afterCloaking')
 data_hours_edge = longest_edge['duration_hr']
-data_hours_edge_split = longest_edge_split['duration_hr']
-
-#gdf_nodess_swppd = gdf_nodess_swppd.rename(columns={'timestamp': 'unix_timestamp_afterCloaking'})
-longest_intersection = longest_segment(gdf_nodess_swppd, 'container_id', 'orig_tid', 'unix_timestamp_afterCloaking')
-longest_intersection_split = longest_segment(gdf_nodess_swppd, 'sub_container_id', 'orig_tid', 'unix_timestamp_afterCloaking')
 data_hours_intersection = longest_intersection['duration_hr']
-data_hours_intersection_split = longest_intersection_split['duration_hr']
 
-longest_cloaked = longest_segment(t_cswappingl_origsynf_headtailsynf, 'container_id', 'original_tid', 'unix_timestamp_final')
-data_hours_cloaked = longest_cloaked['duration_hr']
+#%%
 
+#%% as a boxplot - looked different before (edg-based swapping must be wrong)
+# edge based swapping: timestamp is off in gdf_edges_swppd
 
-
-
-#%% as a boxplot
 import matplotlib.pyplot as plt
 import numpy as np
 
 plt.style.use("ggplot")
 fig, ax = plt.subplots(figsize=(6,5))
 
-#data_list = [data_hours_edge, data_hours_edge_split, data_hours_intersection, data_hours_intersection_split, data_hours_cloaked]
-#labels = [r"t$_{se}$", r"t$_{se}$ split", r"t$_{si}$", r"t$_{si}$ split", r"t$_{sc}$"]
-#colors = ["#FDD45F", "#FDD45F", "#F3B503", "#F3B503",  "#C09003"]
-
-# "raw" conatiners
-data_list = [data_hours_edge, data_hours_intersection, data_hours_cloaked]
-labels = [r"t$_{se}$", r"t$_{si}$", r"t$_{sc}$"]
-
-# split containers
-#data_list = [data_hours_edge_split, data_hours_intersection_split, data_hours_cloaked]
-#labels = [r"t$_{se}$ split", r"t$_{si}$ split", r"t$_{sc}$"]
-
-colors = ["#FDD45F", "#F3B503", "#C09003"]
+data_list = [data_hours_edge, data_hours_intersection]
+labels = [r"t$_{se}$", r"t$_{si}$"]
+colors = ["#FDD45F", "#F3B503"]
 
 # Boxplot with wider boxes
 bp = ax.boxplot(
@@ -944,21 +1404,19 @@ bp = ax.boxplot(
     whiskerprops=dict(color="black"),
     capprops=dict(color="black"),
     flierprops=dict(marker='o', markersize=4, alpha=0.2),
-    showfliers=False,
     labels=labels,
     widths=0.7  # <-- make boxes wider
 )
 
 # Apply colors to boxes and fliers
-#for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
-for patch, color in zip(bp['boxes'], colors):
+for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
     patch.set_facecolor(color)
     patch.set_edgecolor('black')
-    #flier.set_markerfacecolor(color)
-    #flier.set_markeredgecolor(color)
+    flier.set_markerfacecolor(color)
+    flier.set_markeredgecolor(color)
 
 # Axis formatting
-ax.set_ylabel("Duration of longest segment (hours)")
+ax.set_ylabel("Longest segment duration (hours)")
 ax.set_facecolor("white")
 ax.grid(False)
 ax.yaxis.grid(True, linestyle=":", color="gray", alpha=0.7, zorder=0)
@@ -976,7 +1434,7 @@ for i, data in enumerate(data_list, start=1):
     ax.text(
         x=i,
         y=median_val,
-        s=f"{median_hours_int}h {median_minutes}min",
+        s=f"{median_hours_int}h {median_minutes}m",
         color='black',
         fontsize=10,
         ha='center',
@@ -986,17 +1444,12 @@ for i, data in enumerate(data_list, start=1):
 
 # Legend below without title
 handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
-#custom_labels = ["Edge-swapping (t$_{se}$)", "Edge-swapping (t$_{se}$ split)", "Intersection-swapping (t$_{si}$)",  "Intersection-swapping (t$_{si}$ split)",  "Cloaking Area-swapping (t$_{sc}$)"]  
-custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)",  "Cloaking Area-swapping (t$_{sc}$)"]  
-#custom_labels = ["Edge-swapping (t$_{se}$ split)", "Intersection-swapping (t$_{si}$ split)",  "Cloaking Area-swapping (t$_{sc}$)"]  
+custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
+ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
 
-ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=1, frameon=False, fontsize=12)
-#ax.legend(handles, custom_labels, loc='upper left', bbox_to_anchor=(0.02, 0.98), frameon=False, fontsize=12)
 
 plt.tight_layout()
-#plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_split.svg", format="svg", bbox_inches="tight", dpi=300)
-#plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_3swappingStrategies_Notsplit.svg", format="svg", bbox_inches="tight", dpi=300)
-
+#plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_longestSegment_duration_edgeAndNode.svg", format="svg", bbox_inches="tight", dpi=300)
 plt.show()
 
 
@@ -1027,7 +1480,7 @@ def pct_segments_under(df_seg, thresholds):
 # Compute segment durations for edges
 # -----------------------------
 df_edges = gdf_edges_swppd.copy()
-df_edges_segments = df_edges.groupby(['container_id', 'orig_tid_subid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
+df_edges_segments = df_edges.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min','max']).reset_index()
 df_edges_segments['duration_sec'] = df_edges_segments['max'] - df_edges_segments['min']
 df_edges_segments['duration_min'] = df_edges_segments['duration_sec'] / 60
 
@@ -1037,175 +1490,30 @@ pct_edges = pct_segments_under(df_edges_segments, thresholds_min)
 # Compute segment durations for intersections
 # -----------------------------
 df_nodes = gdf_nodess_swppd.copy()
-df_nodes_segments = df_nodes.groupby(['container_id', 'orig_tid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
+df_nodes_segments = df_nodes.groupby(['container_id', 'orig_tid'])['unix_timestamp'].agg(['min','max']).reset_index()
 df_nodes_segments['duration_sec'] = df_nodes_segments['max'] - df_nodes_segments['min']
 df_nodes_segments['duration_min'] = df_nodes_segments['duration_sec'] / 60
 
 pct_nodes = pct_segments_under(df_nodes_segments, thresholds_min)
 
-#%%
-# -----------------------------
-# Compute segment durations for cloaking
-# -----------------------------
-df_cloaked = t_cswappingl_origsynf_headtailsynf.copy()
-df_cloaked_segments = t_cswappingl_origsynf_headtailsynf.groupby(['container_id', 'original_tid'])['unix_timestamp_final'].agg(['min','max']).reset_index()
-df_cloaked_segments['duration_sec'] = df_cloaked_segments['max'] - df_cloaked_segments['min']
-df_cloaked_segments['duration_min'] = df_cloaked_segments['duration_sec'] / 60
-
-pct_cloaked = pct_segments_under(df_cloaked_segments, thresholds_min)
-
-#%% inspect cloaked data
-for th, data in zip(thresholds_min, data_all_cloaked):
-    q1, median, q3 = np.percentile(data, [25, 50, 75])
-    print(f"Threshold <{th} min: Q1={q1}, Median={median}, Q3={q3}, IQR={q3-q1}")
-
-#Threshold <15 min: Q1=0.0, Median=0.0, Q3=20.0, IQR=20.0
-#Threshold <60 min: Q1=0.0, Median=20.0, Q3=40.0, IQR=40.0
-#Threshold <240 min: Q1=0.0, Median=42.857142857142854, Q3=100.0, IQR=100.0
-
-#%% categorise and show table instead
-import pandas as pd
-
-# Define bins and labels
-bins = [0, 15, 60, 240, float('inf')]
-labels = ['<15 min', '<60 min', '<240 min', '>=240 min']
-
-df_cloaked_segments['duration_category'] = pd.cut(df_cloaked_segments['duration_min'], bins=bins, labels=labels, right=False)
-counts = df_cloaked_segments['duration_category'].value_counts().sort_index()
-percentages = df_cloaked_segments['duration_category'].value_counts(normalize=True).sort_index() * 100
-summary_cloaked = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
-
-df_nodes_segments['duration_category'] = pd.cut(df_nodes_segments['duration_min'], bins=bins, labels=labels, right=False)
-counts = df_nodes_segments['duration_category'].value_counts().sort_index()
-percentages = df_nodes_segments['duration_category'].value_counts(normalize=True).sort_index() * 100
-summary_nodes = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
-
-df_edges_segments['duration_category'] = pd.cut(df_edges_segments['duration_min'], bins=bins, labels=labels, right=False)
-counts = df_edges_segments['duration_category'].value_counts().sort_index()
-percentages = df_edges_segments['duration_category'].value_counts(normalize=True).sort_index() * 100
-summary_edges = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
-
-# split ones
-df_nodes_segments_split = gdf_nodess_swppd.groupby(['sub_container_id', 'orig_tid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
-df_nodes_segments_split['duration_sec'] = df_nodes_segments_split['max'] - df_nodes_segments_split['min']
-df_nodes_segments_split['duration_min'] = df_nodes_segments_split['duration_sec'] / 60
-
-df_edges_segments_split = gdf_edges_swppd.groupby(['sub_container_id', 'orig_tid_subid'])['unix_timestamp_afterCloaking'].agg(['min','max']).reset_index()
-df_edges_segments_split['duration_sec'] = df_edges_segments_split['max'] - df_edges_segments_split['min']
-df_edges_segments_split['duration_min'] = df_edges_segments_split['duration_sec'] / 60
-
-df_nodes_segments_split['duration_category'] = pd.cut(df_nodes_segments_split['duration_min'], bins=bins, labels=labels, right=False)
-counts = df_nodes_segments_split['duration_category'].value_counts().sort_index()
-percentages = df_nodes_segments_split['duration_category'].value_counts(normalize=True).sort_index() * 100
-summary_nodes_split = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
-
-df_edges_segments_split['duration_category'] = pd.cut(df_edges_segments_split['duration_min'], bins=bins, labels=labels, right=False)
-counts = df_edges_segments_split['duration_category'].value_counts().sort_index()
-percentages = df_edges_segments_split['duration_category'].value_counts(normalize=True).sort_index() * 100
-summary_edges_split = pd.DataFrame({'count': counts, 'percentage': percentages.round(2)})
-summary_edges_split
-
-#%%
-import matplotlib.pyplot as plt
-import numpy as np
-
-# List of your summary DataFrames
-dfs = [summary_edges, summary_edges_split, summary_nodes, summary_nodes_split, summary_cloaked]
-labels = ["Edge-swapping\n(t$_{se}$)", "Edge-swapping\n(t$_{se}$ split)", "Intersection-swapping\n(t$_{si}$)",  "Intersection-swapping\n(t$_{si}$ split)",  "Cloaking Area-swapping\n(t$_{sc}$)"]  
-
-categories = summary_edges.index  # ['<15 min','<60 min','<240 min','>=240 min']
-colors = ['#fef0d9','#fdcc8a','#fc8d59','#d7301f']
-
-category_labels = {
-    '<15 min': 'under 15 min',
-    '<60 min': 'under 1 h',
-    '<240 min': 'under 4h',
-    '>=240 min': 'over 4h'
-}
-
-
-x = np.arange(len(labels))
-width = 0.6
-
-# White background style
-plt.style.use('default')
-fig, ax = plt.subplots(figsize=(10,6))
-fig.patch.set_facecolor('white')
-ax.set_facecolor('white')
-
-bottom = [0]*len(dfs)
-
-# Plot stacked bars with high zorder so they appear on top of grid
-for i, cat in enumerate(categories):
-    heights = [df.loc[cat, 'percentage'] for df in dfs]
-    ax.bar(x, heights, width=0.8, bottom=bottom, color=colors[i], zorder=3)
-    
-    # Add segment labels inside bars if large enough
-    for xi, (h, b) in enumerate(zip(heights, bottom)):
-        if h > 3:  # avoid clutter on very small segments
-            #ax.text(xi, b + h/2, f"{cat}: {h:.1f}%", ha='center', va='center', fontsize=9, zorder=4)
-            #ax.text(xi, b + h/2, f"{h:.1f}% {cat}", ha='center', va='center', fontsize=9, zorder=4)
-            ax.text(xi, b + h/2, f"{int(round(h))}% {category_labels[cat]}", ha='center', va='center', fontsize=9, zorder=4)
-    
-    bottom = [b + h for b, h in zip(bottom, heights)]
-
-# Axis labels and title
-ax.set_xticks(x)
-ax.set_xticklabels(labels, fontsize=13, color="#333333", rotation=25, ha='right')
-ax.set_ylabel("Container segments (%)", fontsize=13, color="#333333")
-
-# Grid lines behind bars
-ax.yaxis.grid(True, color='lightgrey', linestyle='--', linewidth=0.7, zorder=0)
-ax.xaxis.grid(False)
-
-# Spines style
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-ax.spines['left'].set_visible(True)
-ax.spines['bottom'].set_visible(True)
-
-tick_color = '#555555'
-
-# Set tick color
-ax.tick_params(axis='x', colors=tick_color)  # x-axis tick marks
-ax.tick_params(axis='y', colors=tick_color)  # y-axis tick marks
-ax.tick_params(axis='x', labelcolor=tick_color)  # x-axis labels
-ax.tick_params(axis='y', labelcolor=tick_color)  # y-axis labels
-
-# Set spine (axis line) color
-for spine in ['left', 'bottom']:
-    ax.spines[spine].set_color(tick_color)
-
-ax.set_ylim(0, 100)
-
-plt.tight_layout()
-plt.savefig(r"\\tsclient\R\paper3\Figures/stackedBars_segmentDuration.svg", format="svg", bbox_inches="tight", dpi=300)
-
-plt.show()
-
-
-
-#%% cloaking based containers not suitable for tboxplot, see comment above
 # -----------------------------
 # Prepare data for boxplot (all segments)
 # Each element is a list of values for a threshold
 data_all_edges = [pct_edges[f'under_{th}min'] for th in thresholds_min]
 data_all_nodes = [pct_nodes[f'under_{th}min'] for th in thresholds_min]
-data_all_cloaked = [pct_cloaked[f'under_{th}min'] for th in thresholds_min]
 
 # Combine for grouped boxplot: [edges_thresh1, nodes_thresh1, edges_thresh2, nodes_thresh2, ...]
 data_grouped = []
-for e, n, c in zip(data_all_edges, data_all_nodes, data_all_cloaked):
-    data_grouped.extend([e, n, c])
+for e, n in zip(data_all_edges, data_all_nodes):
+    data_grouped.extend([e, n])
 
 # Colors: alternate edges and nodes
-colors = ["#FDD45F", "#F3B503", "#C09003"] * len(thresholds_min)
+colors = ["#FDD45F", "#F3B503"] * len(thresholds_min)
 
 # X-axis positions
 positions = []
 for i in range(len(thresholds_min)):
-    # 3 boxes per threshold, spaced by 1
-    positions.extend([i*4 + 1, i*4 + 2, i*4 + 3])
+    positions.extend([i*3+1, i*3+2])  # space between threshold groups
 
 # -----------------------------
 # Plot
@@ -1255,13 +1563,10 @@ for i, d in zip(positions, data_grouped):
 
 # Custom legend
 handles = [plt.Line2D([0],[0], color="#FDD45F", lw=8),
-           plt.Line2D([0],[0], color="#F3B503", lw=8),
-           plt.Line2D([0],[0], color="#C09003", lw=8)
-           ]
+           plt.Line2D([0],[0], color="#F3B503", lw=8)]
+labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
 
-labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)", "Cloaking Area-Swapping (t$_{sc}$)"]  
-
-ax.legend(handles, labels,  title="Swapping Opportunity", loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, frameon=False)
+ax.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
 
 plt.tight_layout()
 #plt.savefig(r"\\tsclient\R\paper3\Figures/boxplot_segmentDuration_edges_and_nodes.svg", format="svg", bbox_inches="tight", dpi=300)
@@ -1868,82 +2173,3 @@ gdf_edges_swppd.osmid_edge
 # container id is new final tid
 # trajectory sub-segments are tid_subid
 # would compare number of points by osmid_edge to raw. by time bin? total?
-
-
-
-
-
-
-#%%################################################
-#%%################################################
-#%%################################################
-# attributes that would need to be derived from swapping history
-#%%################################################
-#%% (2) pseudonym changes by point
-import matplotlib.pyplot as plt
-
-plt.tight_layout()
-plt.show()
-plt.style.use("ggplot")
-
-fig, ax = plt.subplots(figsize=(6, 4))
-
-changes = gdf_edges_swppd['swap_count']
-
-ax.boxplot(
-    changes,
-    patch_artist=True,
-    boxprops=dict(facecolor="#FDD45F", edgecolor="black"),
-    medianprops=dict(color="black", linewidth=2),
-    whiskerprops=dict(color="black"),
-    capprops=dict(color="black"),
-    flierprops=dict(
-        marker='o',
-        markerfacecolor='#FDD45F',
-        markeredgecolor='#FDD45F',
-        markersize=4,
-        alpha=0.01  
-    )
-)
-
-# White background
-ax.set_facecolor('white')
-
-# Hide the default grid
-ax.grid(False)
-# Add horizontal dotted grid lines at y-axis ticks
-ax.yaxis.grid(True, linestyle=':', color='gray', alpha=0.7, zorder=0)
-
-# Solid y-axis line
-ax.spines['left'].set_visible(True)
-ax.spines['left'].set_color('black')
-ax.spines['left'].set_linewidth(0.8)
-
-# Hide top and right spines
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-
-ax.set_ylabel("Pseudonym changes")
-
-# Custom x-axis label
-ax.set_xticks([1])
-ax.set_xticklabels([r"$t_{se}$"])
-
-# Get the median from the data
-median_val = changes.median()
-
-# Annotate the median on top of the existing median line
-ax.text(
-    x=1,  # x-position aligned with the box
-    y=median_val,  # y-position exactly at the median
-    s=f"{int(median_val)}",  # text to display
-    color='black',  # same as median line
-    fontsize=10,
-    ha='center',  # horizontally centered over the box
-    va='bottom',   # place text just above the line
-    alpha=0.5
-)
-
-plt.tight_layout()
-#plt.savefig(r"\\tsclient\R\paper3\Figures/PointsSwapped_edge_based_swapping.svg", format="svg", bbox_inches="tight", dpi=300)
-plt.show()
