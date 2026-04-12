@@ -551,8 +551,8 @@ norm_B = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
 plot_map = [
     (axB, street_Bp, "(B) Edge-swapping (t$_{se}split$)"),
-    (axD, street_Dp, "(D) Intersection-swapping (t$_{si}split$)"),
-    (axC, street_Cp, "(C) Cloaking Area-swapping (t$_{sc}$)")
+    (axD, street_Dp, "(D) Cloaking Area-swapping (t$_{sc}$)"),
+    (axC, street_Cp, "(C) Intersection-swapping (t$_{si}split$)")
 ]
 
 for ax, gdf, title in plot_map:
