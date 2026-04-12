@@ -1262,40 +1262,6 @@ print(raster.rio.crs)
 raster_3857 = raster.rio.reproject("EPSG:3857")
 print(raster_3857.rio.crs)
 
-#%%
-#import contextily as ctx
-
-fig, ax = plt.subplots(figsize=(10, 10))
-
-raster_3857.plot(ax=ax, 
-    cmap="inferno",
-    alpha=0.8,
-    robust=True) # to exlcude outliers from the colour ramp - 98th percentile only
-
-ctx.add_basemap(
-    ax, 
-    crs="EPSG:3857",
-    source=ctx.providers.CartoDB.PositronNoLabels,
-    attribution=False  
-)
-ax.set_aspect("equal")  
-
-ax.set_xticks([])
-ax.set_yticks([])
-ax.set_xlabel("")
-ax.set_ylabel("")
-for spine in ax.spines.values():
-    spine.set_visible(True)
-    spine.set_linewidth(1.2)
-    spine.set_color("black")
-ax.set_title("")
-
-plt.show()
-
-
-
-
-
 
 #%% data for panel figure
 wKDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\KernelD_cf_central_weighted.tif", masked=True)
@@ -1351,6 +1317,42 @@ fp_wKDE_c = fp_wKDE_c.rio.reproject(3857)
 print(fp_wKDE_c.rio.crs)
 
 
+#%% 4th row
+e_wKDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\evening\wKernel_ev_cf.tif", masked=True)
+e_wKDE_baseline = e_wKDE_baseline.rio.reproject(3857)
+print(e_wKDE_baseline.rio.crs)
+
+e_wKDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\evening\wKernel_ev_e.tif", masked=True)
+e_wKDE_e = e_wKDE_e.rio.reproject(3857)
+print(e_wKDE_e.rio.crs)
+
+e_wKDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\evening\wKernel_ev_i.tif", masked=True)
+e_wKDE_i = e_wKDE_i.rio.reproject(3857)
+print(e_wKDE_i.rio.crs)
+
+e_wKDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\evening\wKernel_ev_c.tif", masked=True)
+e_wKDE_c = e_wKDE_c.rio.reproject(3857)
+print(e_wKDE_c.rio.crs)
+
+
+#%% final row
+#%% 4th row
+n_wKDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\night\wKernel_Night_cf.tif", masked=True)
+n_wKDE_baseline = n_wKDE_baseline.rio.reproject(3857)
+print(n_wKDE_baseline.rio.crs)
+
+n_wKDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\night\wKernel_Night_e.tif", masked=True)
+n_wKDE_e = n_wKDE_e.rio.reproject(3857)
+print(n_wKDE_e.rio.crs)
+
+n_wKDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\night\wKernel_Night_i.tif", masked=True)
+n_wKDE_i = n_wKDE_i.rio.reproject(3857)
+print(n_wKDE_i.rio.crs)
+
+n_wKDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE_weighted\night\wKernel_Night_c.tif", masked=True)
+n_wKDE_c = n_wKDE_c.rio.reproject(3857)
+print(n_wKDE_c.rio.crs)
+
 #%% panel figure
 #%% KDE weighted as hours not seconds
 wKDE_baseline_hours = wKDE_baseline / 3600
@@ -1368,6 +1370,16 @@ fp_wKDE_e_hours = fp_wKDE_e / 3600
 fp_wKDE_i_hours = fp_wKDE_i / 3600
 fp_wKDE_c_hours = fp_wKDE_c / 3600
 
+e_wKDE_baseline_hours = e_wKDE_baseline / 3600
+e_wKDE_e_hours = e_wKDE_e / 3600
+e_wKDE_i_hours = e_wKDE_i / 3600
+e_wKDE_c_hours = e_wKDE_c / 3600
+
+n_wKDE_baseline_hours = n_wKDE_baseline / 3600
+n_wKDE_e_hours = n_wKDE_e / 3600
+n_wKDE_i_hours = n_wKDE_i / 3600
+n_wKDE_c_hours = n_wKDE_c / 3600
+
 #%% add code from one row panel
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1379,6 +1391,8 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 rasters = [wKDE_baseline_hours, wKDE_e_hours, wKDE_i_hours, wKDE_c_hours, # row 1
            #m_wKDE_baseline, m_wKDE_e, m_wKDE_i, m_wKDE_c] # 2nd row
 ]
+
+
 # -----------------------
 # shared scaling
 # -----------------------
@@ -1388,9 +1402,9 @@ vmax = np.nanpercentile(all_values, 98)
 
 labels = [
     '(A) Baseline\n(t$_{f}$)', 
-    '(B) Edge-swapping\n(t$_{se}$ split)', 
-    '(C) Intersection-swapping\n(t$_{si}$ split)', 
-    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+    '(B) Edge-swapping\n(t$_{se}split$)', 
+    '(C) Intersection-swapping\n(t$_{si}split$)', 
+    '(D) Cloaking Area-swapping\n(t$_{sc}$)'
 ]
 
 # -----------------------
@@ -1428,14 +1442,14 @@ for ax, r, lab in zip(axes, rasters, labels):
     ax.set_yticks([])
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title(lab, fontsize=22, color="#333333")
+    ax.set_title(lab, fontsize=22, color="#333333", fontweight='bold')
 
     for spine in ax.spines.values():
         spine.set_visible(True)
         spine.set_linewidth(1.2)
         spine.set_color("black")
 
-axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
+#axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
 
 # -----------------------
 # COLORBAR (correct height binding)
@@ -1463,7 +1477,12 @@ cbar.ax.tick_params(labelsize=14, color="#333333")
 
 #cbar.set_label("Density of stay points per km$^2$", fontsize=16, color="#333333")
 cbar.set_label("Stay duration density\n(hours/km$^2$)", fontsize=16, color="#333333")
-
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_weighted_fullDay.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
 plt.show()
 
 
@@ -1471,7 +1490,6 @@ plt.show()
 
 
 #%% add more rowws to panel
-# %%
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -1503,7 +1521,22 @@ row3 = [
     fp_wKDE_c_hours
 ]
 
-rasters = row1 + row2 + row3
+
+row4 = [
+    e_wKDE_baseline_hours,
+    e_wKDE_e_hours,
+    e_wKDE_i_hours,
+    e_wKDE_c_hours
+]
+
+row5 = [
+    n_wKDE_baseline_hours,
+    n_wKDE_e_hours,
+    n_wKDE_i_hours,
+    n_wKDE_c_hours
+]
+
+rasters = row1 + row2 + row3 + row4 + row5
 
 labels_row1 = [
     '(A) Baseline\n(t$_{f}$)',
@@ -1522,13 +1555,15 @@ def get_scale(rs):
 vmin1, vmax1 = get_scale(row1)
 vmin2, vmax2 = get_scale(row2)
 vmin3, vmax3 = get_scale(row3)
+vmin4, vmax4 = get_scale(row4)  
+vmin5, vmax5 = get_scale(row5)
 
 # -----------------------
 # FIGURE
 # -----------------------
 fig, axes = plt.subplots(
-    3, 4,
-    figsize=(20, 10),
+    5, 4,   
+    figsize=(20, 16),  
     constrained_layout=False
 )
 
@@ -1553,8 +1588,12 @@ for i, (ax, r) in enumerate(zip(axes, rasters)):
         vmin, vmax = vmin1, vmax1
     elif i < 8:
         vmin, vmax = vmin2, vmax2
-    else:
+    elif i < 12:
         vmin, vmax = vmin3, vmax3
+    elif i < 16:
+        vmin, vmax = vmin4, vmax4   
+    else:
+        vmin, vmax = vmin5, vmax5   
 
     r = r.squeeze()
 
@@ -1598,7 +1637,9 @@ for i, (ax, r) in enumerate(zip(axes, rasters)):
 # -----------------------
 axes[0].set_ylabel("(1) Full day", fontsize=16, labelpad=6, color="#333333")
 axes[4].set_ylabel("(2) Morning (7–9)", fontsize=16, labelpad=6, color="#333333")
-axes[8].set_ylabel("(3) Flat Peak (9-16)", fontsize=16, labelpad=6, color="#333333")
+axes[8].set_ylabel("(3) Flat Peak (9–16)", fontsize=16, labelpad=6, color="#333333")
+axes[12].set_ylabel("(4) Evening (16-20)", fontsize=16, labelpad=6, color="#333333")  
+axes[16].set_ylabel("(4) Night (20-7)", fontsize=16, labelpad=6, color="#333333")  
 
 # -----------------------
 # COLORBAR FUNCTION
@@ -1642,10 +1683,657 @@ def add_cbar(ax, vmin, vmax, label):
 add_cbar(axes[3], vmin1, vmax1, "Stay duration density\n(hours/km$^2$)")
 add_cbar(axes[7], vmin2, vmax2, "Stay duration density\n(hours/km$^2$)")
 add_cbar(axes[11], vmin3, vmax3, "Stay duration density\n(hours/km$^2$)")
+add_cbar(axes[15], vmin4, vmax4, "Stay duration density\n(hours/km$^2$)")
+add_cbar(axes[19], vmin5, vmax5, "Stay duration density\n(hours/km$^2$)")
 
 # -----------------------
 # SHOW
 # -----------------------
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_weighted_timebins_individualColourBars.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+plt.show()
+
+
+
+#%% one shared colour bar for the time bin rows
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+# -----------------------
+# DATA
+# -----------------------
+row1 = [
+    wKDE_baseline_hours,
+    wKDE_e_hours,
+    wKDE_i_hours,
+    wKDE_c_hours
+]
+
+row2 = [
+    m_wKDE_baseline_hours,
+    m_wKDE_e_hours,
+    m_wKDE_i_hours,
+    m_wKDE_c_hours
+]
+
+row3 = [
+    fp_wKDE_baseline_hours,
+    fp_wKDE_e_hours,
+    fp_wKDE_i_hours,
+    fp_wKDE_c_hours
+]
+
+row4 = [
+    e_wKDE_baseline_hours,
+    e_wKDE_e_hours,
+    e_wKDE_i_hours,
+    e_wKDE_c_hours
+]
+
+row5 = [
+    n_wKDE_baseline_hours,
+    n_wKDE_e_hours,
+    n_wKDE_i_hours,
+    n_wKDE_c_hours
+]
+
+rasters = row1 + row2 + row3 + row4 + row5
+
+labels_row1 = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n(t$_{se}$ split)',
+    '(C) Intersection-swapping\n(t$_{si}$ split)',
+    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# SCALING
+# -----------------------
+def get_scale(rs):
+    vals = np.concatenate([np.asarray(r.values).ravel() for r in rs])
+    return np.nanpercentile(vals, 2), np.nanpercentile(vals, 98)
+
+vmin1, vmax1 = get_scale(row1)
+
+rows_2_to_5 = row2 + row3 + row4 + row5
+vmin_shared, vmax_shared = get_scale(rows_2_to_5)
+
+# -----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(
+    5, 4,
+    figsize=(20, 16),
+    constrained_layout=False
+)
+
+axes = axes.flatten()
+
+fig.subplots_adjust(
+    hspace=0.01,
+    wspace=0.025,
+    top=0.995,
+    bottom=0.02,
+    left=0.04,
+    right=0.96
+)
+
+# -----------------------
+# PLOTTING
+# -----------------------
+for i, (ax, r) in enumerate(zip(axes, rasters)):
+
+    if i < 4:
+        vmin, vmax = vmin1, vmax1
+    else:
+        vmin, vmax = vmin_shared, vmax_shared
+
+    r = r.squeeze()
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.85,
+        add_colorbar=False,
+        add_labels=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_anchor("C")
+    ax.margins(0)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    if i < 4:
+        ax.set_title(labels_row1[i], fontsize=20, color="#333333", pad=6)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+        spine.set_color("black")
+
+# -----------------------
+# ROW LABELS
+# -----------------------
+axes[0].set_ylabel("(1) Full day", fontsize=20, labelpad=6, color="#333333")
+axes[4].set_ylabel("(2) Morning (7–9)", fontsize=20, labelpad=6, color="#333333")
+axes[8].set_ylabel("(3) Flat Peak (9–16)", fontsize=20, labelpad=6, color="#333333")
+axes[12].set_ylabel("(4) Evening (16–20)", fontsize=20, labelpad=6, color="#333333")
+axes[16].set_ylabel("(5) Night (20-7)", fontsize=20, labelpad=6, color="#333333")
+
+# -----------------------
+# COLORBAR SETTINGS (shared)
+# -----------------------
+cbar_width = 0.015
+cbar_offset = 0.01
+
+# -----------------------
+# ROW 1 COLORBAR
+# -----------------------
+pos1 = axes[3].get_position()
+
+cax1 = fig.add_axes([
+    pos1.x1 + cbar_offset,
+    pos1.y0,
+    cbar_width,
+    pos1.height
+])
+
+norm1 = mpl.colors.Normalize(vmin=vmin1, vmax=vmax1)
+sm1 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm1)
+sm1.set_array([])
+
+cbar1 = fig.colorbar(sm1, cax=cax1)
+
+cbar1.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar1.ax.tick_params(labelsize=16, colors="#333333")
+
+cbar1.set_label(
+    "Stay duration density\n(hours/km$^2$)",
+    fontsize=20,
+    color="#333333"
+)
+
+# -----------------------
+# SHARED COLORBAR (rows 2–5)
+# -----------------------
+pos_top = axes[7].get_position()
+pos_bottom = axes[19].get_position()
+
+cax2 = fig.add_axes([
+    pos_top.x1 + cbar_offset,
+    pos_bottom.y0,
+    cbar_width,
+    pos_top.y1 - pos_bottom.y0
+])
+
+norm2 = mpl.colors.Normalize(vmin=vmin_shared, vmax=vmax_shared)
+sm2 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm2)
+sm2.set_array([])
+
+cbar2 = fig.colorbar(sm2, cax=cax2)
+
+cbar2.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar2.ax.tick_params(labelsize=16, colors="#333333")
+
+cbar2.set_label(
+    "Stay duration density (hours/km$^2$)",
+    fontsize=20,
+    color="#333333"
+)
+
+# -----------------------
+# SHOW
+# -----------------------
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_weighted_timebins_sharedColourBar.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+plt.show()
+
+
+
+#%% shared coluor ramp title
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+# -----------------------
+# DATA
+# -----------------------
+row1 = [
+    wKDE_baseline_hours,
+    wKDE_e_hours,
+    wKDE_i_hours,
+    wKDE_c_hours
+]
+
+row2 = [
+    m_wKDE_baseline_hours,
+    m_wKDE_e_hours,
+    m_wKDE_i_hours,
+    m_wKDE_c_hours
+]
+
+row3 = [
+    fp_wKDE_baseline_hours,
+    fp_wKDE_e_hours,
+    fp_wKDE_i_hours,
+    fp_wKDE_c_hours
+]
+
+row4 = [
+    e_wKDE_baseline_hours,
+    e_wKDE_e_hours,
+    e_wKDE_i_hours,
+    e_wKDE_c_hours
+]
+
+row5 = [
+    n_wKDE_baseline_hours,
+    n_wKDE_e_hours,
+    n_wKDE_i_hours,
+    n_wKDE_c_hours
+]
+
+rasters = row1 + row2 + row3 + row4 + row5
+
+labels_row1 = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n(t$_{se}$ split)',
+    '(C) Intersection-swapping\n(t$_{si}$ split)',
+    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# SCALING
+# -----------------------
+def get_scale(rs):
+    vals = np.concatenate([np.asarray(r.values).ravel() for r in rs])
+    return np.nanpercentile(vals, 2), np.nanpercentile(vals, 98)
+
+vmin1, vmax1 = get_scale(row1)
+
+rows_2_to_5 = row2 + row3 + row4 + row5
+vmin_shared, vmax_shared = get_scale(rows_2_to_5)
+
+# -----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(
+    5, 4,
+    figsize=(20, 16),
+    constrained_layout=False
+)
+
+axes = axes.flatten()
+
+fig.subplots_adjust(
+    hspace=0.01,
+    wspace=0.025,
+    top=0.995,
+    bottom=0.02,
+    left=0.04,
+    right=0.96
+)
+
+# -----------------------
+# PLOTTING
+# -----------------------
+for i, (ax, r) in enumerate(zip(axes, rasters)):
+
+    if i < 4:
+        vmin, vmax = vmin1, vmax1
+    else:
+        vmin, vmax = vmin_shared, vmax_shared
+
+    r = r.squeeze()
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.85,
+        add_colorbar=False,
+        add_labels=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_anchor("C")
+    ax.margins(0)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    if i < 4:
+        ax.set_title(labels_row1[i], fontsize=20, color="#333333", pad=6)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+        spine.set_color("black")
+
+# -----------------------
+# ROW LABELS
+# -----------------------
+axes[0].set_ylabel("(1) Full day", fontsize=20, labelpad=6, color="#333333")
+axes[4].set_ylabel("(2) Morning (7–9)", fontsize=20, labelpad=6, color="#333333")
+axes[8].set_ylabel("(3) Flat Peak (9–16)", fontsize=20, labelpad=6, color="#333333")
+axes[12].set_ylabel("(4) Evening (16–20)", fontsize=20, labelpad=6, color="#333333")
+axes[16].set_ylabel("(5) Night (20-7)", fontsize=20, labelpad=6, color="#333333")
+
+# -----------------------
+# COLORBAR SETTINGS
+# -----------------------
+cbar_width = 0.015
+cbar_offset = 0.01
+
+# -----------------------
+# ROW 1 COLORBAR
+# -----------------------
+pos1 = axes[3].get_position()
+
+cax1 = fig.add_axes([
+    pos1.x1 + cbar_offset,
+    pos1.y0,
+    cbar_width,
+    pos1.height
+])
+
+norm1 = mpl.colors.Normalize(vmin=vmin1, vmax=vmax1)
+sm1 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm1)
+sm1.set_array([])
+
+cbar1 = fig.colorbar(sm1, cax=cax1)
+
+cbar1.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar1.ax.tick_params(labelsize=16, colors="#333333")
+
+# -----------------------
+# SHARED COLORBAR (rows 2–5)
+# -----------------------
+pos_top = axes[7].get_position()
+pos_bottom = axes[19].get_position()
+
+cax2 = fig.add_axes([
+    pos_top.x1 + cbar_offset,
+    pos_bottom.y0,
+    cbar_width,
+    pos_top.y1 - pos_bottom.y0
+])
+
+norm2 = mpl.colors.Normalize(vmin=vmin_shared, vmax=vmax_shared)
+sm2 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm2)
+sm2.set_array([])
+
+cbar2 = fig.colorbar(sm2, cax=cax2)
+
+cbar2.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar2.ax.tick_params(labelsize=16, colors="#333333")
+
+# -----------------------
+# ONE SHARED COLORBAR TITLE (FINAL FIX)
+# -----------------------
+fig.text(
+    1.03, 0.5,
+    "Stay duration density (hours/km$^2$)",
+    rotation=90,
+    va="center",
+    ha="center",
+    fontsize=20,
+    color="#333333"
+)
+
+# -----------------------
+# SHOW
+# -----------------------
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_weighted_timebins_sharedColourBarOneTitle.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+plt.show()
+
+##############################################################################
+#%% non-weighted KDE
+#%%
+# all day
+KDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\KernelD_cf_central.tif", masked=True)
+KDE_baseline = KDE_baseline.rio.reproject(3857)
+print(KDE_baseline.rio.crs)
+
+KDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\KernelD_e_central.tif", masked=True)
+KDE_e = KDE_e.rio.reproject(3857)
+print(KDE_e.rio.crs)
+
+KDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\KernelD_i_central.tif", masked=True)
+KDE_i = KDE_i.rio.reproject(3857)
+print(KDE_i.rio.crs)
+
+KDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\KernelD_c_central.tif", masked=True)
+KDE_c = KDE_c.rio.reproject(3857)
+print(KDE_c.rio.crs)
+
+
+# morning
+m_KDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\morning\m_Kernel_cf.tif", masked=True)
+m_KDE_baseline = m_KDE_baseline.rio.reproject(3857)
+print(m_KDE_baseline.rio.crs)
+
+m_KDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\morning\m_Kernel_e.tif", masked=True)
+m_KDE_e = m_KDE_e.rio.reproject(3857)
+print(m_KDE_e.rio.crs)
+
+m_KDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\morning\m_Kernel_i.tif", masked=True)
+m_KDE_i = m_KDE_i.rio.reproject(3857)
+print(m_KDE_i.rio.crs)
+
+m_KDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\morning\m_Kernel_c.tif", masked=True)
+m_KDE_c = m_KDE_c.rio.reproject(3857)
+print(m_KDE_c.rio.crs)
+
+
+# flat peak
+fp_KDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\flatpeak\fp_Kernel_cf.tif", masked=True)
+fp_KDE_baseline = fp_KDE_baseline.rio.reproject(3857)
+print(fp_KDE_baseline.rio.crs)
+
+fp_KDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\flatpeak\fp_Kernel_e.tif", masked=True)
+fp_KDE_e = fp_KDE_e.rio.reproject(3857)
+print(fp_KDE_e.rio.crs)
+
+fp_KDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\flatpeak\fp_Kernel_i.tif", masked=True)
+fp_KDE_i = fp_KDE_i.rio.reproject(3857)
+print(fp_KDE_i.rio.crs)
+
+fp_KDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\flatpeak\fp_Kernel_c.tif", masked=True)
+fp_KDE_c = fp_KDE_c.rio.reproject(3857)
+print(fp_KDE_c.rio.crs)
+
+
+# evening
+e_KDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\evening\evening_Kernel_cf.tif", masked=True)
+e_KDE_baseline = e_KDE_baseline.rio.reproject(3857)
+print(e_KDE_baseline.rio.crs)
+
+e_KDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\evening\evening_Kernel_e.tif", masked=True)
+e_KDE_e = e_KDE_e.rio.reproject(3857)
+print(e_KDE_e.rio.crs)
+
+e_KDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\evening\evening_Kernel_i.tif", masked=True)
+e_KDE_i = e_KDE_i.rio.reproject(3857)
+print(e_KDE_i.rio.crs)
+
+e_KDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\evening\evening_Kernel_c.tif", masked=True)
+e_KDE_c = e_KDE_c.rio.reproject(3857)
+print(e_KDE_c.rio.crs)
+
+
+# night
+n_KDE_baseline = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\night\night_Kernel_cf.tif", masked=True)
+n_KDE_baseline = n_KDE_baseline.rio.reproject(3857)
+print(n_KDE_baseline.rio.crs)
+
+n_KDE_e = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\night\night_Kernel_e.tif", masked=True)
+n_KDE_e = n_KDE_e.rio.reproject(3857)
+print(n_KDE_e.rio.crs)
+
+n_KDE_i = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\night\night_Kernel_i.tif", masked=True)
+n_KDE_i = n_KDE_i.rio.reproject(3857)
+print(n_KDE_i.rio.crs)
+
+n_KDE_c = rxr.open_rasterio(r"d:\paper3\StopsKDE_Arc\KDE\night\night_Kernel_c.tif", masked=True)
+n_KDE_c = n_KDE_c.rio.reproject(3857)
+print(n_KDE_c.rio.crs)
+
+
+
+# %%
+#%% add code from one row panel
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+rasters = [KDE_baseline, KDE_e, KDE_i, KDE_c]
+
+
+
+# -----------------------
+# shared scaling
+# -----------------------
+all_values = np.concatenate([r.values.flatten() for r in rasters])
+vmin = np.nanpercentile(all_values, 2)
+vmax = np.nanpercentile(all_values, 98)
+
+labels = [
+    '(A) Baseline\n(t$_{f}$)', 
+    '(B) Edge-swapping\n(t$_{se}split$)', 
+    '(C) Intersection-swapping\n(t$_{si}split$)', 
+    '(D) Cloaking Area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# figure (NO GridSpec)
+# -----------------------
+fig, axes = plt.subplots(1, 4, figsize=(20, 5), constrained_layout=True)
+#fig, axes = plt.subplots(2, 4, figsize=(20, 10), constrained_layout=True) # adding second row
+axes = axes.flatten()
+# -----------------------
+# plotting
+# -----------------------
+for ax, r, lab in zip(axes, rasters, labels):
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.8,
+        add_colorbar=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    # FIXED aspect (prevents D shrinking differently)
+    ax.set_aspect("equal", adjustable="box")
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_title(lab, fontsize=22, color="#333333", fontweight='bold')
+
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_linewidth(1.2)
+        spine.set_color("black")
+
+#axes[0].set_ylabel("(1) Full day", fontsize=16, rotation=90, labelpad=15, color ="#333333")
+
+# -----------------------
+# COLORBAR (correct height binding)
+# -----------------------
+cax = inset_axes(
+    axes[3],
+    width="5%",
+    height="100%",
+    loc="lower left",
+    bbox_to_anchor=(1.05, 0., 1, 1),
+    bbox_transform=axes[-1].transAxes,
+    borderpad=0
+)
+
+norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+sm = mpl.cm.ScalarMappable(cmap="inferno", norm=norm)
+sm.set_array([])
+
+cbar = fig.colorbar(sm, cax=cax)
+
+cbar.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+cbar.ax.tick_params(labelsize=14, color="#333333")
+
+cbar.set_label("Density of stay points per km$^2$", fontsize=16, color="#333333")
+plt.savefig(r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\KDE_fullDay.svg", format="svg", bbox_inches="tight", dpi=300)
 plt.show()
 
 
@@ -1654,6 +2342,663 @@ plt.show()
 
 
 
+
+#%% add more rowws to panel
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+# -----------------------
+# DATA
+# -----------------------
+row1 = [
+    KDE_baseline,
+    KDE_e,
+    KDE_i,
+    KDE_c
+]
+
+row2 = [
+    m_KDE_baseline,
+    m_KDE_e,
+    m_KDE_i,
+    m_KDE_c
+]
+
+row3 = [
+    fp_KDE_baseline,
+    fp_KDE_e,
+    fp_KDE_i,
+    fp_KDE_c
+]
+
+
+row4 = [
+    e_KDE_baseline,
+    e_KDE_e,
+    e_KDE_i,
+    e_KDE_c
+]
+
+row5 = [
+    n_KDE_baseline,
+    n_KDE_e,
+    n_KDE_i,
+    n_KDE_c
+]
+
+rasters = row1 + row2 + row3 + row4 + row5
+
+labels_row1 = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n(t$_{se}$ split)',
+    '(C) Intersection-swapping\n(t$_{si}$ split)',
+    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# SCALING
+# -----------------------
+def get_scale(rs):
+    vals = np.concatenate([np.asarray(r.values).ravel() for r in rs])
+    return np.nanpercentile(vals, 2), np.nanpercentile(vals, 98)
+
+vmin1, vmax1 = get_scale(row1)
+vmin2, vmax2 = get_scale(row2)
+vmin3, vmax3 = get_scale(row3)
+vmin4, vmax4 = get_scale(row4)  
+vmin5, vmax5 = get_scale(row5)
+
+# -----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(
+    5, 4,   
+    figsize=(20, 16),  
+    constrained_layout=False
+)
+
+axes = axes.flatten()
+
+fig.subplots_adjust(
+    hspace=0.01,
+    wspace=0.025,
+    top=0.995,
+    bottom=0.02,
+    left=0.04,
+    right=0.96
+)
+
+# -----------------------
+# PLOTTING
+# -----------------------
+for i, (ax, r) in enumerate(zip(axes, rasters)):
+
+    # row-specific scaling
+    if i < 4:
+        vmin, vmax = vmin1, vmax1
+    elif i < 8:
+        vmin, vmax = vmin2, vmax2
+    elif i < 12:
+        vmin, vmax = vmin3, vmax3
+    elif i < 16:
+        vmin, vmax = vmin4, vmax4   
+    else:
+        vmin, vmax = vmin5, vmax5   
+
+    r = r.squeeze()
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.85,
+        add_colorbar=False,
+        add_labels=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_anchor("C")
+    ax.margins(0)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    # Titles only for row 1
+    if i < 4:
+        ax.set_title(labels_row1[i], fontsize=18, color="#333333", pad=6)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+        spine.set_color("black")
+
+# -----------------------
+# ROW LABELS
+# -----------------------
+axes[0].set_ylabel("(1) Full day", fontsize=16, labelpad=6, color="#333333")
+axes[4].set_ylabel("(2) Morning (7–9)", fontsize=16, labelpad=6, color="#333333")
+axes[8].set_ylabel("(3) Flat Peak (9–16)", fontsize=16, labelpad=6, color="#333333")
+axes[12].set_ylabel("(4) Evening (16-20)", fontsize=16, labelpad=6, color="#333333")  
+axes[16].set_ylabel("(4) Night (20-7)", fontsize=16, labelpad=6, color="#333333")  
+
+# -----------------------
+# COLORBAR FUNCTION
+# -----------------------
+def add_cbar(ax, vmin, vmax, label):
+
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = mpl.cm.ScalarMappable(cmap="inferno", norm=norm)
+    sm.set_array([])
+
+    cax = inset_axes(
+        ax,
+        width="4%",
+        height="100%",
+        loc="lower left",
+        bbox_to_anchor=(1.02, 0., 1, 1),
+        bbox_transform=ax.transAxes,
+        borderpad=0
+    )
+
+    cbar = fig.colorbar(sm, cax=cax)
+
+    cbar.ax.yaxis.set_major_formatter(
+        ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+    )
+
+    cbar.ax.tick_params(
+        labelsize=14,
+        colors="#333333"
+    )
+
+    cbar.set_label(
+        label,
+        fontsize=16,
+        color="#333333"
+    )
+
+# -----------------------
+# COLORBARS (one per row)
+# -----------------------
+add_cbar(axes[3], vmin1, vmax1, "Density of\nstay points per km$^2$")
+add_cbar(axes[7], vmin2, vmax2, "Density of\nstay points per km$^2$")
+add_cbar(axes[11], vmin3, vmax3, "Density of\nstay points per km$^2$")
+add_cbar(axes[15], vmin4, vmax4, "Density of\nstay points per km$^2$")
+add_cbar(axes[19], vmin5, vmax5, "Density of\nstay points per km$^2$")
+
+# -----------------------
+# SHOW
+# -----------------------
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_timebins_individualColourBars.svg",
+    format="svg", bbox_inches="tight", dpi=300)
+
+
+plt.show()
+
+
+
+
+
+#%% one shared colour bar for the time bin rows
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+# -----------------------
+# DATA
+# -----------------------
+row1 = [
+    KDE_baseline,
+    KDE_e,
+    KDE_i,
+    KDE_c
+]
+
+row2 = [
+    m_KDE_baseline,
+    m_KDE_e,
+    m_KDE_i,
+    m_KDE_c
+]
+
+row3 = [
+    fp_KDE_baseline,
+    fp_KDE_e,
+    fp_KDE_i,
+    fp_KDE_c
+]
+
+row4 = [
+    e_KDE_baseline,
+    e_KDE_e,
+    e_KDE_i,
+    e_KDE_c
+]
+
+row5 = [
+    n_KDE_baseline,
+    n_KDE_e,
+    n_KDE_i,
+    n_KDE_c
+]
+
+rasters = row1 + row2 + row3 + row4 + row5
+
+labels_row1 = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n(t$_{se}$ split)',
+    '(C) Intersection-swapping\n(t$_{si}$ split)',
+    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# SCALING
+# -----------------------
+def get_scale(rs):
+    vals = np.concatenate([np.asarray(r.values).ravel() for r in rs])
+    return np.nanpercentile(vals, 2), np.nanpercentile(vals, 98)
+
+vmin1, vmax1 = get_scale(row1)
+
+rows_2_to_5 = row2 + row3 + row4 + row5
+vmin_shared, vmax_shared = get_scale(rows_2_to_5)
+
+# -----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(
+    5, 4,
+    figsize=(20, 16),
+    constrained_layout=False
+)
+
+axes = axes.flatten()
+
+fig.subplots_adjust(
+    hspace=0.01,
+    wspace=0.025,
+    top=0.995,
+    bottom=0.02,
+    left=0.04,
+    right=0.96
+)
+
+# -----------------------
+# PLOTTING
+# -----------------------
+for i, (ax, r) in enumerate(zip(axes, rasters)):
+
+    if i < 4:
+        vmin, vmax = vmin1, vmax1
+    else:
+        vmin, vmax = vmin_shared, vmax_shared
+
+    r = r.squeeze()
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.85,
+        add_colorbar=False,
+        add_labels=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_anchor("C")
+    ax.margins(0)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    if i < 4:
+        ax.set_title(labels_row1[i], fontsize=20, color="#333333", pad=6)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+        spine.set_color("black")
+
+# -----------------------
+# ROW LABELS
+# -----------------------
+axes[0].set_ylabel("(1) Full day", fontsize=20, labelpad=6, color="#333333")
+axes[4].set_ylabel("(2) Morning (7–9)", fontsize=20, labelpad=6, color="#333333")
+axes[8].set_ylabel("(3) Flat Peak (9–16)", fontsize=20, labelpad=6, color="#333333")
+axes[12].set_ylabel("(4) Evening (16–20)", fontsize=20, labelpad=6, color="#333333")
+axes[16].set_ylabel("(5) Night (20-7)", fontsize=20, labelpad=6, color="#333333")
+
+# -----------------------
+# COLORBAR SETTINGS (shared)
+# -----------------------
+cbar_width = 0.015
+cbar_offset = 0.01
+
+# -----------------------
+# ROW 1 COLORBAR
+# -----------------------
+pos1 = axes[3].get_position()
+
+cax1 = fig.add_axes([
+    pos1.x1 + cbar_offset,
+    pos1.y0,
+    cbar_width,
+    pos1.height
+])
+
+norm1 = mpl.colors.Normalize(vmin=vmin1, vmax=vmax1)
+sm1 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm1)
+sm1.set_array([])
+
+cbar1 = fig.colorbar(sm1, cax=cax1)
+
+cbar1.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar1.ax.tick_params(labelsize=16, colors="#333333")
+
+cbar1.set_label(
+    "Density of\nstay points per km$^2$",
+    fontsize=20,
+    color="#333333"
+)
+
+# -----------------------
+# SHARED COLORBAR (rows 2–5)
+# -----------------------
+pos_top = axes[7].get_position()
+pos_bottom = axes[19].get_position()
+
+cax2 = fig.add_axes([
+    pos_top.x1 + cbar_offset,
+    pos_bottom.y0,
+    cbar_width,
+    pos_top.y1 - pos_bottom.y0
+])
+
+norm2 = mpl.colors.Normalize(vmin=vmin_shared, vmax=vmax_shared)
+sm2 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm2)
+sm2.set_array([])
+
+cbar2 = fig.colorbar(sm2, cax=cax2)
+
+cbar2.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar2.ax.tick_params(labelsize=16, colors="#333333")
+
+cbar2.set_label(
+    "Density of stay points per km$^2$",
+    fontsize=20,
+    color="#333333"
+)
+
+
+# -----------------------
+# SHOW
+# -----------------------
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_timebins_sharedColourBar.svg",
+    format="svg", bbox_inches="tight", dpi=300)
+plt.show()
+
+
+
+
+
+
+#%% shared coluor ramp title
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.ticker as ticker
+import contextily as ctx
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+
+# -----------------------
+# DATA
+# -----------------------
+row1 = [
+    KDE_baseline,
+    KDE_e,
+    KDE_i,
+    KDE_c
+]
+
+row2 = [
+    m_KDE_baseline,
+    m_KDE_e,
+    m_KDE_i,
+    m_KDE_c
+]
+
+row3 = [
+    fp_KDE_baseline,
+    fp_KDE_e,
+    fp_KDE_i,
+    fp_KDE_c
+]
+
+row4 = [
+    e_KDE_baseline,
+    e_KDE_e,
+    e_KDE_i,
+    e_KDE_c
+]
+
+row5 = [
+    n_KDE_baseline,
+    n_KDE_e,
+    n_KDE_i,
+    n_KDE_c
+]
+
+rasters = row1 + row2 + row3 + row4 + row5
+
+labels_row1 = [
+    '(A) Baseline\n(t$_{f}$)',
+    '(B) Edge-swapping\n(t$_{se}$ split)',
+    '(C) Intersection-swapping\n(t$_{si}$ split)',
+    '(D) Cloaking Area-swapping\n(t$_{sc}$)'
+]
+
+# -----------------------
+# SCALING
+# -----------------------
+def get_scale(rs):
+    vals = np.concatenate([np.asarray(r.values).ravel() for r in rs])
+    return np.nanpercentile(vals, 2), np.nanpercentile(vals, 98)
+
+vmin1, vmax1 = get_scale(row1)
+
+rows_2_to_5 = row2 + row3 + row4 + row5
+vmin_shared, vmax_shared = get_scale(rows_2_to_5)
+
+# -----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(
+    5, 4,
+    figsize=(20, 16),
+    constrained_layout=False
+)
+
+axes = axes.flatten()
+
+fig.subplots_adjust(
+    hspace=0.01,
+    wspace=0.025,
+    top=0.995,
+    bottom=0.02,
+    left=0.04,
+    right=0.96
+)
+
+# -----------------------
+# PLOTTING
+# -----------------------
+for i, (ax, r) in enumerate(zip(axes, rasters)):
+
+    if i < 4:
+        vmin, vmax = vmin1, vmax1
+    else:
+        vmin, vmax = vmin_shared, vmax_shared
+
+    r = r.squeeze()
+
+    r.plot(
+        ax=ax,
+        cmap="inferno",
+        vmin=vmin,
+        vmax=vmax,
+        alpha=0.85,
+        add_colorbar=False,
+        add_labels=False
+    )
+
+    ctx.add_basemap(
+        ax,
+        crs="EPSG:3857",
+        source=ctx.providers.CartoDB.PositronNoLabels,
+        attribution=False,
+        reset_extent=False
+    )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_anchor("C")
+    ax.margins(0)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+    if i < 4:
+        ax.set_title(labels_row1[i], fontsize=20, color="#333333", pad=6)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.0)
+        spine.set_color("black")
+
+# -----------------------
+# ROW LABELS
+# -----------------------
+axes[0].set_ylabel("(1) Full day", fontsize=20, labelpad=6, color="#333333")
+axes[4].set_ylabel("(2) Morning (7–9)", fontsize=20, labelpad=6, color="#333333")
+axes[8].set_ylabel("(3) Flat Peak (9–16)", fontsize=20, labelpad=6, color="#333333")
+axes[12].set_ylabel("(4) Evening (16–20)", fontsize=20, labelpad=6, color="#333333")
+axes[16].set_ylabel("(5) Night (20-7)", fontsize=20, labelpad=6, color="#333333")
+
+# -----------------------
+# COLORBAR SETTINGS
+# -----------------------
+cbar_width = 0.015
+cbar_offset = 0.01
+
+# -----------------------
+# ROW 1 COLORBAR
+# -----------------------
+pos1 = axes[3].get_position()
+
+cax1 = fig.add_axes([
+    pos1.x1 + cbar_offset,
+    pos1.y0,
+    cbar_width,
+    pos1.height
+])
+
+norm1 = mpl.colors.Normalize(vmin=vmin1, vmax=vmax1)
+sm1 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm1)
+sm1.set_array([])
+
+cbar1 = fig.colorbar(sm1, cax=cax1)
+
+cbar1.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar1.ax.tick_params(labelsize=16, colors="#333333")
+
+# -----------------------
+# SHARED COLORBAR (rows 2–5)
+# -----------------------
+pos_top = axes[7].get_position()
+pos_bottom = axes[19].get_position()
+
+cax2 = fig.add_axes([
+    pos_top.x1 + cbar_offset,
+    pos_bottom.y0,
+    cbar_width,
+    pos_top.y1 - pos_bottom.y0
+])
+
+norm2 = mpl.colors.Normalize(vmin=vmin_shared, vmax=vmax_shared)
+sm2 = mpl.cm.ScalarMappable(cmap="inferno", norm=norm2)
+sm2.set_array([])
+
+cbar2 = fig.colorbar(sm2, cax=cax2)
+
+cbar2.ax.yaxis.set_major_formatter(
+    ticker.FuncFormatter(lambda x, pos: f"{x:,.0f}")
+)
+
+cbar2.ax.tick_params(labelsize=16, colors="#333333")
+
+# -----------------------
+# ONE SHARED COLORBAR TITLE (FINAL FIX)
+# -----------------------
+fig.text(
+    1.03, 0.5,
+    "Density of stay points per km$^2$",
+    rotation=90,
+    va="center",
+    ha="center",
+    fontsize=20,
+    color="#333333"
+)
+
+
+# -----------------------
+# SHOW
+# -----------------------
+plt.savefig(
+    r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\KDE_timebins_sharedColourBarOneTitle.svg",
+    format="svg",
+    bbox_inches="tight",
+    dpi=300
+)
+plt.show()
 
 
 
@@ -1680,26 +3025,82 @@ print(stpts_e.crs)
 print(stpts_i.crs)
 print(stpts_c.crs)
 
+#%% clip to central Auckland
+akl = gpd.read_file(r"D:\paper3\StopsKDE_Arc\akl_isthmus_suburbs_dissolved_clipped.gpkg")
+print(akl.crs)
+
+# clip points to akl
+stpts_cf_akl = gpd.clip(stpts_cf, akl)
+stpts_e_akl  = gpd.clip(stpts_e, akl)
+stpts_i_akl  = gpd.clip(stpts_i, akl)
+stpts_c_akl  = gpd.clip(stpts_c, akl)
+
+
+#%%split gdf by time of day
+# combine all into one (optional but usually helpful)
+all_gdfs = {
+    "cf": stpts_cf_akl,
+    "e": stpts_e_akl,
+    "i": stpts_i_akl,
+    "c": stpts_c_akl
+}
+
+# split by time_bin
+def simplify_time_bin(x):
+    if pd.isna(x):
+        return None
+    first = str(x)[0].lower()
+    return "fp" if first == "f" else first
+
+
+for gdf in [stpts_cf_akl, stpts_e_akl, stpts_i_akl, stpts_c_akl]:
+    gdf["time_bin_"] = gdf["time_bin"].apply(simplify_time_bin)
+
+split_by_time = {}
+
+for name, gdf in all_gdfs.items():
+    split_by_time[name] = {
+        tb: subset.copy()
+        for tb, subset in gdf.groupby("time_bin_")
+    }
+#%% accessing those dfs
+# cf, r, i, c - swapping method
+# m, fp, e, n - time bin
+split_by_time["cf"]["m"]
+
+#%%
+
+
+
+
+
+
+#%% counts classed as jenks
+
 
 #%%
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 from shapely.geometry import box
-from matplotlib.colors import BoundaryNorm
-import contextily as ctx  # optional, only if you want a basemap
+import contextily as ctx
+from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap, TwoSlopeNorm
 
-# --- Load your dataset ---
-gdf = stpts_cf.copy()  # replace with your GeoDataFrame
-if gdf.crs is None:
-    gdf = gdf.set_crs(epsg=4326)  # assume WGS84 if CRS unknown
-gdf = gdf.to_crs(epsg=3857)  # projected CRS in meters
+# -----------------------
+# DATA
+# -----------------------
+gdf_b = stpts_cf_akl.copy().to_crs(epsg=3857)
+gdf_i = stpts_i_akl.copy().to_crs(epsg=3857)
+gdf_c = stpts_c_akl.copy().to_crs(epsg=3857)
 
-# --- Create 500 m grid ---
+akl_poly = akl.copy().to_crs(epsg=3857)
+
+# -----------------------
+# GRID
+# -----------------------
 cell_size = 500
-xmin, ymin, xmax, ymax = gdf.total_bounds
 
-# Snap bounds to grid
+xmin, ymin, xmax, ymax = akl_poly.total_bounds
 xmin = np.floor(xmin / cell_size) * cell_size
 ymin = np.floor(ymin / cell_size) * cell_size
 xmax = np.ceil(xmax / cell_size) * cell_size
@@ -1712,213 +3113,194 @@ grid_cells = [
 ]
 
 grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
+grid = gpd.clip(grid, akl_poly)
 
-# --- Count points per cell ---
-joined = gpd.sjoin(grid, gdf, how='left', predicate='contains')
-counts = joined.groupby(joined.index).size()
-grid["count"] = counts
-grid["count"] = grid["count"].fillna(0)
+# -----------------------
+# COUNTS
+# -----------------------
+def compute_counts(grid, gdf, col_name):
+    joined = gpd.sjoin(grid, gdf, how="left", predicate="contains")
+    counts = joined.groupby(joined.index)["index_right"].count()
+    grid[col_name] = counts.reindex(grid.index, fill_value=0)
 
-# --- Mask cells below threshold (e.g., counts < 3) ---
-threshold = 3
-grid["count_masked"] = grid["count"].where(grid["count"] >= threshold)
+compute_counts(grid, gdf_b, "count_b")
+compute_counts(grid, gdf_i, "count_i")
+compute_counts(grid, gdf_c, "count_c")
 
-# --- Define bins starting at threshold ---
-max_val = grid["count_masked"].max()
-bins = [threshold, 5, 10, 20, 50, 100, max_val]
-norm = BoundaryNorm(bins, ncolors=256, clip=False)
+# -----------------------
+# % CHANGE (all relative to baseline)
+# -----------------------
+for col in ["i", "c"]:
+    grid[f"pct_change_{col}"] = np.where(
+        grid["count_b"] == 0,
+        np.nan,
+        (grid[f"count_{col}"] - grid["count_b"]) / grid["count_b"] * 100
+    )
 
-# --- Colormap: NaNs are transparent ---
-cmap = plt.cm.Reds.copy()
-cmap.set_bad(color='none')  # cells below threshold invisible
+grid["pct_change_i_clip"] = grid["pct_change_i"].clip(-100, 100)
+grid["pct_change_c_clip"] = grid["pct_change_c"].clip(-100, 100)
 
-# --- Plot ---
-fig, ax = plt.subplots(figsize=(10, 10))
-
-grid.plot(
-    column="count_masked",
-    cmap=cmap,
-    norm=norm,
-    linewidth=0,
-    legend=True,
-    ax=ax
+# -----------------------
+# COLOURMAPS
+# -----------------------
+cmap_base = LinearSegmentedColormap.from_list(
+    "base",
+    ["#ffffff", "#383a6b"]
 )
 
-# --- Optional basemap ---
-# ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron)
+cmap_change = "PRGn"
+norm_change = TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
 
-ax.set_title(f"Point Density (500 m grid, counts ≥ {threshold})")
-ax.axis('off')
-plt.tight_layout()
+
+
+
+#%%-----------------------
+# FIGURE
+# -----------------------
+fig, axes = plt.subplots(1, 4, figsize=(28, 10))
+ax0, ax1, ax2, ax3 = axes
+
+xmin, ymin, xmax, ymax = grid.total_bounds
+
+# =====================================================
+# (A) BASELINE (HAS COLORBAR)
+# =====================================================
+bounds_b = np.linspace(0, grid["count_b"].max(), 7)
+norm_b = BoundaryNorm(bounds_b, ncolors=256)
+
+grid.plot(
+    column="count_b",
+    cmap=cmap_base,
+    norm=norm_b,
+    linewidth=0,
+    ax=ax0
+)
+
+ax0.set_xlim(xmin, xmax)
+ax0.set_ylim(ymin, ymax)
+ax0.set_aspect("equal", adjustable="box")
+
+ctx.add_basemap(ax0,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
+
+cax0 = ax0.inset_axes([-0.05, 0.0, 0.03, 1.0])
+cbar0 = fig.colorbar(
+    plt.cm.ScalarMappable(cmap=cmap_base, norm=norm_b),
+    cax=cax0
+)
+cbar0.set_label("Stay point count", fontsize=16)
+cbar0.ax.yaxis.set_label_position("left")
+cbar0.ax.yaxis.tick_left()
+
+ax0.set_title("(A) Baseline (t$_{f}$)", fontsize=20, color="#333333", fontweight= 'bold')
+ax0.set_xticks([])
+ax0.set_yticks([])
+
+# =====================================================
+# (B) CF (NO COLORBAR)
+# =====================================================
+grid.plot(
+    column="pct_change_i_clip",
+    cmap=cmap_change,
+    norm=norm_change,
+    linewidth=0,
+    ax=ax1
+)
+
+ax1.set_xlim(xmin, xmax)
+ax1.set_ylim(ymin, ymax)
+ax1.set_aspect("equal", adjustable="box")
+
+ctx.add_basemap(ax1,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
+
+ax1.set_title("(B) Edge-swapping (t$_{se}split$)", fontsize=20, color="#333333", fontweight= 'bold')
+ax1.set_xticks([])
+ax1.set_yticks([])
+
+# =====================================================
+# (C) I (NO COLORBAR)
+# =====================================================
+grid.plot(
+    column="pct_change_i_clip",
+    cmap=cmap_change,
+    norm=norm_change,
+    linewidth=0,
+    ax=ax2
+)
+
+ax2.set_xlim(xmin, xmax)
+ax2.set_ylim(ymin, ymax)
+ax2.set_aspect("equal", adjustable="box")
+
+ctx.add_basemap(ax2,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
+
+ax2.set_title("(C) Intersection-swapping (t$_{si}split$)", fontsize=20, color="#333333", fontweight= 'bold')
+ax2.set_xticks([])
+ax2.set_yticks([])
+
+# =====================================================
+# (D) C (HAS COLORBAR)
+# =====================================================
+grid.plot(
+    column="pct_change_c_clip",
+    cmap=cmap_change,
+    norm=norm_change,
+    linewidth=0,
+    ax=ax3
+)
+
+ax3.set_xlim(xmin, xmax)
+ax3.set_ylim(ymin, ymax)
+ax3.set_aspect("equal", adjustable="box")
+
+ctx.add_basemap(ax3,
+    source=ctx.providers.CartoDB.PositronNoLabels,
+    attribution=False,
+    crs=grid.crs.to_string()
+)
+
+cax3 = ax3.inset_axes([1.02, 0.0, 0.03, 1.0])
+cbar3 = fig.colorbar(
+    plt.cm.ScalarMappable(cmap=cmap_change, norm=norm_change),
+    cax=cax3
+)
+cbar3.set_label("Change (%) in\nstay point count", fontsize=18, color="#333333")
+
+ax3.set_title("(D) Cloaking area-swapping (t$_{sc}$)", fontsize=20, color="#333333", fontweight= 'bold')
+ax3.set_xticks([])
+ax3.set_yticks([])
+
+# -----------------------
+# FINAL LAYOUT
+# -----------------------
+plt.subplots_adjust(wspace=0.05)
+
+#fig.text(
+#    0.08, 0.5,
+#    "(1) Full day",
+#    fontsize=20,
+#    rotation=90,
+#    va="center",
+#    ha="center",
+#    color="#333333", 
+#    fontweight= 'bold'
+#)
+
+plt.savefig(r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\ChangeInStayPointCount.svg",
+    format="svg", bbox_inches="tight", dpi=300)
+
+
+
 plt.show()
-
-#%% jenks
-import numpy as np
-import geopandas as gpd
-import matplotlib.pyplot as plt
-from shapely.geometry import box
-from matplotlib.colors import BoundaryNorm
-import mapclassify as mc
-import contextily as ctx
-
-# --- Load dataset ---
-gdf = stpts_cf.copy()  # replace with your GeoDataFrame
-if gdf.crs is None:
-    gdf = gdf.set_crs(epsg=4326)
-gdf = gdf.to_crs(epsg=3857)  # projected CRS in meters
-
-# --- Create 500 m grid ---
-cell_size = 500
-xmin, ymin, xmax, ymax = gdf.total_bounds
-xmin = np.floor(xmin / cell_size) * cell_size
-ymin = np.floor(ymin / cell_size) * cell_size
-xmax = np.ceil(xmax / cell_size) * cell_size
-ymax = np.ceil(ymax / cell_size) * cell_size
-
-grid_cells = [
-    box(x, y, x + cell_size, y + cell_size)
-    for x in np.arange(xmin, xmax, cell_size)
-    for y in np.arange(ymin, ymax, cell_size)
-]
-grid = gpd.GeoDataFrame(geometry=grid_cells, crs="EPSG:3857")
-
-# --- Count points per cell ---
-joined = gpd.sjoin(grid, gdf, how='left', predicate='contains')
-counts = joined.groupby(joined.index).size()
-grid["count"] = counts.fillna(0)
-
-# --- Mask counts below threshold ---
-threshold = 3
-grid["count_masked"] = grid["count"].where(grid["count"] >= threshold)
-
-# --- Prepare data for classification ---
-data = grid["count_masked"].dropna().values  # all counts ≥ threshold
-
-# --- 1️⃣ Jenks Natural Breaks ---
-jenks = mc.NaturalBreaks(y=data, k=6)
-grid["jenks_class"] = np.nan
-grid.loc[~grid["count_masked"].isna(), "jenks_class"] = jenks.yb
-
-# --- 2️⃣ Quantiles ---
-quantiles = mc.Quantiles(y=data, k=6)
-grid["quantile_class"] = np.nan
-grid.loc[~grid["count_masked"].isna(), "quantile_class"] = quantiles.yb
-
-# --- Plotting function with real count bins ---
-def plot_grid(grid, column, classifier, title):
-    # Use classifier bins for legend
-    bins = classifier.bins
-    boundaries = np.insert(bins, 0, threshold)  # add threshold as lower bound
-
-    cmap = plt.cm.Reds.copy()
-    cmap.set_bad(color='none')  # masked cells invisible
-    norm = BoundaryNorm(boundaries=boundaries, ncolors=cmap.N)
-
-    fig, ax = plt.subplots(figsize=(12, 12))
-    grid.plot(
-        column="count_masked",
-        cmap=cmap,
-        norm=norm,
-        linewidth=0,
-        legend=True,
-        ax=ax
-    )
-
-    # Add basemap
-    ctx.add_basemap(
-        ax,
-        source=ctx.providers.CartoDB.Positron,
-        crs=grid.crs.to_string()
-    )
-
-    ax.set_title(title, fontsize=14)
-    ax.axis('off')
-    plt.tight_layout()
-    plt.show()
-
-# --- Plot Jenks ---
-plot_grid(grid, "count_masked", jenks, f"Point Density (Jenks, counts ≥ {threshold})")
-
-# --- Plot Quantiles ---
-plot_grid(grid, "count_masked", quantiles, f"Point Density (Quantiles, counts ≥ {threshold})")
-
-
-
-#%% panel figure
-
-
-
-
-
-
 # %%
-import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
-import contextily as ctx
-import matplotlib as mpl
-import numpy as np
-
-# --- Assuming your grid and gdfs are already defined ---
-
-# Baseline and other columns
-baseline_col = 'Baseline_count_masked'
-other_cols = ['Edge-swapping_count_masked', 'Intersection-swapping_count_masked', 'Cloaking area_count_masked']
-
-# --- Compute percentage change relative to baseline ---
-for col in other_cols:
-    pct_col = col.replace('_count_masked', '_pct_change')
-    grid[pct_col] = ((grid[col] - grid[baseline_col]) / grid[baseline_col]) * 100
-    grid[pct_col] = grid[pct_col].clip(-100, 100)  # cap at ±100%
-
-pct_cols = [c.replace('_count_masked', '_pct_change') for c in other_cols]
-
-# --- Color maps ---
-baseline_cmap = plt.cm.Reds
-div_cmap = plt.cm.RdBu_r  # diverging for percent change
-
-# --- Plot setup ---
-fig, axes = plt.subplots(1, 4, figsize=(18, 6))
-
-
-titles = [
-    '(A) Baseline\n(t$_{f}$)',
-    '(B) Edge-swapping\n% change',
-    '(C) Intersection-swapping\n% change',
-    '(D) Cloaking area-swapping\n% change'
-]
-
-# --- Plot Baseline on first axis ---
-grid.plot(column=baseline_col, cmap=baseline_cmap, linewidth=0, ax=axes[0])
-ctx.add_basemap(axes[0], source=ctx.providers.CartoDB.Positron, crs=grid.crs.to_string(), attribution=False)
-axes[0].set_title(titles[0], fontsize=12, fontweight='bold')
-axes[0].axis('off')
-
-# --- Colorbar for baseline on the left of A ---
-sm_base = mpl.cm.ScalarMappable(cmap=baseline_cmap,
-                                norm=Normalize(vmin=grid[baseline_col].min(),
-                                               vmax=grid[baseline_col].max()))
-sm_base.set_array([])
-
-# attach colorbar to axes[0] and place it on the left
-cbar_left = fig.colorbar(sm_base, ax=axes[0], fraction=0.046, pad=0.02, location='left')
-cbar_left.set_label("Stay Point Count", fontsize=12)
-
-# --- Plot percentage change maps (B–D) ---
-for ax, col, title in zip(axes[1:], pct_cols, titles[1:]):
-    plot_data = grid[col].fillna(0)
-    
-    grid.plot(column=col, cmap=div_cmap, linewidth=0, ax=ax, vmin=-100, vmax=100)
-    ctx.add_basemap(ax, source=ctx.providers.CartoDB.Positron, crs=grid.crs.to_string(), attribution=False)
-    ax.set_title(title, fontsize=12, fontweight='bold')
-    ax.axis('off')
-
-# --- Diverging colorbar on the right of the last map (D) ---
-sm_div = mpl.cm.ScalarMappable(cmap=div_cmap, norm=Normalize(vmin=-100, vmax=100))
-sm_div.set_array([])
-cbar_right = fig.colorbar(sm_div, ax=axes[-1], fraction=0.046, pad=0.02)
-cbar_right.set_label("% Change vs Baseline", fontsize=12)
-
-
-
-plt.tight_layout()
-plt.show()

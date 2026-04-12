@@ -40,17 +40,21 @@ t_cf.columns # point_id, point_id_t, point_id_t_final
 import joblib
 
 G = joblib.load(r"d:\Paper2\data\Output\cloaking_2sig_100150\traj_cloaked_anotated_mapmatched\OriginDestination_CloakingAreas\NetworkShortestPath\graph.joblib")
-#print(G.graph['crs'])
+G.graph['crs']
 
+
+#%%
 import osmnx as ox
+
 G = ox.project_graph(G, to_crs="EPSG:2193")
-print(G.graph['crs'])
+G.graph['crs']
 
 #%% clip graph to central auckland
 akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\akl_isthmus.gpkg")
 print(akl.crs)
 akl_buffered = akl.buffer(2)
 
+#%%
 G_clip = ox.truncate.truncate_graph_polygon(
     G,
     akl_buffered.geometry.iloc[0],
@@ -65,19 +69,102 @@ t_s_e_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\ts_e_akl.gpkg"
 t_s_i_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\ts_i_akl.gpkg")
 t_s_c_akl = gpd.read_file(r"d:\paper3\Figures\RoadNetworkCoverage\ts_c_akl.gpkg")
 
-#print(t_cf_baseline_akl.crs)
-#print(t_s_e_akl.crs)
-#print(t_s_i_akl.crs)
-#print(t_s_c_akl.crs)
+print(t_cf_baseline_akl.crs)
+print(t_s_e_akl.crs)
+print(t_s_i_akl.crs)
+print(t_s_c_akl.crs)
 
-#%% are intersection and edge based points different
-print(len(t_cf_baseline_akl))   #2299738
-print(len(t_s_e_akl))           #2299738
-print(len(t_s_i_akl))           #2299738
-t_s_e_akl.equals(t_s_i_akl) # False - good
 
 #%%
-# %%
+import geopandas as gpd
+import osmnx as ox
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ---------------------------------------------------
+# 1. ATTACH EDGE IDs TO POINTS
+# ---------------------------------------------------
+t_cf_baseline_akl["u"] = [e[0] for e in t_cf_baseline_akl_nearest_edges]
+t_cf_baseline_akl["v"] = [e[1] for e in t_cf_baseline_akl_nearest_edges]
+t_cf_baseline_akl["key"] = [e[2] for e in t_cf_baseline_akl_nearest_edges]
+
+# undirected edge ID
+t_cf_baseline_akl["u_norm"] = t_cf_baseline_akl[["u", "v"]].min(axis=1)
+t_cf_baseline_akl["v_norm"] = t_cf_baseline_akl[["u", "v"]].max(axis=1)
+
+# ---------------------------------------------------
+# 2. COUNT POINTS PER EDGE
+# ---------------------------------------------------
+baseline_edge_count = (
+    t_cf_baseline_akl
+    .groupby(["u_norm", "v_norm", "key"])
+    .size()
+    .reset_index(name="n_points")
+)
+
+# ---------------------------------------------------
+# 3. GET GRAPH EDGES
+# ---------------------------------------------------
+nodes, edges = ox.graph_to_gdfs(G_clip)
+edges = edges.reset_index()
+
+# ---------------------------------------------------
+# 4. FILTER UNWANTED ROAD TYPES
+# ---------------------------------------------------
+drop_types = {
+    "pedestrian",
+    "steps",
+    "footway",
+    "raceway",
+    "track",
+    "construction",
+    "corridor",
+    "service",
+    "services"
+}
+
+edges_filtered = edges[
+    ~edges["highway"].apply(
+        lambda x: any(h in drop_types for h in ([x] if isinstance(x, str) else x))
+    )
+].copy()
+
+# ---------------------------------------------------
+# 5. CREATE MATCHING EDGE KEYS
+# ---------------------------------------------------
+edges_filtered["u_norm"] = edges_filtered[["u", "v"]].min(axis=1)
+edges_filtered["v_norm"] = edges_filtered[["u", "v"]].max(axis=1)
+
+# ---------------------------------------------------
+# 6. MERGE POINT COUNTS WITH GEOMETRY
+# ---------------------------------------------------
+edges_plot = edges_filtered.merge(
+    baseline_edge_count,
+    on=["u_norm", "v_norm", "key"],
+    how="left"
+)
+
+edges_plot["n_points"] = edges_plot["n_points"].fillna(0)
+
+# ---------------------------------------------------
+# 7. HANDLE STREET NAMES (KEEP GEOMETRY!)
+# ---------------------------------------------------
+edges_plot["name"] = edges_plot["name"].fillna("unnamed")
+
+# ---------------------------------------------------
+# 8. AGGREGATE TO STREET LEVEL (KEEP GEOMETRY)
+# ---------------------------------------------------
+street_map = (
+    edges_plot
+    .dissolve(
+        by="name",
+        aggfunc={"n_points": "sum"}
+    )
+    .reset_index()
+)
+
+#%% ---------------------------------------------------
 # %%
 import geopandas as gpd
 import osmnx as ox
@@ -86,10 +173,125 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import mapclassify as mc
-from matplotlib.colors import TwoSlopeNorm, LinearSegmentedColormap
+
+# ---------------------------------------------------
+# 1. FILTER LOW-SIGNAL STREETS
+# ---------------------------------------------------
+street_map_filtered = street_map[
+    street_map["n_points"] >= 10
+].copy()
+
+# ---------------------------------------------------
+# 2. JENKS CLASSIFICATION
+# ---------------------------------------------------
+k = 6
+
+jenks = mc.NaturalBreaks(
+    street_map_filtered["n_points"].values,
+    k=k
+)
+
+street_map_filtered["jenks_class"] = jenks.yb
+
+# ---------------------------------------------------
+# 3. PLOT MAP
+# ---------------------------------------------------
+cmap = plt.cm.cividis
+
+fig, ax = plt.subplots(figsize=(12, 12))
+
+street_map_filtered.plot(
+    column="jenks_class",
+    cmap=cmap,
+    linewidth=1,
+    ax=ax,
+    categorical=True
+)
+
+# ---------------------------------------------------
+# 4. AXIS STYLE (even though axis is off, we style ticks if needed later)
+# ---------------------------------------------------
+ax.set_axis_off()
+
+# ---------------------------------------------------
+# 5. COLORBAR (LEFT SIDE + FULL CONTROL)
+# ---------------------------------------------------
+bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
+
+norm = mpl.colors.BoundaryNorm(
+    boundaries=bounds,
+    ncolors=cmap.N
+)
+
+sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+sm._A = []
+
+cbar = fig.colorbar(
+    sm,
+    ax=ax,
+    fraction=0.03,
+    pad=0.02,
+    location="left"  
+)
+
+# ---------------------------------------------------
+# 6. COLORBAR TEXT + TICKS (IMPORTANT FIX)
+# ---------------------------------------------------
+cbar.set_label(
+    "Number of points per road",
+    fontsize=20,
+    labelpad=15
+)
+
+cbar.ax.tick_params(labelsize=16)  
+
+# ---------------------------------------------------
+# CLEAN HUMAN-READABLE TICKS
+# ---------------------------------------------------
+bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
+
+cbar.set_ticks(bounds)
+
+cbar.set_ticklabels([
+    "10",
+    "5,000",
+    "15,000",
+    "30,000",
+    "60,000",
+    "90,000",
+    "170,000"
+])
+
+cbar.ax.tick_params(labelsize=16)
+
+# ---------------------------------------------------
+# 7. TITLE WITH SUBSCRIPT
+# ---------------------------------------------------
+ax.set_title(
+    r"(A) Baseline ($t_{f}$)",
+    fontsize=24,
+    pad=20
+)
+
+# ---------------------------------------------------
+# 8. FINAL LAYOUT
+# ---------------------------------------------------
+plt.tight_layout()
+plt.show()
+
+
+#%% panel figure
+
+# %%
+import geopandas as gpd
+import osmnx as ox
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 # ===================================================
-# 0. ENSURE CRS CONSISTENCY (NZTM 2193)
+# 0. ENSURE CRS CONSISTENCY (2193)
 # ===================================================
 t_cf_baseline_akl = t_cf_baseline_akl.to_crs(2193)
 t_s_e_akl = t_s_e_akl.to_crs(2193)
@@ -97,7 +299,7 @@ t_s_i_akl = t_s_i_akl.to_crs(2193)
 t_s_c_akl = t_s_c_akl.to_crs(2193)
 
 # ===================================================
-# 1. LOAD + FILTER GRAPH
+# 1. LOAD GRAPH (2193)
 # ===================================================
 nodes, edges = ox.graph_to_gdfs(G_clip)
 edges = edges.to_crs(2193).reset_index()
@@ -121,6 +323,9 @@ edges["v_norm"] = edges[["u", "v"]].max(axis=1)
 # ===================================================
 def build_street_map(points, edges_gdf, G):
 
+    # ---------------------------------------------------
+    # nearest edge assignment
+    # ---------------------------------------------------
     nearest = ox.distance.nearest_edges(
         G,
         X=points.geometry.x,
@@ -135,12 +340,18 @@ def build_street_map(points, edges_gdf, G):
     df["u_norm"] = df[["u", "v"]].min(axis=1)
     df["v_norm"] = df[["u", "v"]].max(axis=1)
 
+    # ---------------------------------------------------
+    # edge counts
+    # ---------------------------------------------------
     edge_counts = (
         df.groupby(["u_norm", "v_norm", "key"])
         .size()
         .reset_index(name="n_points")
     )
 
+    # ---------------------------------------------------
+    # merge with edges
+    # ---------------------------------------------------
     merged = edges_gdf.merge(
         edge_counts,
         on=["u_norm", "v_norm", "key"],
@@ -150,6 +361,9 @@ def build_street_map(points, edges_gdf, G):
     merged["n_points"] = merged["n_points"].fillna(0)
     merged["name"] = merged["name"].fillna("unnamed")
 
+    # ---------------------------------------------------
+    # street aggregation
+    # ---------------------------------------------------
     street = (
         merged
         .dissolve(by="name", aggfunc={"n_points": "sum"})
@@ -159,7 +373,7 @@ def build_street_map(points, edges_gdf, G):
     return street
 
 # ===================================================
-# 3. BUILD SCENARIOS
+# 3. BUILD ALL SCENARIOS
 # ===================================================
 street_A = build_street_map(t_cf_baseline_akl, edges, G_clip)
 street_B = build_street_map(t_s_e_akl, edges, G_clip)
@@ -167,12 +381,7 @@ street_C = build_street_map(t_s_i_akl, edges, G_clip)
 street_D = build_street_map(t_s_c_akl, edges, G_clip)
 
 # ===================================================
-# 4. FILTER BASELINE (FOR VISUAL CONSISTENCY)
-# ===================================================
-street_Af = street_A[street_A["n_points"] >= 10].copy()
-
-# ===================================================
-# 5. % CHANGE VS BASELINE
+# 4. % CHANGE VS BASELINE
 # ===================================================
 def pct_change(df, base):
 
@@ -192,26 +401,42 @@ def pct_change(df, base):
 
     return m
 
+
 street_Bp = pct_change(street_B, street_A)
 street_Cp = pct_change(street_C, street_A)
 street_Dp = pct_change(street_D, street_A)
 
+street_Ap = street_A.copy()
+street_Ap["pct_change"] = 0
+
+#%% ===================================================
+# 5. PLOT A–D (2x2)
 # ===================================================
-# 6. MAP EXTENT (FROM BASELINE)
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
+import mapclassify as mc
+from matplotlib.colors import TwoSlopeNorm, LinearSegmentedColormap
+
 # ===================================================
-minx, miny, maxx, maxy = street_Af.total_bounds
+# GLOBAL TITLE POSITION (CONSISTENT ALIGNMENT)
+# ===================================================
+TITLE_Y = 1.02
+
+# ===================================================
+# 0. MAP EXTENT + ASPECT
+# ===================================================
+minx, miny, maxx, maxy = street_map_filtered.total_bounds
 
 dx = maxx - minx
 dy = maxy - miny
 map_ratio = dx / dy
 
-#%% ===================================================
-# 7. FIGURE LAYOUT
-# ===================================================
-TITLE_Y = 1.02
-
 fig = plt.figure(figsize=(11, 11 / map_ratio))
 
+# ===================================================
+# 1. MANUAL LAYOUT
+# ===================================================
 left = 0.05
 width = 0.42
 row_height = 0.43
@@ -227,25 +452,30 @@ axC = fig.add_axes([0.52, bottom_row, width, row_height])
 
 axes = [axA, axB, axC, axD]
 
+# ===================================================
+# 2. FIX EXTENT + ASPECT
+# ===================================================
 for ax in axes:
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
-    ax.set_aspect("equal")
+    ax.set_aspect("equal", adjustable="box")
     ax.set_axis_off()
 
 # ===================================================
-# 8. (A) BASELINE MAP (JENKS)
+# 3. (A) JENKS CLASSIFICATION
 # ===================================================
+k = 6
+
 jenks = mc.NaturalBreaks(
-    street_Af["n_points"].values,
-    k=6
+    street_map_filtered["n_points"].values,
+    k=k
 )
 
-street_Af["jenks_class"] = jenks.yb
+street_map_filtered["jenks_class"] = jenks.yb
 
 cmap_A = plt.cm.cividis
 
-street_Af.plot(
+street_map_filtered.plot(
     column="jenks_class",
     cmap=cmap_A,
     linewidth=1,
@@ -262,11 +492,15 @@ axA.set_title(
 )
 
 # ===================================================
-# 9. COLORBAR FOR A
+# 4. JENKS COLORBAR (LEFT OF A)
 # ===================================================
-bounds = np.insert(jenks.bins, 0, street_Af["n_points"].min())
+bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
 
-norm_A = mpl.colors.Normalize(vmin=bounds.min(), vmax=bounds.max())
+norm_A = mpl.colors.Normalize(
+    vmin=bounds.min(),
+    vmax=bounds.max()
+)
+
 sm_A = mpl.cm.ScalarMappable(cmap=cmap_A, norm=norm_A)
 sm_A._A = []
 
@@ -279,12 +513,17 @@ cbar_ax_A = fig.add_axes([
 
 cbar_A = fig.colorbar(sm_A, cax=cbar_ax_A)
 
-cbar_A.set_label("Number of points on road", fontsize=14, color="#555555")
+cbar_A.set_label("Number of points on road", fontsize=14, color="#555555",)
 
-cbar_A.set_ticks(bounds[1:])
+ticks = bounds[1:]
+cbar_A.set_ticks(ticks)
 cbar_A.set_ticklabels([
-    "5,000", "15,000", "30,000",
-    "60,000", "90,000", "170,000"
+    "5,000",
+    "15,000",
+    "30,000",
+    "60,000",
+    "90,000",
+    "170,000"
 ])
 
 cbar_A.ax.yaxis.set_ticks_position("left")
@@ -292,24 +531,31 @@ cbar_A.ax.yaxis.set_label_position("left")
 cbar_A.ax.tick_params(labelsize=12, labelcolor="#555555")
 
 # ===================================================
-# 10. (B–D) % CHANGE MAPS
+# 5. (B–D) % CHANGE MAPS
 # ===================================================
 cmap_B = LinearSegmentedColormap.from_list(
     "green_grey_purple",
     [
-        "#00441b","#1b7837","#a6dba0","#d9f0d3",
+        "#00441b",
+        "#1b7837",
+        "#a6dba0",
+        "#d9f0d3",
         "#bdbdbd",
-        "#e7d4e8","#c2a5cf","#762a83","#40004b"
+        "#e7d4e8",
+        "#c2a5cf",
+        "#762a83",
+        "#40004b"
     ],
     N=256
 )
 
-norm_B = TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
+vmin, vmax = -100, 100
+norm_B = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
 plot_map = [
-    (axB, street_Bp, "(B) Edge-swapping ($t_{se}$)"),
-    (axC, street_Cp, "(C) Intersection-swapping ($t_{si}$)"),
-    (axD, street_Dp, "(D) Cloaking Area-swapping ($t_{sc}$)")
+    (axB, street_Bp, "(B) Edge-swapping (t$_{se}split$)"),
+    (axD, street_Dp, "(D) Cloaking Area-swapping (t$_{sc}$)"),
+    (axC, street_Cp, "(C) Intersection-swapping (t$_{si}split$)")
 ]
 
 for ax, gdf, title in plot_map:
@@ -329,7 +575,7 @@ for ax, gdf, title in plot_map:
     )
 
 # ===================================================
-# 11. SHARED COLORBAR (B–D)
+# 6. SHARED COLORBAR FOR B–D (FULL HEIGHT)
 # ===================================================
 fig.canvas.draw()
 
@@ -338,12 +584,13 @@ sm_B._A = []
 
 top = max(axB.get_position().y1, axD.get_position().y1)
 bottom = min(axC.get_position().y0, axB.get_position().y0)
+height = top - bottom
 
 cbar_ax_B = fig.add_axes([
     axD.get_position().x1 + 0.02,
     bottom,
     0.015,
-    top - bottom
+    height
 ])
 
 cbar_B = fig.colorbar(sm_B, cax=cbar_ax_B)
@@ -351,21 +598,23 @@ cbar_B = fig.colorbar(sm_B, cax=cbar_ax_B)
 cbar_B.set_label(
     "Change in number of points on road (%)",
     fontsize=14,
+    labelpad=10, 
     color="#555555"
 )
 
 cbar_B.ax.tick_params(labelsize=12, labelcolor="#555555")
 
 # ===================================================
-# 12. SAVE + SHOW
+# 7. FINAL LAYOUT
 # ===================================================
+plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
+
 plt.savefig(
     r"D:\paper3\StopsKDE_Arc\KDE_Stops_Figures\weighted\RoadNetworkCoverage_AfterSwapping.svg",
     format="svg",
     bbox_inches="tight",
     dpi=300
 )
-
 plt.show()
 
 ####################################################################

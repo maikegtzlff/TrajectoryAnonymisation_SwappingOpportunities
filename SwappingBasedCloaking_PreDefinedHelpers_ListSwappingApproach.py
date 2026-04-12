@@ -1,3 +1,8 @@
+#%% THIS IS THE FINAL SWAPPING AT CLOAKING GEOMETRIES APPROACH
+# handling trajectory points in ordered lists, having pre-defined swapping partners
+
+
+
 #%%look at clkgps ouptu later, for now try a list based approach to swapping
 import pandas as pd
 import geopandas as gpd
@@ -127,7 +132,7 @@ with open(r"\\tsclient\R\paper3\helper_pool_dict_ordered_updated.pkl", "rb") as 
     helper_pool_dict_ordered_updated = pickle.load(f)
 
 
-#%% 
+#%% ORDERED LISTS FOR CLOAKED BASED SWAPPING WORK BEST
 # import libraries
 import pandas as pd
 from collections import defaultdict, deque
@@ -1102,11 +1107,16 @@ ax.set_axis_off()
 
 plt.show()
 
+
+
+
+
 #%% interpolate synthetic points
+# get osm way id covered by shortest path
+wayids = sp_t_cswappingl_origsynf_OD_odid_final.id.unique() 
 
-
-
-
+#%% THE SHORTEST PATHS NOW, CONNECTING HEADS AND TAILS, ARE DIFFERENT TO THE SHORTEST PATHS CALCULATED TO CONNECT CLOAKING GAPS
+# calculating median speed of all trajectories on osmids along the shortest path in CloakingSwapping_SynPointsToConnectHeadsAndTails.py
 #%% evaluate cloaking based swaps 
 
 
