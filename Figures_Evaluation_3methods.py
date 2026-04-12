@@ -413,195 +413,6 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import mapclassify as mc
-from matplotlib.colors import TwoSlopeNorm
-
-# ===================================================
-# 0. MAP EXTENT + ASPECT
-# ===================================================
-minx, miny, maxx, maxy = street_map_filtered.total_bounds
-
-dx = maxx - minx
-dy = maxy - miny
-map_ratio = dx / dy
-
-fig = plt.figure(figsize=(11, 11 / map_ratio))
-
-# ===================================================
-# 1. MANUAL LAYOUT
-# ===================================================
-left = 0.05
-width = 0.42
-row_height = 0.43
-row_gap = 0.06
-
-bottom_row = 0.06
-top_row = bottom_row + row_height + row_gap
-
-axA = fig.add_axes([left, top_row, width, row_height])
-axD = fig.add_axes([0.52, top_row, width, row_height])
-axB = fig.add_axes([left, bottom_row, width, row_height])
-axC = fig.add_axes([0.52, bottom_row, width, row_height])
-
-axes = [axA, axB, axC, axD]
-
-# ===================================================
-# 2. FIX EXTENT + ASPECT
-# ===================================================
-for ax in axes:
-    ax.set_xlim(minx, maxx)
-    ax.set_ylim(miny, maxy)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_axis_off()
-
-# ===================================================
-# 3. (A) JENKS CLASSIFICATION
-# ===================================================
-k = 6
-
-jenks = mc.NaturalBreaks(
-    street_map_filtered["n_points"].values,
-    k=k
-)
-
-street_map_filtered["jenks_class"] = jenks.yb
-
-cmap_A = plt.cm.cividis
-
-street_map_filtered.plot(
-    column="jenks_class",
-    cmap=cmap_A,
-    linewidth=1,
-    ax=axA,
-    categorical=True
-)
-
-axA.set_title(r"(A) Baseline ($t_{f}$)", fontsize=18, color='#555555', fontweight = 'bold')
-
-# ===================================================
-# 4. JENKS COLORBAR (LEFT OF A)
-# ===================================================
-bounds = np.insert(jenks.bins, 0, street_map_filtered["n_points"].min())
-
-norm_A = mpl.colors.Normalize(
-    vmin=bounds.min(),
-    vmax=bounds.max()
-)
-
-sm_A = mpl.cm.ScalarMappable(cmap=cmap_A, norm=norm_A)
-sm_A._A = []
-
-cbar_ax_A = fig.add_axes([
-    axA.get_position().x0 - 0.03,
-    axA.get_position().y0,
-    0.015,
-    axA.get_position().height
-])
-
-cbar_A = fig.colorbar(sm_A, cax=cbar_ax_A)
-
-cbar_A.set_label("Number of points on road", fontsize=14)
-
-# remove first tick (10)
-ticks = bounds[1:]
-
-cbar_A.set_ticks(ticks)
-cbar_A.set_ticklabels([
-    "5,000",
-    "15,000",
-    "30,000",
-    "60,000",
-    "90,000",
-    "170,000"
-])
-
-cbar_A.ax.yaxis.set_ticks_position("left")
-cbar_A.ax.yaxis.set_label_position("left")
-cbar_A.ax.tick_params(labelsize=12, color='#555555')
-
-# ===================================================
-# 5. (B–D) % CHANGE MAPS
-# ===================================================
-#cmap_B = plt.cm.PRGn
-from matplotlib.colors import LinearSegmentedColormap
-
-cmap_B = LinearSegmentedColormap.from_list(
-    "green_grey_purple",
-    [
-        "#00441b",  # deep green (strong negative)
-        "#1b7837",
-        #"#5aae61",
-        "#a6dba0",
-        "#d9f0d3",  # light green
-
-        "#bdbdbd",  # neutral grey (0)
-    
-
-        "#e7d4e8",  # light purple
-        "#c2a5cf",
-        "#762a83",
-        "#40004b"   # deep purple (strong positive)
-    ],
-    N=256
-)
-
-vmin, vmax = -100, 100
-
-norm_B = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-
-plot_map = [
-    (axB, street_Bp, "(B) Edge-swapping (t$_{se}split$)"),
-    (axD, street_Dp, "(D) Intersection-swapping (t$_{si}$split)"),
-    (axC, street_Cp, "(C) Cloaking Area-swapping (t$_{sc}$)"),
-]
-
-for ax, gdf, title in plot_map:
-    gdf.plot(
-        column="pct_change",
-        cmap=cmap_B,
-        norm=norm_B,
-        linewidth=1,
-        ax=ax
-    )
-    ax.set_title(title, fontsize=18, color='#555555', fontweight='bold')
-
-# ===================================================
-# 6. SHARED COLORBAR FOR B–D (FULL HEIGHT RIGHT OF D)
-# ===================================================
-fig.canvas.draw()
-
-sm_B = mpl.cm.ScalarMappable(cmap=cmap_B, norm=norm_B)
-sm_B._A = []
-
-top = max(axB.get_position().y1, axD.get_position().y1)
-bottom = min(axC.get_position().y0, axB.get_position().y0)
-height = top - bottom
-
-cbar_ax_B = fig.add_axes([
-    axD.get_position().x1 + 0.02,
-    bottom,
-    0.015,
-    height
-])
-
-cbar_B = fig.colorbar(sm_B, cax=cbar_ax_B)
-
-cbar_B.set_label("Change in number of points on road (%)", fontsize=14, labelpad=10)
-cbar_B.ax.tick_params(labelsize=12, color='#555555')
-
-# ===================================================
-# 7. FINAL LAYOUT
-# ===================================================
-plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
-
-plt.show()
-
-
-#%% code above for colour bars
-# %%
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-import numpy as np
-import mapclassify as mc
 from matplotlib.colors import TwoSlopeNorm, LinearSegmentedColormap
 
 # ===================================================
@@ -699,7 +510,7 @@ cbar_ax_A = fig.add_axes([
 
 cbar_A = fig.colorbar(sm_A, cax=cbar_ax_A)
 
-cbar_A.set_label("Number of points on road", fontsize=14)
+cbar_A.set_label("Number of points on road", fontsize=14, color="#555555",)
 
 ticks = bounds[1:]
 cbar_A.set_ticks(ticks)
@@ -714,7 +525,7 @@ cbar_A.set_ticklabels([
 
 cbar_A.ax.yaxis.set_ticks_position("left")
 cbar_A.ax.yaxis.set_label_position("left")
-cbar_A.ax.tick_params(labelsize=12, color="#555555")
+cbar_A.ax.tick_params(labelsize=12, labelcolor="#555555")
 
 # ===================================================
 # 5. (B–D) % CHANGE MAPS
@@ -739,8 +550,8 @@ vmin, vmax = -100, 100
 norm_B = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
 plot_map = [
-    (axB, street_Bp, "(B) Edge-swapping (t$_{se}$ split)"),
-    (axD, street_Dp, "(D) Intersection-swapping (t$_{si}$ split)"),
+    (axB, street_Bp, "(B) Edge-swapping (t$_{se}split$)"),
+    (axD, street_Dp, "(D) Intersection-swapping (t$_{si}split$)"),
     (axC, street_Cp, "(C) Cloaking Area-swapping (t$_{sc}$)")
 ]
 
@@ -784,10 +595,11 @@ cbar_B = fig.colorbar(sm_B, cax=cbar_ax_B)
 cbar_B.set_label(
     "Change in number of points on road (%)",
     fontsize=14,
-    labelpad=10
+    labelpad=10, 
+    color="#555555"
 )
 
-cbar_B.ax.tick_params(labelsize=12, color="#555555")
+cbar_B.ax.tick_params(labelsize=12, labelcolor="#555555")
 
 # ===================================================
 # 7. FINAL LAYOUT
