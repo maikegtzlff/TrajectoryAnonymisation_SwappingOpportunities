@@ -166,6 +166,9 @@ street_map = (
 
 #%% ---------------------------------------------------
 # %%
+import geopandas as gpd
+import osmnx as ox
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
