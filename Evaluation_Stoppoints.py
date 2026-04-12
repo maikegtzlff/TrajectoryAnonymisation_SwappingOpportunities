@@ -1404,7 +1404,7 @@ labels = [
     '(A) Baseline\n(t$_{f}$)', 
     '(B) Edge-swapping\n(t$_{se}split$)', 
     '(C) Intersection-swapping\n(t$_{si}split$)', 
-    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+    '(D) Cloaking Area-swapping\n(t$_{sc}$)'
 ]
 
 # -----------------------
@@ -2261,7 +2261,7 @@ labels = [
     '(A) Baseline\n(t$_{f}$)', 
     '(B) Edge-swapping\n(t$_{se}split$)', 
     '(C) Intersection-swapping\n(t$_{si}split$)', 
-    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+    '(D) Cloaking Area-swapping\n(t$_{sc}$)'
 ]
 
 # -----------------------
@@ -2830,7 +2830,7 @@ labels_row1 = [
     '(A) Baseline\n(t$_{f}$)',
     '(B) Edge-swapping\n(t$_{se}$ split)',
     '(C) Intersection-swapping\n(t$_{si}$ split)',
-    '(D) Cloaking area-swapping\n(t$_{sc}$)'
+    '(D) Cloaking Area-swapping\n(t$_{sc}$)'
 ]
 
 # -----------------------
