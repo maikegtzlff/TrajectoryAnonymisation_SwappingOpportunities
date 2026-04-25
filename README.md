@@ -2,9 +2,9 @@
 
 Mobile phone location data can be utilised to understand a wide range of phenomena better, but there is a trade-off between privacy and utility of the data.  
 This modular trajectory anonymisation framework addresses three distinct, but related, objectives:  
-* Exploring the effect of spatiotemporal resolution on data utility and privacy protection (repository for cloaking)[link here]
+* Exploring the effect of spatiotemporal resolution on data utility and privacy protection ([repository for cloaking](https://github.com/maikegtzlff/TrajectoryAnonymisation_Cloaking))
 * Evaluating whether synthetically generated trajectory data can increase utility after anonymisation (this repository)
-* Maximising privacy risk mitigation whilst still sharing movement data points of high spatiotemporal granularity (repository for swapping opportunities)[link here]
+* Maximising privacy risk mitigation whilst still sharing movement data points of high spatiotemporal granularity ([repository for swapping opportunities](https://github.com/maikegtzlff/TrajectoryAnonymisation_SynSenPoints))
 
 
 
