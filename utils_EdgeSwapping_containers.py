@@ -97,7 +97,7 @@ def try_swap(a: Container, b: Container, seen_swaps: Set[Tuple], swap_log: List[
 
 
 # ---------------------------------------------------------------------
-# Key → container mapping helpers
+# Key --> container mapping helpers
 # ---------------------------------------------------------------------
 
 def build_key_to_container(containers: List[Container]) -> Dict[Key, Set[int]]:
