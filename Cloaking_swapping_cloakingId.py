@@ -62,12 +62,12 @@ t.head()
 
 
 #%%
-# t.cloaking_sigloc.unique() --> indicates sensitivy level of point!
+# t.cloaking_sigloc.unique() --> indicates sensitivy level of point
 # --> can get rank per uid
 t["sensitivity_rank"] = (
     t["cloaking_sigloc"]
     .str.extract(r'(\d+)')      # get 1 or 2 from the string
-    .astype("Int64")            # nullable integer (keeps None as <NA>)
+    .astype("Int64")            # to keeps None as <NA>
 )
 print(t.sensitivity_rank.unique())
 
@@ -424,10 +424,10 @@ import numpy as np
 
 def compute_gap_label_valid(group):
     """
-    Compute gap_label_valid for a single trajectory (group by tid).
-    Only assigns the new column; does not touch any existing columns.
+    Compute gap_label_valid for a single trajectory (group by tid)
+    Only assigns the new column, does not touch any existing columns
     """
-    group = group.copy(deep=False)  # shallow copy; avoids overwriting other columns
+    group = group.copy(deep=False)  # avoids overwriting other columns
 
     # Initialize new column as object type
     group['gap_label_valid'] = np.nan
@@ -458,7 +458,7 @@ def compute_gap_label_valid(group):
     group.loc[mask_last, 'gap_label_valid'] = 'last'
 
     # -------------------------
-    # 2. STRUCTURE-AMBIGUOUS POINTS
+    # 2. STRUCTURE POINTS
     # -------------------------
     no_structure = non_sensitive & ~cloaking_prev & ~cloaking_next
     group.loc[no_structure & (group['gap_label'] == 'first'), 'gap_label_valid'] = 'first'
