@@ -11,7 +11,7 @@ import numpy as np
 import time
 
 # --------------------------
-# 0️⃣ Initialize tracking columns
+# tracking columns
 # --------------------------
 t_forSwapping['tid_subid_orig'] = t_forSwapping['tid_subid']        # original trajectory ID
 t_forSwapping['tid_subid_after_swap'] = t_forSwapping['tid_subid']  
@@ -35,7 +35,7 @@ swap_counter = 0
 swap_log = []
 
 # --------------------------
-# 1️⃣ Merge main_row info for sorting safely
+# merge main_row info for sorting safely
 # --------------------------
 valid_assigned_helpers_df = valid_assigned_helpers_df.merge(
     t_forSwapping[['row_uid', 'tid_subid', 'point_id_t']],
@@ -50,7 +50,7 @@ valid_assigned_helpers_df = valid_assigned_helpers_df.sort_values(['tid_subid_ma
 start_time = time.time()
 
 # --------------------------
-# 2️⃣ Process swaps sequentially
+# process swaps sequentially
 # --------------------------
 for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assigned_helpers_df), desc="Processing swaps"):
     swap_counter += 1
@@ -59,7 +59,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assign
     helper_tid = swap['helper_tid']
 
     # --------------------------
-    # Skip swap if same container
+    # skip swap if same container
     # --------------------------
     if main_tid_orig == helper_tid:
         continue
@@ -67,7 +67,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assign
     clkpassed = swap['clkpassed']
 
     # --------------------------
-    # Split main trajectory
+    # split main trajectory
     # --------------------------
     main_pid = row_uid_to_pid[main_row_uid]
     main_idx = tid_index_map[main_tid_orig]
@@ -80,7 +80,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assign
     ]
 
     # --------------------------
-    # Split helper trajectory
+    # split helper trajectory
     # --------------------------
     helper_idx = tid_index_map[helper_tid]
     helper_points = t_forSwapping.loc[helper_idx]
@@ -108,7 +108,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assign
     ]
 
     # --------------------------
-    # Safety check BEFORE marking heads/tails
+    # safety check BEFORE marking heads/tails
     # --------------------------
     main_tail_mask_safe = main_mask_tail[
         t_forSwapping.loc[main_mask_tail, 'visited_containers']
@@ -216,21 +216,21 @@ container_summary_df.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/t_
 #%% export 5 containers
 import os
 
-# 1️⃣ Create folder to store container parquet files
+# Create folder to store container parquet files
 output_folder = r"D:\paper3\Data\output\CloakingBasedSwapping\sampleOutputs/swapped_containers_sample"
 os.makedirs(output_folder, exist_ok=True)
 
-# 2️⃣ Identify containers with swaps
+# Identify containers with swaps
 # We'll use 'tid_subid_after_swap' != 'tid_subid_orig' or swap_count > 0
 swapped_containers = t_forSwapping[
     t_forSwapping['swap_count'] > 0
 ]['tid_subid_after_swap'].unique()
 
-# 3️⃣ Pick 5 containers with multiple swaps (swap_count > 1)
+# Pick 5 containers with multiple swaps (swap_count > 1)
 container_swap_counts = t_forSwapping.groupby('tid_subid_after_swap')['swap_count'].sum()
 selected_containers = container_swap_counts[container_swap_counts > 1].sort_values(ascending=False).head(5).index
 
-# 4️⃣ Export each container to a separate parquet file
+# Export each container to a separate parquet file
 for container_id in selected_containers:
     df_container = t_forSwapping[t_forSwapping['tid_subid_after_swap'] == container_id]
     filename = f"{container_id}.parquet"
@@ -270,7 +270,7 @@ import numpy as np
 import time
 
 # --------------------------
-# 0️⃣ Initialize tracking columns
+# Initialize tracking columns
 # --------------------------
 t_forSwapping['tid_subid_orig'] = t_forSwapping['tid_subid']        # original trajectory ID
 t_forSwapping['tid_subid_after_swap'] = t_forSwapping['tid_subid']  # start with original container
@@ -304,7 +304,7 @@ swap_log = []
 container_last_pid = {}
 
 # --------------------------
-# 1️⃣ Merge main_row info for sorting safely
+# Merge main_row info for sorting safely
 # --------------------------
 valid_assigned_helpers_df = valid_assigned_helpers_df.merge(
     t_forSwapping[['row_uid', 'tid_subid', 'point_id_t']],
@@ -319,7 +319,7 @@ valid_assigned_helpers_df = valid_assigned_helpers_df.sort_values(['tid_subid_ma
 start_time = time.time()
 
 # --------------------------
-# 2️⃣ Process swaps sequentially
+# process swaps sequentially
 # --------------------------
 for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assigned_helpers_df), desc="Processing swaps"):
     swap_counter += 1
@@ -509,7 +509,7 @@ swap_counter = 0
 swap_log = []
 
 # --------------------------
-# 1️⃣ Merge main_row info for sorting safely
+# Merge main_row info for sorting safely
 # --------------------------
 valid_assigned_helpers_df = valid_assigned_helpers_df.merge(
     t_forSwapping[['row_uid', 'tid_subid_orig']],
@@ -522,7 +522,7 @@ valid_assigned_helpers_df = valid_assigned_helpers_df.rename(
 valid_assigned_helpers_df = valid_assigned_helpers_df.sort_values(['tid_subid_main', 'row_uid'])
 
 # --------------------------
-# 2️⃣ Process swaps sequentially
+# Process swaps sequentially
 # --------------------------
 for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assigned_helpers_df), desc="Processing swaps"):
 
@@ -613,7 +613,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(), total=len(valid_assign
     })
 
 # --------------------------
-# 3️⃣ Convert swap log to DataFrame
+# Convert swap log to DataFrame
 # --------------------------
 swap_log_df = pd.DataFrame(swap_log)
 print(f"Swapping completed for {swap_counter} assigned pairs.")
