@@ -174,7 +174,7 @@ import pandas as pd
 import numpy as np
 
 # -----------------------------
-# Dataset 1: Edge-swapping
+# data1: Edge-swapping
 # -----------------------------
 data1 = gdf_edges_swppd.groupby('container_id')['uid'].nunique().values
 n_single_e = np.sum(data1 == 1)
@@ -191,7 +191,7 @@ median_points_e = single_uid_point_counts_e.median()
 max_points_e = single_uid_point_counts_e.max()
 
 # -----------------------------
-# Dataset 2: Intersection-swapping
+# data2: Intersection-swapping
 # -----------------------------
 data2 = gdf_nodess_swppd.groupby('container_id')['uid'].nunique().values
 n_single_i = np.sum(data2 == 1)
@@ -208,7 +208,7 @@ median_points_i = single_uid_point_counts_i.median()
 max_points_i = single_uid_point_counts_i.max()
 
 #%%-----------------------------
-# Build summary table
+# summary table
 # -----------------------------
 summary_table = pd.DataFrame({
     "Dataset": ["Edge-swapping", "Intersection-swapping"],
@@ -314,7 +314,7 @@ print(container_counts.head())
 #%% longest sub-segment based on points
 import pandas as pd
 
-# 1️⃣ Count number of points per container & segment
+# number of points per container & segment
 container_segment_counts = (
     gdf_edges_swppd
     .groupby(['container_id', 'tid_subid'])
@@ -322,11 +322,11 @@ container_segment_counts = (
     .reset_index(name='n_points_segment')
 )
 
-# 2️⃣ For each container, find the segment with the max points
+# find the segment with the max points by container
 idx_max = container_segment_counts.groupby('container_id')['n_points_segment'].idxmax()
 longest_segments = container_segment_counts.loc[idx_max].copy()
 
-# 3️⃣ Total points per container
+# points per container
 total_points = gdf_edges_swppd.groupby('container_id').size().rename('n_points_container')
 
 # Merge to get proportion
@@ -347,18 +347,17 @@ container_segment_counts_i = (
     .reset_index(name='n_points_segment')
 )
 
-# Step 2: Find the segment with max points for each container
+# Step 2: segment with max points for each container
 idx_max_i = container_segment_counts_i.groupby('container_id')['n_points_segment'].idxmax()
 longest_segments_i = container_segment_counts_i.loc[idx_max_i].copy()
 
-# Step 3: Total points per container
+# Step 3: points per container
 total_points_i = gdf_nodess_swppd.groupby('container_id').size().rename('n_points_container')
 
-# Step 4: Merge and compute proportion
+# Step 4: merge and compute proportion
 longest_segments_i = longest_segments_i.merge(total_points_i, left_on='container_id', right_index=True)
 longest_segments_i['prop_longest_segment'] = longest_segments_i['n_points_segment'] / longest_segments_i['n_points_container']
 
-# Inspect
 print(longest_segments_i.head())
 print(longest_segments_i['prop_longest_segment'].describe())
 #%%
@@ -366,11 +365,10 @@ data_percent_edge = longest_segments['prop_longest_segment'] * 100
 data_percent_intersection = longest_segments_i['prop_longest_segment'] * 100
 
 #%%
-
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Data as percentages
+# as percentages
 data_list = [data_percent_edge, data_percent_intersection]
 colors = ["#fcc72d", "#C09003"]  # match boxplot colors
 custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]
@@ -389,7 +387,7 @@ for data, color in zip(data_list, colors):
         alpha=0.6  # semi-transparent for overlap
     )
 
-# Annotate medians
+# annotate medians
 for i, (data, color) in enumerate(zip(data_list, colors)):
     median_val = np.median(data)
     ax.axvline(median_val, color=color, linestyle="--", linewidth=1.5, alpha=0.9)
@@ -404,11 +402,11 @@ for i, (data, color) in enumerate(zip(data_list, colors)):
         rotation=90
     )
 
-# White background
+# white background
 ax.set_facecolor("white")
 ax.grid(False)
 
-# Horizontal dotted grid lines at y-axis ticks
+# horizontal dotted grid lines at y-axis ticks
 ax.yaxis.grid(True, linestyle=":", color="#d3d3d3", alpha=0.7, zorder=0)
 
 # Solid x and y axes
@@ -419,20 +417,20 @@ ax.spines['bottom'].set_visible(True)
 ax.spines['bottom'].set_color('black')
 ax.spines['bottom'].set_linewidth(0.8)
 
-# Hide top and right spines
+# hide top and right spines
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
-# Axis labels
+# axis labels
 ax.set_xlabel("Trajectory points of longest segment (%)", fontsize=14, color="#555555")
 ax.set_ylabel("Swapped trajectories", fontsize=14, color="#555555")
 
-# Tick labels
+# tick labels
 tick_color = "#555555"
 ax.tick_params(axis='x', colors=tick_color, labelsize=12)
 ax.tick_params(axis='y', colors=tick_color, labelsize=12)
 
-# Legend below with custom labels
+# legend below with custom labels
 handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
 ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False, fontsize=12)
 
@@ -448,7 +446,7 @@ plt.show()
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Data (as percentages)
+# as percentages
 data_list = [data_percent_edge, data_percent_intersection]
 labels = [r"t$_{se}$", r"t$_{si}$"]  # subscripts
 colors = ["#fcc72d", "#C09003"]
@@ -466,7 +464,7 @@ bp = ax.boxplot(
     labels=labels
 )
 
-# Apply colors to boxes and fliers
+# apply colors to boxes and fliers
 for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
     patch.set_facecolor(color)
     patch.set_edgecolor('black')
@@ -475,31 +473,31 @@ for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
     flier.set_markeredgecolor(color)
     flier.set_alpha(0.01)  # more transparent
 
-# White background
+# white background
 ax.set_facecolor("white")
 ax.grid(False)
 
-# Horizontal dotted grid lines at y-axis ticks
+# horizontal dotted grid lines at y-axis ticks
 ax.yaxis.grid(True, linestyle=":", color="gray", alpha=0.7, zorder=0)
 
-# Solid y-axis line
+# solid y-axis line
 ax.spines['left'].set_visible(True)
 ax.spines['left'].set_color('black')
 ax.spines['left'].set_linewidth(0.8)
 
-# Hide top and right spines
+# hide top and right spines
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
-# Labels
+# labels
 ax.set_ylabel("Trajectory points of longest segment (%)")
 
-# Annotate medians
+# annotate medians
 for i, data in enumerate(data_list, start=1):
     median_val = np.median(data)
     ax.text(i, median_val, f"{median_val:.0f}%", ha='center', va='bottom', fontsize=10)
 
-# Legend below without title
+# legend below without title
 handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
 custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
 ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
@@ -514,20 +512,19 @@ plt.show()
 #%% get length of each segment in seconds
 import pandas as pd
 
-# Copy for safety
 df = gdf_edges_swppd.copy()
 
-# Group by container and segment (tid_subid) to get start and end timestamps
+# group by container and segment (tid_subid) to get start and end timestamps
 segment_durations = df.groupby(['container_id', 'tid_subid'])['unix_timestamp'].agg(['min', 'max']).reset_index()
 
-# Compute duration in seconds
+# duration in seconds
 segment_durations['duration_sec'] = segment_durations['max'] - segment_durations['min']
 
-# Find the longest segment duration per container
+# longest segment duration per container
 longest_segment = segment_durations.groupby('container_id')['duration_sec'].max().reset_index()
 longest_segment.rename(columns={'duration_sec': 'longest_segment_sec'}, inplace=True)
 
-# Convert to minutes if you want
+# convert to minutes if you want
 longest_segment['longest_segment_min'] = longest_segment['longest_segment_sec'] / 60
 longest_segment
 
@@ -558,14 +555,14 @@ bp = ax.boxplot(
     widths=0.7  # <-- make boxes wider
 )
 
-# Apply colors to boxes and fliers
+# apply colors to boxes and fliers
 for patch, flier, color in zip(bp['boxes'], bp['fliers'], colors):
     patch.set_facecolor(color)
     patch.set_edgecolor('black')
     flier.set_markerfacecolor(color)
     flier.set_markeredgecolor(color)
 
-# Axis formatting
+# axis formatting
 ax.set_ylabel("Longest segment duration (hours)")
 ax.set_facecolor("white")
 ax.grid(False)
@@ -576,7 +573,7 @@ ax.spines['left'].set_linewidth(0.8)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
 
-# Annotate medians
+# annotate medians
 for i, data in enumerate(data_list, start=1):
     median_val = np.median(data)
     median_hours_int = int(median_val)
@@ -592,7 +589,7 @@ for i, data in enumerate(data_list, start=1):
         alpha=0.7
     )
 
-# Legend below without title
+# legend below without title
 handles = [plt.Line2D([0], [0], color=c, lw=8) for c in colors]
 custom_labels = ["Edge-swapping (t$_{se}$)", "Intersection-swapping (t$_{si}$)"]  
 ax.legend(handles, custom_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
@@ -730,32 +727,6 @@ plt.show()
 
 
 #%% combine both boxplots to one?
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
