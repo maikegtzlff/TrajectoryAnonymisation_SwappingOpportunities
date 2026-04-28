@@ -251,7 +251,7 @@ print(container_counts.head())
 import pandas as pd
 
 
-# 1️⃣ Count number of points per container & segment
+# number of points per container & segment
 container_segment_counts = (
     gdf_edges_swppd
     .groupby(['container_id', 'tid_subid'])
@@ -259,11 +259,11 @@ container_segment_counts = (
     .reset_index(name='n_points_segment')
 )
 
-# 2️⃣ For each container, find the segment with the max points
+# segment with the max points by container
 idx_max = container_segment_counts.groupby('container_id')['n_points_segment'].idxmax()
 longest_segments = container_segment_counts.loc[idx_max].copy()
 
-# 3️⃣ Total points per container
+#points per container
 total_points = gdf_edges_swppd.groupby('container_id').size().rename('n_points_container')
 
 # Merge to get proportion
@@ -617,30 +617,6 @@ plt.show()
 
 
 #%% combine both boxplots to one?
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
