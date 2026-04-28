@@ -207,64 +207,6 @@ main_rows.to_parquet(r"D:\paper3\Data\output\CloakingBasedSwapping/main_rows.par
 ####       new approach to assigning swapping candidates    ####
 #################################################################
 
-
-
-
-#################################################################
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #%% explore swapping candidates more
 helper_traj_per_main = (
     all_candidates
@@ -282,8 +224,6 @@ print("Main rows with <= 2 helper trajectories:",
 helper_traj_per_main.describe()
 #%%
 helper_traj_per_main.n_helper_traj.value_counts().sort_index().head(20)
-
-
 
 
 #%% (1) main_row  → helper trajectory options
@@ -429,11 +369,11 @@ for m in main_order:
 #%% look at used_helpers_per_clk
 from collections import Counter
 
-# 1️⃣ Number of cloaking areas
+# number of cloaking areas
 n_clks = len(used_helpers_per_clk)
-print("Number of cloaking areas used:", n_clks) #177
+print("number of cloaking areas used:", n_clks) #177
 
-# 2️⃣ Number of helper trajectories per cloaking area
+# number of helper trajectories per cloaking area
 helpers_per_clk = [len(v) for v in used_helpers_per_clk.values()]
 import numpy as np
 print("Mean helpers per cloaking area:", np.mean(helpers_per_clk))      #66
@@ -441,7 +381,7 @@ print("Median helpers per cloaking area:", np.median(helpers_per_clk))  #30
 print("Max helpers per cloaking area:", np.max(helpers_per_clk))        #789
 print("Min helpers per cloaking area:", np.min(helpers_per_clk))        #1
 
-# 3️⃣ Distribution (optional)
+# distribution 
 import pandas as pd
 pd.Series(helpers_per_clk).describe()
 #count    177.000000
@@ -466,12 +406,12 @@ plt.show()
 # Count number of assigned helpers per main_row
 assigned_df = pd.DataFrame(assigned, columns=['main_row_uid', 'helper_tid', 'clkpassed'])
 
-# Merge with main_rows to get full info
+# merge with main_rows to get full info
 main_rows_with_helpers = main_rows.merge(assigned_df, left_on='row_uid', right_on='main_row_uid', how='left')
 
-# Stats per main_row (cloaking gap)
+# stats per main_row (cloaking gap)
 gap_stats = main_rows_with_helpers.groupby('row_uid').agg(
-    n_helpers_assigned=('helper_tid','count')  # usually 0 or 1
+    n_helpers_assigned=('helper_tid','count')  
 )
 
 print(gap_stats.describe())
@@ -719,7 +659,7 @@ print(len(pairs_unique_o1_connected))
 import numpy as np
 import pandas as pd
 
-# Step 1 — build a long version just to compute counts
+# compute counts
 long_uid = (
     pairs_unique_o1_connected[['helper_tid_left', 'main_row_uid_left', 'main_row_uid_right']]
     .melt(
@@ -729,14 +669,14 @@ long_uid = (
     )
 )
 
-# Step 2 — compute counts per helper + uid
+# compute counts per helper + uid
 uid_counts = (
     long_uid
     .groupby(['helper_tid_left', 'main_row_uid'])
     .size()
 )
 
-# Step 3 — map counts back to left and right columns
+# map counts back to left and right columns
 pairs_unique_o1_connected['left_count'] = list(
     zip(pairs_unique_o1_connected['helper_tid_left'], pairs_unique_o1_connected['main_row_uid_left'])
 )
@@ -747,7 +687,7 @@ pairs_unique_o1_connected['right_count'] = list(
 )
 pairs_unique_o1_connected['right_count'] = pairs_unique_o1_connected['right_count'].map(uid_counts)
 
-# Step 4 — create final column
+# create final column
 pairs_unique_o1_connected['main_row_uid_noOverlap'] = np.where(
     pairs_unique_o1_connected['left_count'] == 1,
     pairs_unique_o1_connected['main_row_uid_left'],
@@ -766,7 +706,7 @@ pairs_unique_o1_connected[['helper_tid_left', 'main_row_uid_left' ,'main_row_uid
 
 
 
-#%% (3) how do I update my assigned_helpers_df so that the overlaps are removed?
+#%% how do I update my assigned_helpers_df so that the overlaps are removed?
 # because
 print(assigned_helpers_df.main_row_uid.nunique())   # 11,740 cloaking gaps
 print(len(assigned_helpers_df))                     # 11,740 
@@ -936,7 +876,7 @@ import numpy as np
 import os
 import pandas as pd
 
-# --- STEP 0: Add columns to track swaps ---
+# STEP 0: Add columns to track swaps
 t_forSwapping['tid_subid_orig'] = t_forSwapping['tid_subid']
 
 # IMPORTANT: initialize current container as original
@@ -954,7 +894,7 @@ used_helper_rows = set()
 
 swap_counter = 0
 
-# --- STEP 1: Process swaps sequentially ---
+# STEP 1: Process swaps sequentially 
 for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
                     total=len(valid_assigned_helpers_df),
                     desc="Processing swaps"):
@@ -963,22 +903,16 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
     helper_tid_target = swap['helper_tid']
     clkpassed = swap['clkpassed']
 
-    # -------------------------------------------------
-    # 1️⃣ Get split position from ORIGINAL metadata
-    # -------------------------------------------------
+    # get split position from ORIGINAL
     main_split_pid = row_uid_to_pid[main_row_uid]
 
-    # -------------------------------------------------
-    # 2️⃣ Get CURRENT container of main row
-    # -------------------------------------------------
+    # CURRENT container of main row
     main_container = t_forSwapping.loc[
         t_forSwapping.row_uid == main_row_uid,
         'tid_subid_after_swap'
     ].values[0]
 
-    # -------------------------------------------------
-    # 3️⃣ Identify helper split row (still original logic)
-    # -------------------------------------------------
+    # helper split row
     helper_candidates = t_forSwapping[
         (t_forSwapping['tid_subid_after_swap'] == helper_tid_target) &
         (t_forSwapping['intersects_cloaking'] == clkpassed) &
@@ -993,25 +927,19 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
     helper_split_pid = helper_split_row['point_id_t']
     used_helper_rows.add(helper_row_uid)
 
-    # -------------------------------------------------
-    # 4️⃣ Get CURRENT container of helper row
-    # -------------------------------------------------
+    #  CURRENT container of helper row
     helper_container = t_forSwapping.loc[
         t_forSwapping.row_uid == helper_row_uid,
         'tid_subid_after_swap'
     ].values[0]
 
-    # -------------------------------------------------
-    # 🚨 Prevent swapping within same container
-    # -------------------------------------------------
+    # prevent swapping within same container
     if main_container == helper_container:
         continue
 
     swap_counter += 1
 
-    # -------------------------------------------------
-    # 5️⃣ Extract FULL current containers
-    # -------------------------------------------------
+    # FULL current containers
     main_box = t_forSwapping[
         t_forSwapping['tid_subid_after_swap'] == main_container
     ]
@@ -1020,18 +948,14 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
         t_forSwapping['tid_subid_after_swap'] == helper_container
     ]
 
-    # -------------------------------------------------
-    # 6️⃣ Split using ORIGINAL split position
-    # -------------------------------------------------
+    # split using ORIGINAL split position
     main_head = main_box[main_box['point_id_t'] <= main_split_pid]
     main_tail = main_box[main_box['point_id_t'] >  main_split_pid]
 
     helper_head = helper_box[helper_box['point_id_t'] <= helper_split_pid]
     helper_tail = helper_box[helper_box['point_id_t'] >  helper_split_pid]
 
-    # -------------------------------------------------
-    # 7️⃣ Flag boundaries
-    # -------------------------------------------------
+    # flag boundaries
     t_forSwapping.loc[main_head.index, 'head_end_flag'] = \
         t_forSwapping.loc[main_head.index, 'point_id_t'] == main_split_pid
 
@@ -1044,9 +968,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
     t_forSwapping.loc[helper_tail.index, 'tail_start_flag'] = \
         t_forSwapping.loc[helper_tail.index, 'point_id_t'] == helper_split_pid + 1
 
-    # -------------------------------------------------
-    # 8️⃣ Perform the swap (swap tails)
-    # -------------------------------------------------
+    # swap tails
     t_forSwapping.loc[main_tail.index, 'tid_subid_after_swap'] = helper_container
     t_forSwapping.loc[main_tail.index, 'swap_pair_id'] = swap_counter
 
@@ -1054,7 +976,7 @@ for _, swap in tqdm(valid_assigned_helpers_df.iterrows(),
     t_forSwapping.loc[helper_tail.index, 'swap_pair_id'] = swap_counter
 
 
-print(f"Swapping completed for {swap_counter} assigned pairs.")
+print(f"swapping completed for {swap_counter} assigned pairs")
 t_forSwapping.head()
 
 #%% compare to ouput from 131 -must also update github
@@ -1144,7 +1066,7 @@ container_swap_stats = (
     )
 )
 
-# Containers that never swapped
+# containers that never swapped
 never_swapped_containers = container_swap_stats[
     (container_swap_stats.max_swap_count == 0) &
     (~container_swap_stats.any_head) &
@@ -1166,7 +1088,7 @@ df = t_forSwapping_swapped_hypridCloaked.sort_values(
 
 )
 
-# Get previous row within same container
+# get previous row within same container
 df['prev_tid'] = df['tid_subid_after_swap'].shift()
 df['prev_pid'] = df['row_uid'].shift()
 
@@ -1176,7 +1098,7 @@ head_errors = df[
     (df.row_uid != df.prev_pid + 1)
 ]
 
-print("Head alignment errors:", len(head_errors)) # 53
+print("head alignment errors:", len(head_errors)) # 53
 # %%
 df['prev_head'] = df['head_end_flag'].shift()
 
@@ -1198,7 +1120,7 @@ double_heads = df[df.head_end_flag].duplicated(
     subset=['tid_subid_after_swap', 'row_uid']
 ).sum()
 
-print("Duplicate head locations:", double_heads) # 0
+print("duplicate head locations:", double_heads) # 0
 
 #%%
 #Head alignment errors: 53
